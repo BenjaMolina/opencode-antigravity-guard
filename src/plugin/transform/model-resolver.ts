@@ -68,6 +68,9 @@ const TIER_REGEX = /-(minimal|low|medium|high)$/;
 const QUOTA_PREFIX_REGEX = /^antigravity-/i;
 const GEMINI_3_PRO_REGEX = /^gemini-3(?:\.\d+)?-pro/i;
 const GEMINI_3_FLASH_REGEX = /^gemini-3(?:\.\d+)?-flash/i;
+const GEMINI_35_FLASH_REGEX = /^gemini-3\.5-flash(?:-(minimal|low|medium|high))?$/i;
+const GEMINI_35_FLASH_LOW_MODEL = "gemini-3.5-flash-low";
+const GEMINI_35_FLASH_HIGH_MODEL = "gemini-3-flash-agent";
 /**
  * Dotted-minor Gemini generations (gemini-3.1, gemini-3.5, ...) use BARE model
  * names on the Gemini CLI backend, unlike the legacy 3.0 line (gemini-3-pro) which
@@ -150,6 +153,24 @@ function isGemini3FlashModel(model: string): boolean {
 }
 
 /**
+ * Cloud Code does not expose a bare `gemini-3.5-flash` backend id.
+ * Antigravity/agy resolves the UI model to these advertised ids instead.
+ */
+export function resolveAntigravityGemini35FlashBackendModel(
+  model: string,
+  thinkingLevel?: string,
+): string | undefined {
+  const modelWithoutQuota = model.replace(QUOTA_PREFIX_REGEX, "");
+  const match = modelWithoutQuota.match(GEMINI_35_FLASH_REGEX);
+  if (!match) {
+    return undefined;
+  }
+
+  const level = (thinkingLevel ?? match[1] ?? "low").toLowerCase();
+  return level === "high" ? GEMINI_35_FLASH_HIGH_MODEL : GEMINI_35_FLASH_LOW_MODEL;
+}
+
+/**
  * Resolves a model name with optional tier suffix and quota prefix to its actual API model name
  * and corresponding thinking configuration.
  *
@@ -199,16 +220,20 @@ export function resolveModelWithTier(
   const isGemini3 = modelWithoutQuota.toLowerCase().startsWith("gemini-3");
   const skipAlias = isAntigravity && isGemini3;
 
-  // For Antigravity Gemini 3 Pro models without explicit tier, append default tier
+  // For Antigravity Gemini 3 Pro models without explicit tier, append default tier.
   // Antigravity API: gemini-3-pro requires tier suffix (gemini-3-pro-low/high)
-  //                  gemini-3-flash uses bare name + thinkingLevel param
+  //                  gemini-3.5-flash uses backend ids (gemini-3.5-flash-low / gemini-3-flash-agent)
+  //                  other gemini-3-flash models use bare name + thinkingLevel param
   // Pro defaults to -low unless an explicit tier is provided
   const isGemini3Pro = isGemini3ProModel(modelWithoutQuota);
   const isGemini3Flash = isGemini3FlashModel(modelWithoutQuota);
 
   let antigravityModel = modelWithoutQuota;
   if (skipAlias) {
-    if (isGemini3Pro && !tier && !isImageModel) {
+    const gemini35FlashBackendModel = resolveAntigravityGemini35FlashBackendModel(modelWithoutQuota, tier);
+    if (gemini35FlashBackendModel) {
+      antigravityModel = gemini35FlashBackendModel;
+    } else if (isGemini3Pro && !tier && !isImageModel) {
       antigravityModel = `${modelWithoutQuota}-low`;
     } else if (isGemini3Flash && tier) {
       antigravityModel = baseName;
@@ -378,7 +403,9 @@ export function resolveModelForHeaderStyle(
     // Dotted-minor generations (gemini-3.1+, gemini-3.5, ...) use bare names there.
     const hasPreviewSuffix = /-preview($|-)/i.test(transformedModel);
     const usesBareName = GEMINI_DOTTED_MINOR_REGEX.test(transformedModel);
-    if (!hasPreviewSuffix && !usesBareName) {
+    if (usesBareName && /-preview$/i.test(transformedModel)) {
+      transformedModel = transformedModel.replace(/-preview$/i, "");
+    } else if (!hasPreviewSuffix && !usesBareName) {
       transformedModel = `${transformedModel}-preview`;
     }
 
