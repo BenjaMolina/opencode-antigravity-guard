@@ -144,10 +144,22 @@ describe("resolveModelWithTier", () => {
       expect(result.thinkingLevel).toBe("low");
     });
 
-    it("antigravity-gemini-3.5-flash gets default thinkingLevel 'low'", () => {
+    it("antigravity-gemini-3.5-flash maps to the Antigravity low backend id by default", () => {
       const result = resolveModelWithTier("antigravity-gemini-3.5-flash");
-      expect(result.actualModel).toBe("gemini-3.5-flash");
+      expect(result.actualModel).toBe("gemini-3.5-flash-low");
       expect(result.thinkingLevel).toBe("low");
+    });
+
+    it("antigravity-gemini-3.5-flash-high maps to the Antigravity high backend id", () => {
+      const result = resolveModelWithTier("antigravity-gemini-3.5-flash-high");
+      expect(result.actualModel).toBe("gemini-3-flash-agent");
+      expect(result.thinkingLevel).toBe("high");
+    });
+
+    it("antigravity-gemini-3.5-flash-medium uses the low backend id with medium thinkingLevel", () => {
+      const result = resolveModelWithTier("antigravity-gemini-3.5-flash-medium");
+      expect(result.actualModel).toBe("gemini-3.5-flash-low");
+      expect(result.thinkingLevel).toBe("medium");
     });
 
     it("antigravity-gemini-3.1-flash gets default thinkingLevel 'low'", () => {
@@ -330,9 +342,16 @@ describe("Issue #103: resolveModelForHeaderStyle", () => {
       expect(result.quotaPreference).toBe("antigravity");
     });
 
-    it("keeps gemini-3.5-flash as gemini-3.5-flash for antigravity", () => {
+    it("transforms gemini-3.5-flash to the Antigravity low backend id", () => {
       const result = resolveModelForHeaderStyle("gemini-3.5-flash", "antigravity");
-      expect(result.actualModel).toBe("gemini-3.5-flash");
+      expect(result.actualModel).toBe("gemini-3.5-flash-low");
+      expect(result.quotaPreference).toBe("antigravity");
+    });
+
+    it("transforms gemini-3.5-flash-high to the Antigravity high backend id", () => {
+      const result = resolveModelForHeaderStyle("gemini-3.5-flash-high", "antigravity");
+      expect(result.actualModel).toBe("gemini-3-flash-agent");
+      expect(result.thinkingLevel).toBe("high");
       expect(result.quotaPreference).toBe("antigravity");
     });
 

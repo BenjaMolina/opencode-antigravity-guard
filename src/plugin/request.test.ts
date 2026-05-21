@@ -1084,7 +1084,7 @@ it("removes x-api-key header", () => {
         expect(result.effectiveModel).toBe("gemini-3.5-pro-low");
       });
 
-      it("keeps gemini-3.5-flash as gemini-3.5-flash for antigravity headerStyle", () => {
+      it("transforms gemini-3.5-flash to the Antigravity low backend id for antigravity headerStyle", () => {
         const result = prepareAntigravityRequest(
           "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent",
           { method: "POST", body: JSON.stringify({ contents: [] }) },
@@ -1093,7 +1093,7 @@ it("removes x-api-key header", () => {
           undefined,
           "antigravity"
         );
-        expect(result.effectiveModel).toBe("gemini-3.5-flash");
+        expect(result.effectiveModel).toBe("gemini-3.5-flash-low");
       });
 
       it("injects default thinkingLevel for bare gemini-3.5-flash on antigravity", () => {
@@ -1105,6 +1105,7 @@ it("removes x-api-key header", () => {
           undefined,
           "antigravity"
         );
+        expect(result.effectiveModel).toBe("gemini-3.5-flash-low");
         const wrapped = JSON.parse(result.init.body as string);
         expect(wrapped.request.generationConfig.thinkingConfig).toMatchObject({
           thinkingLevel: "low",
@@ -1127,6 +1128,7 @@ it("removes x-api-key header", () => {
           undefined,
           "antigravity"
         );
+        expect(result.effectiveModel).toBe("gemini-3.5-flash-low");
         const wrapped = JSON.parse(result.init.body as string);
         expect(wrapped.request.generationConfig.thinkingConfig).toMatchObject({
           thinkingLevel: "low",
@@ -1154,10 +1156,68 @@ it("removes x-api-key header", () => {
           undefined,
           "antigravity"
         );
+        expect(result.effectiveModel).toBe("gemini-3.5-flash-low");
         const wrapped = JSON.parse(result.init.body as string);
         expect(wrapped.request.generationConfig.thinkingConfig).toMatchObject({
           thinkingLevel: "medium",
           includeThoughts: false,
+        });
+      });
+
+      it("maps explicit high thinkingLevel for gemini-3.5-flash to the Antigravity high backend id", () => {
+        const result = prepareAntigravityRequest(
+          "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent",
+          {
+            method: "POST",
+            body: JSON.stringify({
+              contents: [],
+              generationConfig: {
+                thinkingConfig: {
+                  thinkingLevel: "high",
+                  includeThoughts: true,
+                },
+              },
+            }),
+          },
+          mockAccessToken,
+          mockProjectId,
+          undefined,
+          "antigravity"
+        );
+        expect(result.effectiveModel).toBe("gemini-3-flash-agent");
+        const wrapped = JSON.parse(result.init.body as string);
+        expect(wrapped.model).toBe("gemini-3-flash-agent");
+        expect(wrapped.request.generationConfig.thinkingConfig).toMatchObject({
+          thinkingLevel: "high",
+          includeThoughts: true,
+        });
+      });
+
+      it("maps providerOptions high variant for gemini-3.5-flash to the Antigravity high backend id", () => {
+        const result = prepareAntigravityRequest(
+          "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent",
+          {
+            method: "POST",
+            body: JSON.stringify({
+              contents: [],
+              providerOptions: {
+                google: {
+                  thinkingLevel: "high",
+                },
+              },
+            }),
+          },
+          mockAccessToken,
+          mockProjectId,
+          undefined,
+          "antigravity"
+        );
+        expect(result.effectiveModel).toBe("gemini-3-flash-agent");
+        const wrapped = JSON.parse(result.init.body as string);
+        expect(wrapped.model).toBe("gemini-3-flash-agent");
+        expect(wrapped.request.generationConfig.thinkingConfig).toMatchObject({
+          thinkingLevel: "high",
+          includeThoughts: true,
         });
       });
 

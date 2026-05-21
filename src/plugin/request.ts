@@ -63,6 +63,7 @@ import {
   resolveModelWithTier,
   resolveModelWithVariant,
   resolveModelForHeaderStyle,
+  resolveAntigravityGemini35FlashBackendModel,
   isClaudeModel,
   isClaudeThinkingModel,
   CLAUDE_THINKING_MAX_OUTPUT_TOKENS,
@@ -884,6 +885,37 @@ export function prepareAntigravityRequest(
           }
         }
 
+        if (effectiveModel.toLowerCase().includes("gemini-3")) {
+          for (const req of requestObjects) {
+            const variantConfig = extractVariantThinkingConfig(
+              (req as any).providerOptions as Record<string, unknown> | undefined,
+              (req as any).generationConfig as Record<string, unknown> | undefined,
+            );
+            if (variantConfig?.thinkingLevel) {
+              tierThinkingLevel = variantConfig.thinkingLevel;
+              tierThinkingBudget = undefined;
+              break;
+            }
+            if (typeof variantConfig?.thinkingBudget === "number") {
+              tierThinkingLevel = variantConfig.thinkingBudget <= 8192 ? "low"
+                : variantConfig.thinkingBudget <= 16384 ? "medium" : "high";
+              tierThinkingBudget = undefined;
+              break;
+            }
+          }
+        }
+
+        if (headerStyle === "antigravity") {
+          const gemini35FlashBackendModel = resolveAntigravityGemini35FlashBackendModel(
+            rawModel,
+            tierThinkingLevel,
+          );
+          if (gemini35FlashBackendModel) {
+            effectiveModel = gemini35FlashBackendModel;
+            wrappedBody.model = gemini35FlashBackendModel;
+          }
+        }
+
         const conversationKey = resolveConversationKeyFromRequests(requestObjects);
         // Strip tier suffix from model for cache key to prevent cache misses on tier change
         // e.g., "claude-opus-4-6-thinking-high" -> "claude-opus-4-6-thinking"
@@ -967,6 +999,16 @@ export function prepareAntigravityRequest(
             // Claude / Gemini 2.5 - use budget directly
             tierThinkingBudget = variantConfig.thinkingBudget;
             tierThinkingLevel = undefined;
+          }
+        }
+
+        if (headerStyle === "antigravity") {
+          const gemini35FlashBackendModel = resolveAntigravityGemini35FlashBackendModel(
+            rawModel,
+            tierThinkingLevel,
+          );
+          if (gemini35FlashBackendModel) {
+            effectiveModel = gemini35FlashBackendModel;
           }
         }
 
