@@ -67,6 +67,24 @@ describe("resolveModelWithTier", () => {
     });
   });
 
+  describe("agy-sdk model normalization", () => {
+    it("preserves API-native preview model ids", () => {
+      const result = resolveModelForHeaderStyle("gemini-3-pro-preview", "agy-sdk");
+
+      expect(result.actualModel).toBe("gemini-3-pro-preview");
+      expect(result.thinkingLevel).toBe("low");
+      expect(result.quotaPreference).toBe("agy-sdk");
+    });
+
+    it("strips antigravity prefix and tier suffix for public API requests", () => {
+      const result = resolveModelForHeaderStyle("antigravity-gemini-3-pro-high", "agy-sdk");
+
+      expect(result.actualModel).toBe("gemini-3-pro");
+      expect(result.thinkingLevel).toBe("high");
+      expect(result.quotaPreference).toBe("agy-sdk");
+    });
+  });
+
   describe("cli_first quota preference", () => {
     it("prefers gemini-cli when cli_first is true and no prefix is set", () => {
       const result = resolveModelWithTier("gemini-3-flash", { cli_first: true });

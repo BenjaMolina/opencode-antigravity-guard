@@ -366,10 +366,22 @@ function budgetToGemini3Level(budget: number): "low" | "medium" | "high" {
  */
 export function resolveModelForHeaderStyle(
   requestedModel: string,
-  headerStyle: "antigravity" | "gemini-cli",
+  headerStyle: "antigravity" | "gemini-cli" | "agy-sdk",
 ): ResolvedModel {
   const lower = requestedModel.toLowerCase();
   const isGemini3 = lower.includes("gemini-3");
+
+  if (headerStyle === "agy-sdk") {
+    const modelWithTier = requestedModel
+      .replace(/^antigravity-/i, "");
+    const transformedModel = modelWithTier.replace(/-(minimal|low|medium|high)$/i, "");
+    return {
+      ...resolveModelWithTier(modelWithTier),
+      actualModel: transformedModel,
+      quotaPreference: "agy-sdk",
+      explicitQuota: false,
+    };
+  }
 
   if (!isGemini3) {
     return resolveModelWithTier(requestedModel);
