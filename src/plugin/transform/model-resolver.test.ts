@@ -355,6 +355,12 @@ describe("Issue #103: resolveModelForHeaderStyle", () => {
       expect(result.quotaPreference).toBe("gemini-cli");
     });
 
+    it("strips the minimal tier before adding Gemini CLI preview suffix", () => {
+      const result = resolveModelForHeaderStyle("gemini-3-flash-minimal", "gemini-cli");
+      expect(result.actualModel).toBe("gemini-3-flash-preview");
+      expect(result.quotaPreference).toBe("gemini-cli");
+    });
+
     it("transforms gemini-3.1-pro-low to gemini-3.1-pro (bare) for gemini-cli", () => {
       const result = resolveModelForHeaderStyle("gemini-3.1-pro-low", "gemini-cli");
       expect(result.actualModel).toBe("gemini-3.1-pro");

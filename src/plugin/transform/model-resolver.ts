@@ -409,7 +409,7 @@ export function resolveModelForHeaderStyle(
   if (headerStyle === "gemini-cli") {
     let transformedModel = requestedModel
       .replace(/^antigravity-/i, "")
-      .replace(/-(low|medium|high)$/i, "");
+      .replace(/-(minimal|low|medium|high)$/i, "");
 
     // Only the legacy 3.0 line takes a "-preview" suffix on the Gemini CLI backend.
     // Dotted-minor generations (gemini-3.1+, gemini-3.5, ...) use bare names there.
