@@ -754,8 +754,13 @@ const STREAM_ACTION = "streamGenerateContent";
 /**
  * Detects requests headed to the Google Generative Language API so we can intercept them.
  */
-export function isGenerativeLanguageRequest(input: RequestInfo): input is string {
-  return typeof input === "string" && input.includes("generativelanguage.googleapis.com");
+export function isGenerativeLanguageRequest(input: RequestInfo): boolean {
+  return requestInfoUrl(input).includes("generativelanguage.googleapis.com");
+}
+
+function requestInfoUrl(input: RequestInfo): string {
+  if (typeof input === "string") return input;
+  return input.url || input.toString();
 }
 
 /**
@@ -797,8 +802,9 @@ export function prepareAntigravityRequest(
   headerStyle: HeaderStyle;
   thinkingRecoveryMessage?: string;
 } {
+  const requestUrl = requestInfoUrl(input);
   const baseInit: RequestInit = { ...init };
-  const headers = new Headers(init?.headers ?? {});
+  const headers = new Headers(init?.headers ?? (typeof input === "string" ? undefined : input.headers));
   let resolvedProjectId = projectId?.trim() || "";
   let toolDebugMissing = 0;
   const toolDebugSummaries: string[] = [];
@@ -818,12 +824,13 @@ export function prepareAntigravityRequest(
 
   headers.set("Authorization", `Bearer ${accessToken}`);
   headers.delete("x-api-key");
+  headers.delete("x-goog-api-key");
   // Strip x-goog-user-project header to prevent 403 auth/license conflicts.
   // This header is added by OpenCode/AI SDK and can force project-level checks
   // that are not required for Antigravity/Gemini CLI OAuth requests.
   headers.delete("x-goog-user-project");
 
-  const match = input.match(/\/models\/([^:]+):(\w+)/);
+  const match = requestUrl.match(/\/models\/([^:]+):(\w+)/);
   if (!match) {
     return {
       request: input,
@@ -1321,7 +1328,9 @@ export function prepareAntigravityRequest(
               };
 
               if (Array.isArray(tool.functionDeclarations) && tool.functionDeclarations.length > 0) {
-                tool.functionDeclarations.forEach((decl: any) => pushDeclaration(decl, "functionDeclarations"));
+                tool.functionDeclarations.forEach((decl: unknown) => {
+                  pushDeclaration(decl, "functionDeclarations");
+                });
                 return;
               }
 
@@ -1775,7 +1784,7 @@ export async function transformAntigravityResponse(
     const text = await response.text();
 
     if (!response.ok) {
-      let errorBody;
+      let errorBody: { error?: { message?: string; details?: Array<Record<string, unknown>> } };
       try {
         errorBody = JSON.parse(text);
       } catch {
@@ -1831,10 +1840,10 @@ export async function transformAntigravityResponse(
 
       if (errorBody?.error?.details && Array.isArray(errorBody.error.details)) {
         const retryInfo = errorBody.error.details.find(
-          (detail: any) => detail['@type'] === 'type.googleapis.com/google.rpc.RetryInfo'
+          (detail) => detail['@type'] === 'type.googleapis.com/google.rpc.RetryInfo'
         );
 
-        if (retryInfo?.retryDelay) {
+        if (typeof retryInfo?.retryDelay === "string") {
           const match = retryInfo.retryDelay.match(/^([\d.]+)s$/);
           if (match && match[1]) {
             const retrySeconds = parseFloat(match[1]);

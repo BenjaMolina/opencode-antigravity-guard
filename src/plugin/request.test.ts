@@ -555,6 +555,29 @@ describe("request.ts", () => {
       expect(result.streaming).toBe(false);
     });
 
+    it("intercepts Request object inputs for generative language URLs", () => {
+      const request = new Request(
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=secret",
+        {
+          method: "POST",
+          headers: { "x-goog-api-key": "old-google-key" },
+          body: JSON.stringify({ contents: [] }),
+        },
+      );
+
+      const result = prepareAntigravityRequest(
+        request,
+        undefined,
+        mockAccessToken,
+        mockProjectId,
+      );
+
+      const headers = result.init.headers as Headers;
+      expect(result.request).toBe("https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:generateContent");
+      expect(headers.get("Authorization")).toBe("Bearer test-token");
+      expect(headers.get("x-goog-api-key")).toBeNull();
+    });
+
     it("detects streaming from generateStreamContent action", () => {
       const result = prepareAntigravityRequest(
         "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:streamGenerateContent",
@@ -586,15 +609,20 @@ describe("request.ts", () => {
       expect(headers.get("Authorization")).toBe("Bearer test-token");
     });
 
-it("removes x-api-key header", () => {
+it("removes API key headers", () => {
       const result = prepareAntigravityRequest(
         "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent",
-        { method: "POST", body: JSON.stringify({ contents: [] }), headers: { "x-api-key": "old-key" } },
+        {
+          method: "POST",
+          body: JSON.stringify({ contents: [] }),
+          headers: { "x-api-key": "old-key", "x-goog-api-key": "old-google-key" },
+        },
         mockAccessToken,
         mockProjectId
       );
       const headers = result.init.headers as Headers;
       expect(headers.get("x-api-key")).toBeNull();
+      expect(headers.get("x-goog-api-key")).toBeNull();
     });
 
     it("removes x-goog-user-project header for antigravity headerStyle", () => {
