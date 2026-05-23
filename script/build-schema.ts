@@ -109,6 +109,11 @@ function alignAgySdkDefaults(schema: Record<string, unknown>): void {
   if (Array.isArray(cloudProject?.required)) {
     cloudProject.required = cloudProject.required.filter((field) => field !== "enabled");
   }
+
+  const modelDiscovery = props?.model_discovery;
+  if (modelDiscovery) {
+    delete modelDiscovery.required;
+  }
 }
 
 const definitions = rawSchema.definitions as Record<string, Record<string, unknown>> | undefined;

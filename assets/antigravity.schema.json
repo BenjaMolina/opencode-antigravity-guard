@@ -227,11 +227,6 @@
           "type": "boolean"
         }
       },
-      "required": [
-        "enabled",
-        "gemini_api",
-        "antigravity"
-      ],
       "additionalProperties": false
     },
     "account_selection_strategy": {
