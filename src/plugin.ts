@@ -1284,7 +1284,7 @@ function createSoftQuotaBlockedResponse(input: {
     "API-key fallback is disabled or unavailable, so the request was not routed to the public Gemini API.",
     "To continue, add more accounts, wait for quota reset, set soft_quota_threshold_percent: 100 to disable soft quota protection, or enable agy_sdk.api_key_fallback with a usable Gemini API key.",
   ].join("\n");
-  return createSyntheticErrorResponse(errorMessage, input.requestedModel);
+  return createSyntheticErrorResponse(errorMessage, input.requestedModel, input.family);
 }
 
 // Progressive rate limit retry delays
@@ -1867,6 +1867,14 @@ export const createAntigravityPlugin = (providerId: string) => async (
           let lastFailure: FailureContext | null = null;
           let lastError: Error | null = null;
           const abortSignal = init?.signal ?? undefined;
+          // Accounts already tried (and switched away from) within THIS request.
+          // Excluded from re-selection so each "switch account" makes forward
+          // progress instead of re-picking the same account forever. Cleared
+          // after a rate-limit/quota wait, since resets may free accounts again.
+          const triedSwitchIndices = new Set<number>();
+          // Absolute safety net: bound total loop iterations so the request can
+          // never spin the event loop, regardless of account/quota state.
+          let loopGuard = 0;
 
           // Helper to check if request was aborted
           const checkAborted = () => {
@@ -1920,6 +1928,19 @@ export const createAntigravityPlugin = (providerId: string) => async (
             checkAborted();
             
             const accountCount = accountManager.getAccountCount();
+            // Safety net: a request can iterate at most a few times per account
+            // (select -> refresh -> fetch/switch). If we blow far past that, the
+            // routing is not converging (e.g. all accounts exhausted for an
+            // Antigravity-only model) — give up gracefully instead of spinning.
+            if (++loopGuard > Math.max(50, accountCount * 8)) {
+              const guardFallback = await tryAgySdkFallbackForRequest(input, init, config, agySdkCredentials, urlString);
+              if (guardFallback) return guardFallback;
+              throw lastError || new Error(
+                `Antigravity request routing did not converge for ${model ?? family}. ` +
+                `All ${accountCount} account(s) appear rate-limited or exhausted for this model. ` +
+                "Run `opencode auth login` to add accounts or wait for quota reset.",
+              );
+            }
             const routingDecision = resolveHeaderRoutingDecision(urlString, family, config);
             const {
               cliFirst,
@@ -1958,13 +1979,14 @@ export const createAntigravityPlugin = (providerId: string) => async (
             );
 
             let account = accountManager.getCurrentOrNextForFamily(
-              family, 
-              model, 
+              family,
+              model,
               config.account_selection_strategy,
               preferredHeaderStyle,
               config.pid_offset_enabled,
               config.soft_quota_threshold_percent,
               softQuotaCacheTtlMs,
+              triedSwitchIndices,
             );
 
             if (!account && allowQuotaFallback) {
@@ -1978,6 +2000,7 @@ export const createAntigravityPlugin = (providerId: string) => async (
                 config.pid_offset_enabled,
                 config.soft_quota_threshold_percent,
                 softQuotaCacheTtlMs,
+                triedSwitchIndices,
               );
               if (account) {
                 pushDebug(
@@ -1987,6 +2010,35 @@ export const createAntigravityPlugin = (providerId: string) => async (
             }
             
             if (!account) {
+              // Every usable account was already tried (and switched away from)
+              // during THIS request. Nothing left to route to, so give up
+              // gracefully rather than waiting on accounts that won't recover
+              // mid-request (this is the case that previously spun forever for
+              // an Antigravity-only model whose antigravity pool is exhausted).
+              if (accountCount > 0 && triedSwitchIndices.size >= accountCount) {
+                const exhaustedFallback = await tryAgySdkFallbackForRequest(input, init, config, agySdkCredentials, urlString);
+                if (exhaustedFallback) return exhaustedFallback;
+                if (lastFailure) {
+                  return transformAntigravityResponse(
+                    lastFailure.response,
+                    lastFailure.streaming,
+                    lastFailure.debugContext,
+                    lastFailure.requestedModel,
+                    lastFailure.projectId,
+                    lastFailure.endpoint,
+                    lastFailure.effectiveModel,
+                    lastFailure.sessionId,
+                    lastFailure.toolDebugMissing,
+                    lastFailure.toolDebugSummary,
+                    lastFailure.toolDebugPayload,
+                    debugLines,
+                  );
+                }
+                throw lastError || new Error(
+                  `All ${accountCount} Antigravity account(s) are rate-limited for ${model ?? family}. ` +
+                  "Run `opencode auth login` to add accounts or wait for quota reset.",
+                );
+              }
               if (accountManager.areAllAccountsOverSoftQuota(family, config.soft_quota_threshold_percent, softQuotaCacheTtlMs, model)) {
                 const threshold = config.soft_quota_threshold_percent;
                 const softQuotaWaitMs = accountManager.getMinWaitTimeForSoftQuota(family, threshold, softQuotaCacheTtlMs, model);
@@ -2017,6 +2069,7 @@ export const createAntigravityPlugin = (providerId: string) => async (
                   softQuotaToastShown = true;
                 }
                 
+                triedSwitchIndices.clear();
                 await sleep(softQuotaWaitMs, abortSignal);
                 continue;
               }
@@ -2067,6 +2120,7 @@ export const createAntigravityPlugin = (providerId: string) => async (
               }
 
               // Wait for the rate-limit cooldown to expire, then retry
+              triedSwitchIndices.clear();
               await sleep(waitMs, abortSignal);
               continue;
             }
@@ -2749,7 +2803,7 @@ export const createAntigravityPlugin = (providerId: string) => async (
                         "warning"
                       );
                       const errorMessage = `[Antigravity Error] Context is too long for this model.\n\nPlease use /compact to reduce context size, then retry your request.\n\nAlternatively, you can:\n- Use /clear to start fresh\n- Use /undo to remove recent messages\n- Switch to a model with larger context window`;
-                      return createSyntheticErrorResponse(errorMessage, prepared.requestedModel);
+                      return createSyntheticErrorResponse(errorMessage, prepared.requestedModel, family);
                     }
                   }
                 }
@@ -2883,6 +2937,11 @@ export const createAntigravityPlugin = (providerId: string) => async (
             } // end headerStyleLoop
             
             if (shouldSwitchAccount) {
+              // Exclude the account we're switching away from so the next
+              // selection picks a DIFFERENT one (or returns null when none are
+              // left). Without this, hybrid selection can re-pick the same
+              // account and the loop spins forever (no fetch, 100% CPU).
+              triedSwitchIndices.add(account.index);
               // Avoid tight retry loops when there's only one account.
               if (accountCount <= 1) {
                 if (lastFailure) {

@@ -237,6 +237,25 @@ describe("quota blocked responses", () => {
     expect(body).toContain("api_key_fallback");
     expect(body).toContain("antigravity-gemini-3-pro");
   });
+
+  it("emits Gemini-format SSE (not Claude-format) for a Gemini request", async () => {
+    const response = createSoftQuotaBlockedResponse?.({
+      accountCount: 2,
+      family: "gemini",
+      threshold: 90,
+      waitMs: null,
+      requestedModel: "antigravity-gemini-3-pro",
+    });
+
+    const body = await response!.text();
+    // OpenCode parses Gemini responses as { candidates: [...] }; a Claude-shaped
+    // SSE stream (content_block_delta) is unparseable for a Gemini request and
+    // leaves the request hanging.
+    expect(body).toContain("candidates");
+    expect(body).toContain("finishReason");
+    expect(body).not.toContain("content_block_delta");
+    expect(body).not.toContain("message_start");
+  });
 });
 
 describe("account verification probe", () => {
