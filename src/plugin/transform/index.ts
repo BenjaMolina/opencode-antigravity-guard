@@ -19,9 +19,11 @@ export type {
 
 // Model resolution
 export {
+  mapAntigravityModelToPublicApi,
   resolveModelWithTier,
   resolveModelWithVariant,
   resolveModelForHeaderStyle,
+  resolveAntigravityGemini35FlashBackendModel,
   getModelFamily,
   MODEL_ALIASES,
   THINKING_TIER_BUDGETS,
