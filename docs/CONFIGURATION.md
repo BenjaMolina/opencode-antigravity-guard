@@ -41,6 +41,46 @@ Settings that affect how the model thinks and responds.
 
 > **Note:** The `web_search` config options are deprecated. Google Search is now implemented as a dedicated `google_search` tool that the model can call explicitly.
 
+---
+
+## Antigravity SDK And Model Discovery
+
+PR #576 added the Antigravity SDK / Gemini API-key path and runtime model discovery. Most users can keep the defaults: OAuth accounts still route Antigravity and Claude models, while configured API keys can serve Gemini models such as `gemini-3.5-flash` or act as fallback capacity when OAuth quotas are exhausted.
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `agy_sdk.enabled` | `true` | Enable the Gemini API-key request path used by the Antigravity SDK style. |
+| `agy_sdk.prefer_for_gemini` | `false` | Prefer API-key projects for Gemini requests even when OAuth accounts are available. |
+| `agy_sdk.api_key_fallback` | `true` | Use API-key projects when OAuth-backed Antigravity/Gemini CLI quota is unavailable. |
+| `agy_sdk.cloud_projects` | `[]` | Optional pool of API keys and project IDs for Gemini API routing. |
+| `model_discovery.enabled` | `true` | Add runtime-discovered models to OpenCode's provider list. |
+| `model_discovery.gemini_api` | `true` | Include public Gemini API models discovered from API keys. |
+| `model_discovery.antigravity` | `true` | Include OAuth-backed Antigravity models from the available-models API. |
+
+Example API-key fallback pool:
+
+```json
+{
+  "$schema": "https://raw.githubusercontent.com/insign/opencode-antigravity-auth-updated/main/assets/antigravity.schema.json",
+  "agy_sdk": {
+    "enabled": true,
+    "api_key_fallback": true,
+    "cloud_projects": [
+      {
+        "label": "gemini-api-primary",
+        "api_key": "YOUR_GEMINI_API_KEY",
+        "project_id": "your-google-cloud-project"
+      }
+    ]
+  },
+  "model_discovery": {
+    "enabled": true,
+    "gemini_api": true,
+    "antigravity": true
+  }
+}
+```
+
 ### About `keep_thinking`
 
 When `true`, Claude's thinking blocks are preserved in conversation history:

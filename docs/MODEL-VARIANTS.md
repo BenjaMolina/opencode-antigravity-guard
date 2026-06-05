@@ -75,12 +75,14 @@ Gemini 3 models use string-based thinking levels. Available levels differ by mod
 }
 ```
 
-### Gemini 3 Flash Example
+### Gemini 3 Flash / 3.5 Flash Example
+
+Gemini Flash models expose `minimal`, `low`, `medium`, and `high` thinking levels. Use `antigravity-gemini-3-flash` for Gemini 3 Flash or `antigravity-gemini-3.5-flash` for Gemini 3.5 Flash when available in your rollout.
 
 ```json
 {
-  "antigravity-gemini-3-flash": {
-    "name": "Gemini 3 Flash (Antigravity)",
+  "antigravity-gemini-3.5-flash": {
+    "name": "Gemini 3.5 Flash (Antigravity)",
     "limit": { "context": 1048576, "output": 65536 },
     "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
     "variants": {
@@ -159,8 +161,10 @@ Tier-suffixed model names are still accepted:
 - `antigravity-claude-opus-4-6-thinking-high`
 - `antigravity-gemini-3-pro-low`
 - `antigravity-gemini-3-pro-high`
+- `antigravity-gemini-3.5-flash-high`
 - `gemini-3-pro-low`
 - `gemini-3-flash-medium`
+- `gemini-3.5-flash-medium`
 
 However, **we recommend using simplified model names with variants** for:
 
