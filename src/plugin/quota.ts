@@ -149,7 +149,7 @@ function aggregateQuota(models?: Record<string, FetchAvailableModelEntry>): Quot
     const nextCount = (existing?.modelCount ?? 0) + 1;
     const useCurrentQuota =
       remainingFraction !== undefined &&
-      (existing?.remainingFraction === undefined || remainingFraction > existing.remainingFraction);
+      (existing?.remainingFraction === undefined || remainingFraction < existing.remainingFraction);
     const nextRemaining = useCurrentQuota ? remainingFraction : existing?.remainingFraction;
     const nextResetTime = useCurrentQuota
       ? resetTime

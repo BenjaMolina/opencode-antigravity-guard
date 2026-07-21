@@ -1,0 +1,86 @@
+schema: spec-driven
+
+project:
+  name: opencode-antigravity-guard
+  repository: BenjaMolina/opencode-antigravity-guard
+  package: opencode-antigravity-auth-updated
+  artifact_store: hybrid
+
+context: |
+  Tech stack: TypeScript ESM on Node.js 20+ with npm packaging and tsc builds.
+  Architecture: OpenCode plugin intercepting Gemini requests and routing them through Antigravity auth, quota, recovery, and account modules.
+  Testing: Vitest 3 for source tests plus script-based model/regression commands for environment-backed checks.
+  Style: strict TypeScript, relative .ts imports, named exports, 2-space indentation, double quotes, and no semicolons.
+
+strict_tdd: true
+
+testing:
+  detected: 2026-07-20
+  strict_tdd_reason: No existing strict TDD marker was found; defaulted to true because a working test runner is configured.
+  runner:
+    framework: Vitest 3
+    command: npm test
+    watch_command: npm run test:watch
+  layers:
+    unit:
+      available: true
+      tool: Vitest
+      evidence:
+        - vitest.config.ts includes src/**/*.test.ts
+        - src/**/*.test.ts files are colocated with source modules
+    integration:
+      available: true
+      tool: Vitest
+      evidence:
+        - src/plugin/cross-model-integration.test.ts
+        - node-environment integration-style plugin tests run under Vitest
+    e2e:
+      available: true
+      tool: tsx scripts
+      evidence:
+        - npm run test:e2e:models
+        - npm run test:e2e:regression
+      limitations:
+        - Commands depend on external model/auth environment and are not guaranteed hermetic.
+  coverage:
+    available: true
+    command: npm run test:coverage
+  quality:
+    linter:
+      available: false
+      command: ""
+    type_checker:
+      available: true
+      command: npm run typecheck
+    formatter:
+      available: false
+      command: ""
+
+rules:
+  proposal:
+    - Keep changes within the single-pr-default delivery strategy unless review budget risk requires chaining.
+    - Call out external-service or account-safety risk explicitly.
+  specs:
+    - Use Given/When/Then for scenarios.
+    - Use RFC 2119 keywords (MUST, SHOULD, MAY).
+  design:
+    - Document quota-routing, auth, and recovery touchpoints for behavioral changes.
+    - Explain persistence or locking changes before implementation.
+  tasks:
+    - Group tasks by vertical slice and keep each task reviewable under the 400-line budget when possible.
+    - Include tests with the task that changes behavior.
+  apply:
+    guidelines:
+      - Follow AGENTS.MD import/export/style conventions.
+      - Preserve plugin request interception and recovery patterns unless a spec explicitly changes them.
+    tdd: true
+    test_command: npm test
+  verify:
+    test_command: npm test
+    build_command: npm run build
+    coverage_command: npm run test:coverage
+    coverage_threshold: 0
+    typecheck_command: npm run typecheck
+  archive:
+    - Warn before merging destructive spec deltas.
+    - Record any environment-dependent verification gaps.
