@@ -274,17 +274,27 @@ function isOverSoftQuotaThreshold(
     }
   }
 
-  if (account.cachedQuotaUpdatedAt == null) return false;
-  const age = nowMs() - account.cachedQuotaUpdatedAt;
-  if (age > cacheTtlMs) return false;
+  const accountLabel = formatAccountLabel(account.email, account.index);
+  const resetSuffix = groupData.resetTime ? ` (resets: ${groupData.resetTime})` : "";
 
-  if (isOverThreshold) {
-    const accountLabel = formatAccountLabel(account.email, account.index);
-    const resetSuffix = groupData.resetTime ? ` (resets: ${groupData.resetTime})` : "";
-    const message = `[SoftQuota] Skipping ${accountLabel}: ${quotaGroup} usage ${usedPercent.toFixed(1)}% >= threshold ${thresholdPercent}%${resetSuffix}`;
-    debugLogToFile(message);
+  if (account.cachedQuotaUpdatedAt == null) {
+    // No timestamp means we never successfully fetched quota — fail-open (no data = no block).
+    return false;
   }
-  
+
+  const age = nowMs() - account.cachedQuotaUpdatedAt;
+  const isStale = age > cacheTtlMs;
+
+  if (isStale) {
+    // Cache is expired but the last known reading still shows over-threshold.
+    // Fail-closed: keep blocking until a fresh fetch clears the flag.
+    const message = `[SoftQuota] Skipping ${accountLabel}: ${quotaGroup} usage ${usedPercent.toFixed(1)}% >= threshold ${thresholdPercent}%${resetSuffix} (stale cache, age=${Math.round(age / 1000)}s)`;
+    debugLogToFile(message);
+    return true;
+  }
+
+  const message = `[SoftQuota] Skipping ${accountLabel}: ${quotaGroup} usage ${usedPercent.toFixed(1)}% >= threshold ${thresholdPercent}%${resetSuffix}`;
+  debugLogToFile(message);
   return true;
 }
 

@@ -1712,7 +1712,7 @@ describe("AccountManager", () => {
       vi.useRealTimers();
     });
 
-    it("allows an over-threshold account back in after its resetTime has passed", () => {
+    it("keeps blocking an over-threshold account even after its resetTime has passed when cache is stale (fail-closed)", () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date("2026-01-28T10:00:00Z"));
 
@@ -1733,15 +1733,17 @@ describe("AccountManager", () => {
         },
       });
 
+      // Advance past both the resetTime and the 10-min cache TTL.
+      // The cache is stale and no fresh data arrived — fail-closed keeps the account blocked.
       vi.setSystemTime(new Date("2026-01-28T10:11:00Z"));
 
       const account = manager.getCurrentOrNextForFamily("claude", null, "sticky", "antigravity", false, 90);
-      expect(account?.parts.refreshToken).toBe("r1");
+      expect(account?.parts.refreshToken).toBeUndefined();
 
       vi.useRealTimers();
     });
 
-    it("fails open when resetTime metadata is invalid even if the account is over threshold", () => {
+    it("keeps blocking an over-threshold account when resetTime is invalid and cache is stale (fail-closed)", () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date("2026-01-28T10:00:00Z"));
 
@@ -1764,10 +1766,11 @@ describe("AccountManager", () => {
       };
       acc.cachedQuotaUpdatedAt = Date.parse("2026-01-28T09:00:00Z");
 
+      // Cache is over an hour old (stale) — fail-closed: still blocks because last known usage is over threshold.
       vi.setSystemTime(new Date("2026-01-28T10:11:00Z"));
 
       const account = manager.getCurrentOrNextForFamily("claude", null, "sticky", "antigravity", false, 90);
-      expect(account?.parts.refreshToken).toBe("r1");
+      expect(account?.parts.refreshToken).toBeUndefined();
 
       vi.useRealTimers();
     });
@@ -1936,7 +1939,7 @@ describe("AccountManager", () => {
       expect(account?.parts.refreshToken).toBe("r2");
     });
 
-    it("ignores stale quota cache (over 10 minutes old)", () => {
+    it("keeps blocking an over-threshold account when quota cache is stale (fail-closed)", () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date(0));
 
@@ -1951,10 +1954,11 @@ describe("AccountManager", () => {
       const manager = new AccountManager(undefined, stored);
       manager.updateQuotaCache("r1", { claude: { remainingFraction: 0.05, modelCount: 1 } });
 
+      // Advance past the 10-min cache TTL without a fresh fetch — fail-closed: still blocks.
       vi.setSystemTime(new Date(11 * 60 * 1000));
 
       const account = manager.getCurrentOrNextForFamily("claude", null, "sticky", "antigravity", false, 90);
-      expect(account?.parts.refreshToken).toBe("r1");
+      expect(account?.parts.refreshToken).toBeUndefined();
 
       vi.useRealTimers();
     });
