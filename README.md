@@ -663,11 +663,11 @@ Set `prefer_for_gemini: true` if you want Gemini models to use the newer Gemini 
 
 | Option | Default | What it does |
 |--------|---------|--------------|
-| `soft_quota_threshold_percent` | `90` | Skip account when quota usage exceeds this percentage. Prevents Google from penalizing accounts that fully exhaust quota. Set to `100` to disable. |
+| `soft_quota_threshold_percent` | `70` | Skip account when quota usage reaches this percentage. Prevents Google from penalizing accounts that fully exhaust quota. Set to `100` to disable. |
 | `quota_refresh_interval_minutes` | `15` | Background quota refresh interval. After successful API requests, refreshes quota cache if older than this interval. Set to `0` to disable. |
 | `soft_quota_cache_ttl_minutes` | `"auto"` | How long quota cache is considered fresh. `"auto"` = max(2 × refresh interval, 10 minutes). Set a number (1-120) for fixed TTL. |
 
-> **How it works**: Quota cache is refreshed automatically after API requests (when older than `quota_refresh_interval_minutes`) and manually via "Check quotas" in `opencode auth login`. The threshold check uses `soft_quota_cache_ttl_minutes` to determine cache freshness - if cache is older, the account is considered "unknown" and allowed (fail-open). When ALL accounts exceed the threshold, the plugin waits for the earliest quota reset time (like rate limit behavior). If wait time exceeds `max_rate_limit_wait_seconds`, it errors immediately.
+> **How it works**: Quota cache is refreshed automatically after API requests (when older than `quota_refresh_interval_minutes`) and manually via "Check quotas" in `opencode auth login`. If an account reaches the threshold and has a valid future `resetTime`, it remains skipped even after the normal cache TTL expires. Missing or invalid reset metadata remains fail-open once the cache is stale. When ALL accounts exceed the threshold, the plugin waits for the earliest quota reset time (like rate limit behavior). If wait time exceeds `max_rate_limit_wait_seconds`, it errors immediately.
 
 ### Rate Limit Scheduling
 
