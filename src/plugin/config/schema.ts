@@ -446,12 +446,12 @@ export const AntigravityConfigSchema = z.object({
     * When an account's quota usage reaches this percentage, skip it during
     * account selection (same as if it were rate-limited).
     * 
-    * Example: 90 means skip account when 90% of quota is used (10% remaining).
+    * Example: 70 means skip account when 70% of quota is used (30% remaining).
     * Set to 100 to disable soft quota protection.
     * 
-    * @default 90
-    */
-   soft_quota_threshold_percent: z.number().min(1).max(100).default(90),
+    * @default 70
+     */
+   soft_quota_threshold_percent: z.number().min(1).max(100).default(70),
    
    /**
     * How often to refresh quota data in the background (in minutes).
@@ -558,7 +558,7 @@ export const DEFAULT_CONFIG: AntigravityConfig = {
   default_retry_after_seconds: 60,
   max_backoff_seconds: 60,
   request_jitter_max_ms: 0,
-  soft_quota_threshold_percent: 90,
+  soft_quota_threshold_percent: 70,
   quota_refresh_interval_minutes: 15,
   soft_quota_cache_ttl_minutes: "auto",
   auto_update: true,

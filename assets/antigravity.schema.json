@@ -145,6 +145,12 @@
       "minimum": 0,
       "maximum": 3600
     },
+    "request_timeout_seconds": {
+      "default": 600,
+      "type": "number",
+      "minimum": 30,
+      "maximum": 3600
+    },
     "quota_fallback": {
       "default": false,
       "type": "boolean",
@@ -290,7 +296,7 @@
       "description": "Maximum random jitter in milliseconds added to outgoing requests to avoid thundering herd."
     },
     "soft_quota_threshold_percent": {
-      "default": 90,
+      "default": 70,
       "type": "number",
       "minimum": 1,
       "maximum": 100,

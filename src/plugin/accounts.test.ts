@@ -1682,6 +1682,96 @@ describe("AccountManager", () => {
   });
 
   describe("soft quota threshold", () => {
+    it("keeps a stale over-threshold account locked while resetTime is still in the future", () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-01-28T10:00:00Z"));
+
+      const stored: AccountStorageV4 = {
+        version: 4,
+        accounts: [
+          { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
+          { refreshToken: "r2", projectId: "p2", addedAt: 2, lastUsed: 0 },
+        ],
+        activeIndex: 0,
+      };
+
+      const manager = new AccountManager(undefined, stored);
+      manager.updateQuotaCache("r1", {
+        claude: {
+          remainingFraction: 0.05,
+          resetTime: "2026-01-28T15:00:00Z",
+          modelCount: 1,
+        },
+      });
+
+      vi.setSystemTime(new Date("2026-01-28T10:11:00Z"));
+
+      const account = manager.getCurrentOrNextForFamily("claude", null, "sticky", "antigravity", false, 90);
+      expect(account?.parts.refreshToken).toBe("r2");
+
+      vi.useRealTimers();
+    });
+
+    it("allows an over-threshold account back in after its resetTime has passed", () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-01-28T10:00:00Z"));
+
+      const stored: AccountStorageV4 = {
+        version: 4,
+        accounts: [
+          { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
+        ],
+        activeIndex: 0,
+      };
+
+      const manager = new AccountManager(undefined, stored);
+      manager.updateQuotaCache("r1", {
+        claude: {
+          remainingFraction: 0.05,
+          resetTime: "2026-01-28T10:05:00Z",
+          modelCount: 1,
+        },
+      });
+
+      vi.setSystemTime(new Date("2026-01-28T10:11:00Z"));
+
+      const account = manager.getCurrentOrNextForFamily("claude", null, "sticky", "antigravity", false, 90);
+      expect(account?.parts.refreshToken).toBe("r1");
+
+      vi.useRealTimers();
+    });
+
+    it("fails open when resetTime metadata is invalid even if the account is over threshold", () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-01-28T10:00:00Z"));
+
+      const stored: AccountStorageV4 = {
+        version: 4,
+        accounts: [
+          { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
+        ],
+        activeIndex: 0,
+      };
+
+      const manager = new AccountManager(undefined, stored);
+      const acc = manager.getAccounts()[0]!;
+      acc.cachedQuota = {
+        claude: {
+          remainingFraction: 0.05,
+          resetTime: "not-a-date",
+          modelCount: 1,
+        },
+      };
+      acc.cachedQuotaUpdatedAt = Date.parse("2026-01-28T09:00:00Z");
+
+      vi.setSystemTime(new Date("2026-01-28T10:11:00Z"));
+
+      const account = manager.getCurrentOrNextForFamily("claude", null, "sticky", "antigravity", false, 90);
+      expect(account?.parts.refreshToken).toBe("r1");
+
+      vi.useRealTimers();
+    });
+
     it("skips account over soft quota threshold in sticky mode", () => {
       const stored: AccountStorageV4 = {
         version: 4,
@@ -1765,6 +1855,36 @@ describe("AccountManager", () => {
 
       const account = manager.getCurrentOrNextForFamily("gemini", null, "hybrid", "antigravity", false, 90);
       expect(account).toBeNull();
+    });
+
+    it("hybrid selection skips a reset-locked account and returns an eligible one", () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-01-28T10:00:00Z"));
+
+      const stored: AccountStorageV4 = {
+        version: 4,
+        accounts: [
+          { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
+          { refreshToken: "r2", projectId: "p2", addedAt: 2, lastUsed: 0 },
+        ],
+        activeIndex: 0,
+      };
+
+      const manager = new AccountManager(undefined, stored);
+      manager.updateQuotaCache("r1", {
+        claude: {
+          remainingFraction: 0.05,
+          resetTime: "2026-01-28T15:00:00Z",
+          modelCount: 1,
+        },
+      });
+
+      vi.setSystemTime(new Date("2026-01-28T10:11:00Z"));
+
+      const account = manager.getCurrentOrNextForFamily("claude", null, "hybrid", "antigravity", false, 90);
+      expect(account?.parts.refreshToken).toBe("r2");
+
+      vi.useRealTimers();
     });
 
     it("skips account over threshold in round-robin mode", () => {
@@ -1859,6 +1979,35 @@ describe("AccountManager", () => {
   });
 
   describe("getMinWaitTimeForSoftQuota", () => {
+    it("returns wait time while every account stays reset-locked after cache expiry", () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-01-28T10:00:00Z"));
+
+      const stored: AccountStorageV4 = {
+        version: 4,
+        accounts: [
+          { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
+        ],
+        activeIndex: 0,
+      };
+
+      const manager = new AccountManager(undefined, stored);
+      manager.updateQuotaCache("r1", {
+        claude: {
+          remainingFraction: 0.05,
+          resetTime: "2026-01-28T15:00:00Z",
+          modelCount: 1,
+        },
+      });
+
+      vi.setSystemTime(new Date("2026-01-28T10:11:00Z"));
+
+      const waitMs = manager.getMinWaitTimeForSoftQuota("claude", 90, 10 * 60 * 1000);
+      expect(waitMs).toBe(4 * 60 * 60 * 1000 + 49 * 60 * 1000);
+
+      vi.useRealTimers();
+    });
+
     it("returns 0 when accounts are available (under threshold)", () => {
       const stored: AccountStorageV4 = {
         version: 4,

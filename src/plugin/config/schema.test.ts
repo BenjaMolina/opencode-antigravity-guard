@@ -3,16 +3,22 @@ import { describe, expect, it } from "vitest";
 
 import { AgySdkCloudProjectSchema, DEFAULT_CONFIG } from "./schema";
 
+function readGeneratedSchema(): {
+  properties?: Record<string, { type?: string; default?: unknown; description?: string }>;
+} {
+  const schemaPath = new URL("../../../assets/antigravity.schema.json", import.meta.url);
+  return JSON.parse(readFileSync(schemaPath, "utf8")) as {
+    properties?: Record<string, { type?: string; default?: unknown; description?: string }>;
+  };
+}
+
 describe("cli_first config", () => {
   it("includes cli_first default in DEFAULT_CONFIG", () => {
     expect(DEFAULT_CONFIG).toHaveProperty("cli_first", false);
   });
 
   it("documents cli_first in the JSON schema", () => {
-    const schemaPath = new URL("../../../assets/antigravity.schema.json", import.meta.url);
-    const schema = JSON.parse(readFileSync(schemaPath, "utf8")) as {
-      properties?: Record<string, { type?: string; default?: unknown; description?: string }>;
-    };
+    const schema = readGeneratedSchema();
 
     const cliFirst = schema.properties?.cli_first;
     expect(cliFirst).toBeDefined();
@@ -31,10 +37,7 @@ describe("claude_prompt_auto_caching config", () => {
   });
 
   it("documents claude_prompt_auto_caching in the JSON schema", () => {
-    const schemaPath = new URL("../../../assets/antigravity.schema.json", import.meta.url);
-    const schema = JSON.parse(readFileSync(schemaPath, "utf8")) as {
-      properties?: Record<string, { type?: string; default?: unknown; description?: string }>;
-    };
+    const schema = readGeneratedSchema();
 
     const claudePromptAutoCaching = schema.properties?.claude_prompt_auto_caching;
     expect(claudePromptAutoCaching).toBeDefined();
@@ -58,10 +61,7 @@ describe("agy_sdk config", () => {
   });
 
   it("documents agy_sdk in the JSON schema", () => {
-    const schemaPath = new URL("../../../assets/antigravity.schema.json", import.meta.url);
-    const schema = JSON.parse(readFileSync(schemaPath, "utf8")) as {
-      properties?: Record<string, { type?: string; default?: unknown; description?: string }>;
-    };
+    const schema = readGeneratedSchema();
 
     const agySdk = schema.properties?.agy_sdk;
     expect(agySdk).toBeDefined();
@@ -80,6 +80,23 @@ describe("model_discovery config", () => {
       enabled: true,
       gemini_api: true,
       antigravity: true,
+    });
+  });
+});
+
+describe("soft_quota_threshold_percent config", () => {
+  it("includes runtime default 70 in DEFAULT_CONFIG", () => {
+    expect(DEFAULT_CONFIG.soft_quota_threshold_percent).toBe(70);
+  });
+
+  it("documents schema default 70 in the JSON schema", () => {
+    const schema = readGeneratedSchema();
+    const threshold = schema.properties?.soft_quota_threshold_percent;
+
+    expect(threshold).toBeDefined();
+    expect(threshold).toMatchObject({
+      type: "number",
+      default: 70,
     });
   });
 });

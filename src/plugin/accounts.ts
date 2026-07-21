@@ -252,20 +252,32 @@ function isOverSoftQuotaThreshold(
 ): boolean {
   if (thresholdPercent >= 100) return false;
   if (!account.cachedQuota) return false;
-  
-  if (account.cachedQuotaUpdatedAt == null) return false;
-  const age = nowMs() - account.cachedQuotaUpdatedAt;
-  if (age > cacheTtlMs) return false;
-  
+
   const quotaGroup = resolveQuotaGroup(family, model);
-  
+
   const groupData = account.cachedQuota[quotaGroup];
   if (groupData?.remainingFraction == null) return false;
-  
+
   const remainingFraction = Math.max(0, Math.min(1, groupData.remainingFraction));
   const usedPercent = (1 - remainingFraction) * 100;
   const isOverThreshold = usedPercent >= thresholdPercent;
-  
+
+  if (!isOverThreshold) return false;
+
+  if (groupData.resetTime) {
+    const resetTimestamp = Date.parse(groupData.resetTime);
+    if (Number.isFinite(resetTimestamp) && resetTimestamp > nowMs()) {
+      const accountLabel = formatAccountLabel(account.email, account.index);
+      const message = `[SoftQuota] Skipping ${accountLabel}: ${quotaGroup} usage ${usedPercent.toFixed(1)}% >= threshold ${thresholdPercent}% (resets: ${groupData.resetTime})`;
+      debugLogToFile(message);
+      return true;
+    }
+  }
+
+  if (account.cachedQuotaUpdatedAt == null) return false;
+  const age = nowMs() - account.cachedQuotaUpdatedAt;
+  if (age > cacheTtlMs) return false;
+
   if (isOverThreshold) {
     const accountLabel = formatAccountLabel(account.email, account.index);
     const resetSuffix = groupData.resetTime ? ` (resets: ${groupData.resetTime})` : "";
@@ -273,7 +285,7 @@ function isOverSoftQuotaThreshold(
     debugLogToFile(message);
   }
   
-  return isOverThreshold;
+  return true;
 }
 
 export function computeSoftQuotaCacheTtlMs(
