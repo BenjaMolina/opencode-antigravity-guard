@@ -2128,8 +2128,10 @@ export const createAntigravityPlugin = (providerId: string) => async (
               // mid-request (this is the case that previously spun forever for
               // an Antigravity-only model whose antigravity pool is exhausted).
               if (accountCount > 0 && triedSwitchIndices.size >= accountCount) {
-                const exhaustedFallback = await tryAgySdkFallbackForRequest(input, init, config, agySdkCredentials, urlString);
-                if (exhaustedFallback) return exhaustedFallback;
+                if (config.soft_quota_allow_sdk_fallback) {
+                  const exhaustedFallback = await tryAgySdkFallbackForRequest(input, init, config, agySdkCredentials, urlString);
+                  if (exhaustedFallback) return exhaustedFallback;
+                }
                 if (lastFailure) {
                   return transformAntigravityResponse(
                     lastFailure.response,
@@ -2156,8 +2158,10 @@ export const createAntigravityPlugin = (providerId: string) => async (
                 const softQuotaWaitMs = accountManager.getMinWaitTimeForSoftQuota(family, threshold, softQuotaCacheTtlMs, model);
                 const maxWaitMs = (config.max_rate_limit_wait_seconds ?? 300) * 1000;
                 if (config.soft_quota_allow_sdk_fallback) {
-                  const response = await tryAgySdkFallbackForRequest(input, init, config, agySdkCredentials, urlString);
-                  if (response) return response;
+              if (config.soft_quota_allow_sdk_fallback) {
+                const response = await tryAgySdkFallbackForRequest(input, init, config, agySdkCredentials, urlString);
+                if (response) return response;
+              }
                 }
                 
                 if (softQuotaWaitMs === null || (maxWaitMs > 0 && softQuotaWaitMs > maxWaitMs)) {
