@@ -2203,3 +2203,67 @@ describe("resolveQuotaGroup", () => {
     });
   });
 
+  describe("needsActiveQuotaRefresh", () => {
+    it("returns true when cachedQuota or timestamp is missing", () => {
+      const stored: AccountStorageV4 = {
+        version: 4,
+        accounts: [{ refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 }],
+        activeIndex: 0,
+      };
+      const manager = new AccountManager(undefined, stored);
+      const acc = (manager as any).accounts[0];
+
+      expect(manager.needsActiveQuotaRefresh(acc, "claude", 70)).toBe(true);
+    });
+
+    it("returns true when cache age exceeds refresh TTL (2 min)", () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-01-28T10:00:00Z"));
+
+      const stored: AccountStorageV4 = {
+        version: 4,
+        accounts: [{ refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 }],
+        activeIndex: 0,
+      };
+      const manager = new AccountManager(undefined, stored);
+      manager.updateQuotaCache("r1", { claude: { remainingFraction: 0.50, modelCount: 1 } });
+
+      // Advance past 2-min refresh TTL (3 mins)
+      vi.setSystemTime(new Date("2026-01-28T10:03:00Z"));
+
+      const acc = (manager as any).accounts[0];
+      expect(manager.needsActiveQuotaRefresh(acc, "claude", 70, 120000, 10)).toBe(true);
+
+      vi.useRealTimers();
+    });
+
+    it("returns true when cached usage is in the near-threshold warning zone (e.g. 65% used for 70% threshold)", () => {
+      const stored: AccountStorageV4 = {
+        version: 4,
+        accounts: [{ refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 }],
+        activeIndex: 0,
+      };
+      const manager = new AccountManager(undefined, stored);
+      // 35% remaining fraction = 65% used -> inside 60%-70% warning zone for a 70% threshold
+      manager.updateQuotaCache("r1", { claude: { remainingFraction: 0.35, modelCount: 1 } });
+
+      const acc = (manager as any).accounts[0];
+      expect(manager.needsActiveQuotaRefresh(acc, "claude", 70, 120000, 10)).toBe(true);
+    });
+
+    it("returns false for healthy accounts with fresh cache (>40% remaining / <60% used)", () => {
+      const stored: AccountStorageV4 = {
+        version: 4,
+        accounts: [{ refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 }],
+        activeIndex: 0,
+      };
+      const manager = new AccountManager(undefined, stored);
+      // 50% remaining fraction = 50% used -> below 60% warning start
+      manager.updateQuotaCache("r1", { claude: { remainingFraction: 0.50, modelCount: 1 } });
+
+      const acc = (manager as any).accounts[0];
+      expect(manager.needsActiveQuotaRefresh(acc, "claude", 70, 120000, 10)).toBe(false);
+    });
+  });
+
+

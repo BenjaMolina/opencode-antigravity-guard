@@ -46,7 +46,8 @@ import { AccountManager, type ModelFamily, parseRateLimitReason, calculateBackof
 import { createAutoUpdateCheckerHook } from "./hooks/auto-update-checker";
 import { loadConfig, initRuntimeConfig, type AntigravityConfig } from "./plugin/config";
 import { createSessionRecoveryHook, getRecoverySuccessToast } from "./plugin/recovery";
-import { checkAccountsQuota, fetchAvailableModels, triggerAsyncQuotaRefreshForAll } from "./plugin/quota";
+import { checkAccountsQuota, fetchAvailableModels, triggerAsyncQuotaRefreshForAll, refreshSingleAccountQuota } from "./plugin/quota";
+
 import { initDiskSignatureCache } from "./plugin/cache";
 import { createProactiveRefreshQueue, type ProactiveRefreshQueue } from "./plugin/refresh-queue";
 import { initLogger, createLogger } from "./plugin/logger";
@@ -2229,9 +2230,25 @@ export const createAntigravityPlugin = (providerId: string) => async (
             // Account is available - reset the toast flag
             resetAllAccountsBlockedToasts();
 
+            // Near-Threshold & Stale Active Quota Check:
+            // If candidate account needs a fresh active quota fetch (stale cache > 2min or usage in near-threshold warning zone),
+            // perform targeted single-account refreshSingleAccountQuota before request execution.
+            if (accountManager.needsActiveQuotaRefresh(account, family, config.soft_quota_threshold_percent, 120000, 10, model)) {
+              pushDebug(`active-quota-refresh: refreshing candidate account idx=${account.index} email=${account.email ?? ""}`);
+              await refreshSingleAccountQuota(account, accountManager, client, providerId);
+
+              // After active refresh, re-verify if account is now over soft quota threshold
+              if (accountManager.isAccountOverSoftQuota(account, family, config.soft_quota_threshold_percent, softQuotaCacheTtlMs, model)) {
+                pushDebug(`active-quota-refresh: account idx=${account.index} is over soft quota threshold after refresh, skipping`);
+                triedSwitchIndices.add(account.index);
+                continue;
+              }
+            }
+
             pushDebug(
               `selected idx=${account.index} email=${account.email ?? ""} family=${family} accounts=${accountCount} strategy=${config.account_selection_strategy}`,
             );
+
             if (isDebugEnabled()) {
               logAccountContext("Selected", {
                 index: account.index,

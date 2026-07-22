@@ -8,6 +8,7 @@ import type { QuotaGroup, QuotaGroupSummary } from "./quota";
 import { getModelFamily } from "./transform/model-resolver";
 import { debugLogToFile } from "./debug";
 import { formatAccountLabel } from "./logging-utils";
+import { DEFAULT_SOFT_QUOTA_REFRESH_TTL_MS, DEFAULT_SOFT_QUOTA_NEAR_THRESHOLD_MARGIN } from "../constants";
 
 
 export type { ModelFamily, HeaderStyle, CooldownReason } from "./storage";
@@ -297,6 +298,56 @@ function isOverSoftQuotaThreshold(
   debugLogToFile(message);
   return true;
 }
+
+/**
+ * Evaluates whether an account candidate needs an active quota refresh before handling a request.
+ * An active check (0-token fetchAvailableModels call) is triggered if:
+ * 1. The account is enabled and has no quota cache or missing timestamp.
+ * 2. The quota cache age exceeds refreshTtlMs (default: 2 min / 120,000 ms).
+ * 3. The account's cached usage falls into the near-threshold warning zone
+ *    (e.g., between 60% and 70% usage when soft threshold is 70%).
+ */
+export function needsActiveQuotaRefresh(
+  account: ManagedAccount,
+  family: ModelFamily,
+  thresholdPercent: number,
+  refreshTtlMs: number = DEFAULT_SOFT_QUOTA_REFRESH_TTL_MS,
+  nearThresholdMargin: number = DEFAULT_SOFT_QUOTA_NEAR_THRESHOLD_MARGIN,
+  model?: string | null
+): boolean {
+  if (account.enabled === false) return false;
+  if (thresholdPercent >= 100) return false;
+
+  // Missing cache or timestamp -> requires active check
+  if (!account.cachedQuota || account.cachedQuotaUpdatedAt == null) {
+    return true;
+  }
+
+  // Stale cache beyond refresh TTL -> requires active check
+  const age = nowMs() - account.cachedQuotaUpdatedAt;
+  if (age > refreshTtlMs) {
+    return true;
+  }
+
+  const quotaGroup = resolveQuotaGroup(family, model);
+  const groupData = account.cachedQuota[quotaGroup];
+  if (groupData?.remainingFraction == null) {
+    return true;
+  }
+
+  const remainingFraction = Math.max(0, Math.min(1, groupData.remainingFraction));
+  const usedPercent = (1 - remainingFraction) * 100;
+
+  // Near-threshold warning zone check:
+  // e.g. If threshold is 70% and margin is 10%, warning zone is 60% <= usedPercent < 70%
+  const warningStartPercent = Math.max(0, thresholdPercent - nearThresholdMargin);
+  if (usedPercent >= warningStartPercent && usedPercent < thresholdPercent) {
+    return true;
+  }
+
+  return false;
+}
+
 
 export function computeSoftQuotaCacheTtlMs(
   ttlConfig: "auto" | number,
@@ -1237,6 +1288,18 @@ export class AccountManager {
   isAccountOverSoftQuota(account: ManagedAccount, family: ModelFamily, thresholdPercent: number, cacheTtlMs: number, model?: string | null): boolean {
     return isOverSoftQuotaThreshold(account, family, thresholdPercent, cacheTtlMs, model);
   }
+
+  needsActiveQuotaRefresh(
+    account: ManagedAccount,
+    family: ModelFamily,
+    thresholdPercent: number,
+    refreshTtlMs?: number,
+    nearThresholdMargin?: number,
+    model?: string | null
+  ): boolean {
+    return needsActiveQuotaRefresh(account, family, thresholdPercent, refreshTtlMs, nearThresholdMargin, model);
+  }
+
 
   getAccountsForQuotaCheck(): AccountMetadataV3[] {
     return this.accounts.map((a) => ({

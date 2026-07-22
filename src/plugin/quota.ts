@@ -10,7 +10,8 @@ import { refreshAccessToken } from "./token";
 import { getModelFamily } from "./transform/model-resolver";
 import type { PluginClient, OAuthAuthDetails } from "./types";
 import type { AccountMetadataV3 } from "./storage";
-import type { AccountManager } from "./accounts";
+import type { AccountManager, ManagedAccount } from "./accounts";
+
 
 const FETCH_TIMEOUT_MS = 10000;
 const POOL_REFRESH_COOLDOWN_MS = 60000; // 1 minute
@@ -421,6 +422,40 @@ export async function triggerAsyncQuotaRefreshForAll(
   }
 }
 
+/**
+ * Actively refreshes quota for a single candidate account before request dispatch.
+ * Updates the accountManager's cached quota on success.
+ */
+export async function refreshSingleAccountQuota(
+  account: ManagedAccount,
+  accountManager: AccountManager,
+  client: PluginClient,
+  providerId: string
+): Promise<boolean> {
+  try {
+    const meta: AccountMetadataV3 = {
+      email: account.email,
+      refreshToken: account.parts.refreshToken,
+      projectId: account.parts.projectId,
+      managedProjectId: account.parts.managedProjectId,
+      addedAt: account.addedAt,
+      lastUsed: account.lastUsed,
+      enabled: account.enabled,
+    };
+    const results = await checkAccountsQuota([meta], client, providerId);
+    const res = results[0];
+    if (res && res.status === "ok" && res.quota && res.refreshToken) {
+      accountManager.updateQuotaCache(res.refreshToken, res.quota.groups);
+      return true;
+    }
+    return false;
+  } catch (error) {
+    console.warn("[ActiveQuota] Single account active refresh failed", error);
+    return false;
+  }
+}
+
 export const __testExports = {
   aggregateQuota,
 };
+

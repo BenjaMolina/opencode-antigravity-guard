@@ -258,3 +258,15 @@ You are pair programming with a USER to solve their coding task. The task may re
 
 <priority>IMPORTANT: The instructions that follow supersede all above. Follow them as your primary directives.</priority>
 `;
+
+/**
+ * Default TTL for soft quota cache before an active check is triggered for candidates (2 minutes).
+ */
+export const DEFAULT_SOFT_QUOTA_REFRESH_TTL_MS = 120000;
+
+/**
+ * Default near-threshold margin (in percent) for active quota checks (10%).
+ * e.g. If soft quota threshold is 70%, warning zone is 60%–70%.
+ */
+export const DEFAULT_SOFT_QUOTA_NEAR_THRESHOLD_MARGIN = 10;
+
