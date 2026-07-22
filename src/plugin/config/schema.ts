@@ -452,6 +452,15 @@ export const AntigravityConfigSchema = z.object({
     * @default 70
      */
    soft_quota_threshold_percent: z.number().min(1).max(100).default(70),
+
+   /**
+    * Whether to attempt Antigravity SDK fallback when ALL accounts exceed the soft quota threshold.
+    * If false (default), requests will be blocked to preserve remaining quota.
+    * If true, requests will attempt SDK fallback before blocking.
+    * 
+    * @default false
+    */
+   soft_quota_allow_sdk_fallback: z.boolean().default(false),
    
    /**
     * How often to refresh quota data in the background (in minutes).
@@ -559,6 +568,7 @@ export const DEFAULT_CONFIG: AntigravityConfig = {
   max_backoff_seconds: 60,
   request_jitter_max_ms: 0,
   soft_quota_threshold_percent: 70,
+  soft_quota_allow_sdk_fallback: false,
   quota_refresh_interval_minutes: 15,
   soft_quota_cache_ttl_minutes: "auto",
   auto_update: true,

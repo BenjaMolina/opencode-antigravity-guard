@@ -2155,8 +2155,10 @@ export const createAntigravityPlugin = (providerId: string) => async (
                 const threshold = config.soft_quota_threshold_percent;
                 const softQuotaWaitMs = accountManager.getMinWaitTimeForSoftQuota(family, threshold, softQuotaCacheTtlMs, model);
                 const maxWaitMs = (config.max_rate_limit_wait_seconds ?? 300) * 1000;
-                const response = await tryAgySdkFallbackForRequest(input, init, config, agySdkCredentials, urlString);
-                if (response) return response;
+                if (config.soft_quota_allow_sdk_fallback) {
+                  const response = await tryAgySdkFallbackForRequest(input, init, config, agySdkCredentials, urlString);
+                  if (response) return response;
+                }
                 
                 if (softQuotaWaitMs === null || (maxWaitMs > 0 && softQuotaWaitMs > maxWaitMs)) {
                   const waitTimeFormatted = softQuotaWaitMs ? formatWaitTime(softQuotaWaitMs) : "unknown";
