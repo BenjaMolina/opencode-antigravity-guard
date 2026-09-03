@@ -244,6 +244,7 @@ const PUBLIC_GEMINI_API_MODEL_SUGGESTIONS = [
   "gemini-3.1-flash-lite",
   "gemini-3.5-flash",
   "gemini-3.7-flash",
+  "gemini-3.8-flash",
 ] as const;
 
 /**

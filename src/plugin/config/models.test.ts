@@ -28,6 +28,8 @@ describe("OPENCODE_MODEL_DEFINITIONS", () => {
       "antigravity-gemini-3.6-flash-tiered",
       "antigravity-gemini-3.7-flash",
       "antigravity-gemini-3.7-flash-tiered",
+      "antigravity-gemini-3.8-flash",
+      "antigravity-gemini-3.8-flash-tiered",
       "gemini-2.5-flash",
       "gemini-2.5-pro",
       "gemini-3-flash-preview",
@@ -36,6 +38,7 @@ describe("OPENCODE_MODEL_DEFINITIONS", () => {
       "gemini-3.1-pro-preview-customtools",
       "gemini-3.5-flash",
       "gemini-3.7-flash",
+      "gemini-3.8-flash",
     ]);
   });
 
@@ -58,6 +61,13 @@ describe("OPENCODE_MODEL_DEFINITIONS", () => {
     });
 
     expect(getModel("antigravity-gemini-3.5-flash").variants).toEqual({
+      minimal: { thinkingLevel: "minimal" },
+      low: { thinkingLevel: "low" },
+      medium: { thinkingLevel: "medium" },
+      high: { thinkingLevel: "high" },
+    });
+
+    expect(getModel("antigravity-gemini-3.8-flash").variants).toEqual({
       minimal: { thinkingLevel: "minimal" },
       low: { thinkingLevel: "low" },
       medium: { thinkingLevel: "medium" },
