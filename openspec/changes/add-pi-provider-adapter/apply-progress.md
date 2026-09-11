@@ -157,3 +157,92 @@ The Pi workspace is intentionally a metadata/distribution skeleton in this unit:
 - [ ] Implement immutable text-only context serialization with explicit unsupported-content errors and a bounded incremental UTF-8 SSE framer that preserves records across arbitrary byte boundaries. <!-- sdd-owner: implementation -->
 - [ ] Implement the fixed-origin Antigravity HTTP/SSE consumer that validates response/usage semantics and emits ordered Pi partial text events with exactly one success, error, or aborted terminal outcome. <!-- sdd-owner: implementation -->
 - [ ] Register exactly `antigravity-guard` with one public model `antigravity-gemini-3.8-flash`, wire it to `gemini-3.8-flash`, connect the completed OAuth and stream behaviors, prove package discovery from a packed consumer, and document the text-only operating limits. <!-- sdd-owner: implementation -->
+
+## Work unit C — blocked before completion
+
+- Runtime authority consumed: `C-pi-auth-http-project`, `feature-branch-chain` child of B, repo-local root only; no commit, push, PR, publish, or C–H work occurred.
+- Strict-TDD probes used new Pi-local tests only. RED: `npx vitest run packages/pi/src/auth-http.test.ts` exited 1 because `auth-http.ts` did not exist; `npx vitest run packages/pi/src/project.test.ts` exited 1 because `project.ts` did not exist. GREEN probes then passed (4 and 3 tests respectively), and `npx tsc -p packages/pi/tsconfig.json --noEmit` exited 0.
+- The minimal in-progress source/tests already measured 372 added lines before required triage cases (rotated tokens, bounded oversized bodies, in-flight body abort, redirect rejection, malformed project shapes, and canary-redaction assertions) and before mandatory cumulative evidence. Completing the specified behavior honestly would exceed the explicit 400-line maximum, so the temporary uncommitted files were removed and no task checkbox was changed.
+- Runtime harness: N/A; C is injected-fetch/clock unit coverage only, and live external requests are unauthorized. Rollback: none required because temporary C files were removed.
+- Remaining C task is unchanged and unchecked: `- [ ] Add Pi-local, abort-aware OAuth exchange/refresh and per-access-token project resolution that validate responses, redact diagnostics, and return neutral/Pi credential data without accessing OpenCode account state. <!-- sdd-owner: implementation -->`
+
+## Work unit C1 — Pi token exchange and refresh HTTP
+
+- Runtime authority consumed: `C1-pi-token-http`; parent retains its token. The supplied hybrid repo-local status selected `add-pi-provider-adapter`, `applyState: ready`, and `2/9` complete. The only edit root is `C:\Github\Ordico\opencode-antigravity-guard`; no action-context warnings were supplied.
+- Completed and persisted: C1's implementation-owned checkbox is `[x]` in `tasks.md`; C2/D1–H, commits, pushes, PRs, publication, project lookup, persistence, OpenCode imports, filesystem access, and live requests remain out of scope.
+- Files changed: `packages/pi/src/auth-http.ts`, `packages/pi/src/auth-http.test.ts`, `packages/pi/src/types.ts`, plus this progress artifact and C1 checkbox.
+- C1 uses core OAuth forms/config and expiry only, injected fetch/clock, `redirect: "error"`, a ten-second/remaining-deadline signal, 64-KiB body bound, opaque allowlisted errors, and exact `{ refresh, access, expires }` credentials. Refresh retains the old refresh token unless the response rotates it.
+
+### TDD Cycle Evidence — C1 remediation
+
+| Stage | Command | Exit | Evidence |
+|---|---|---:|---|
+| RED | `npx vitest run packages/pi/src/auth-http.test.ts` | 1 | New exchange behavior could not load because `auth-http.ts` did not exist. |
+| GREEN | `npx vitest run packages/pi/src/auth-http.test.ts` | 0 | Minimal exchange implementation passed 1 test. |
+| TRIANGULATE | same focused command | 1 then 0 | New invalid-grant, transport, blank-token, and malformed-500 boundary tests each failed before their safe handling was added; final focused suite passed 11 tests. |
+| REFACTOR | `npx vitest run packages/pi/src/auth-http.test.ts` | 0 | Renamed the non-throwing JSON helper to clarify its safe HTTP-error path; 11 tests passed. |
+
+## Verification and failed-evidence remediation
+
+- Distinct replacement for failed evidence `sha256:80e925562b95051e2fec52016dfc219d20f0fd60226b7772b5267721d3ece35c`: `npx vitest run packages/pi/src/auth-http.test.ts` exited 0 with 1 file / 11 tests, and `npm test` exited 0 with 45 files / 1,130 passed / 25 todo. This is C1-only evidence rather than the former incomplete combined C probe.
+- `npm run build --workspace=@benjamolina/antigravity-guard-core` — exit 0.
+- `npx tsc -p packages/pi/tsconfig.json --noEmit` — exit 0; `npm run typecheck --workspace=@benjamolina/pi-antigravity-guard` — exit 0 (the current workspace script is a no-op, so the direct `tsc` command is the substantive Pi typecheck).
+- `git diff --check -- packages/pi/src/auth-http.ts packages/pi/src/auth-http.test.ts packages/pi/src/types.ts` — exit 0.
+- Runtime harness: N/A. C1 is a deterministic injected-fetch/clock boundary; live OAuth is unauthorized.
+- Review boundary: feature-branch-chain child C1 of B. New implementation/test/type lines are 315 additions, below 400; artifact evidence is tracked separately and no `size:exception` is needed.
+- Rollback boundary: remove only C1's auth HTTP, its focused tests, and C1-specific credential/dependency types; retain A/B and unrelated dirty files.
+
+## Remaining implementation tasks
+
+- [ ] Add Pi-local, abort-aware `loadCodeAssist` project resolution that sends exact Antigravity metadata and headers for each access token, accepts only supported project shapes, and redacts failures. <!-- sdd-owner: implementation -->
+- [ ] Implement a single-attempt callback receiver that binds `127.0.0.1:51121`, validates one complete callback URL and state, offers safe manual fallback conditions, and closes every owned resource on all terminal paths. <!-- sdd-owner: implementation -->
+- [ ] Compose browser/loopback and manual callback-URL login, token/project completion, refresh, cancellation, single-attempt coordination, and Pi credential mapping through Pi’s OAuth lifecycle only. <!-- sdd-owner: implementation -->
+- [ ] Implement immutable text-only context serialization with explicit unsupported-content errors and a bounded incremental UTF-8 SSE framer that preserves records across arbitrary byte boundaries. <!-- sdd-owner: implementation -->
+- [ ] Implement the fixed-origin Antigravity HTTP/SSE consumer that validates response/usage semantics and emits ordered Pi partial text events with exactly one success, error, or aborted terminal outcome. <!-- sdd-owner: implementation -->
+- [ ] Register exactly `antigravity-guard` with one public model `antigravity-gemini-3.8-flash`, wire it to `gemini-3.8-flash`, connect the completed OAuth and stream behaviors, prove package discovery from a packed consumer, and document the text-only operating limits. <!-- sdd-owner: implementation -->
+
+## Authorized C1 correction -- token HTTP
+
+- Runtime authority: `C1-token-http-corrections`, native acquire `proceed`; parent retains the token. The supplied correction authority resolves `add-pi-provider-adapter` despite the stale ambiguous status, with repo-local action context and `C:\Github\Ordico\opencode-antigravity-guard` as the only edit root; no warnings.
+- Scope remained `packages/pi/src/auth-http.ts`, `packages/pi/src/auth-http.test.ts`, and this progress artifact. C1 remains visibly checked in `tasks.md`; C2/D1-H, commits, pushes, PRs, publishing, and live OAuth calls remain out of scope.
+- Cleanup now initiates and rejection-handles `reader.cancel()` without awaiting it, so abort/error settlement cannot hang. Non-aborted body-reader failures are classified as opaque transport errors.
+- A present `refresh_token` must be a nonblank string; only an absent field preserves the prior token. Calculated expiry must be finite before Pi credentials are returned.
+
+### TDD Cycle Evidence -- C1 correction
+
+| Stage | Command | Exit | Evidence |
+|---|---|---:|---|
+| Safety net | `npx vitest run packages/pi/src/auth-http.test.ts` | 0 | 1 file / 11 tests passed before correction. |
+| RED | same focused command | 1 | 19 tests ran: 12 passed and 7 failed as expected for hanging cancellation, four malformed rotations, expiry overflow, and non-aborted body transport failure. |
+| GREEN | same focused command | 0 | 1 file / 19 tests passed after the minimum cleanup, validation, expiry, and error-classification changes. |
+| TRIANGULATE | same focused command | 0 | Four malformed rotation shapes, absent-rotation preservation, overflow, hanging cancellation, body transport failure, and expired remaining-deadline cases passed. |
+| REFACTOR | same focused command | 0 | 1 file / 19 tests passed; no further refactor was justified beyond the minimal correction. |
+
+## Correction verification, workload, and rollback
+
+- `npm run build --workspace=@benjamolina/antigravity-guard-core` -- exit 0.
+- `npx tsc -p packages/pi/tsconfig.json --noEmit` -- exit 0.
+- `npm test` -- exit 0; 45 files / 1,138 passed / 25 todo. Expected existing Gemini invalid-aspect-ratio diagnostics appeared on stderr without failures.
+- Runtime harness: N/A; deterministic injected fetch/clock and `ReadableStream` fixtures cover this HTTP boundary without authorized external requests.
+- The prior C1 snapshot was 315 code/test/type lines; the current C1 snapshot is 389, a 74-line correction delta. This 26-line evidence appendix makes the exact correction delta 100 lines. The maintainer explicitly authorized a C1 `size:exception` up to 500 lines; 389 remains within that boundary and 100 remains below the 150-line correction limit.
+- Rollback boundary: revert only the nonblocking cancellation/error branch, refresh/expiry validation, and their new C1 tests; retain original C1 behavior, A/B, and unrelated dirty files.
+
+## C1 timeout-test correction
+
+- Added a pending-fetch regression with `deadlineMs: 1_010` from `now: 1_000`; it races a 100-ms watchdog and requires the allowlisted `aborted` settlement.
+
+### TDD Cycle Evidence
+
+| Stage | Command | Exit | Evidence |
+|---|---|---:|---|
+| Safety net | `npx vitest run packages/pi/src/auth-http.test.ts` | 0 | 19 tests passed before the correction. |
+| RED | same focused command | 0 | The new test passed immediately, proving existing production timeout behavior; no production change was necessary. |
+| GREEN | N/A | N/A | No production code was changed. |
+| TRIANGULATE / REFACTOR | same focused command | 0 | Positive pending deadline and existing already-expired boundary both pass; 20 tests total. |
+
+## Verification
+
+- `npx vitest run packages/pi/src/auth-http.test.ts` -- exit 0; 1 file / 20 tests.
+- `npx tsc -p packages/pi/tsconfig.json --noEmit` -- exit 0.
+- C1 inclusive count: 451 + 17 test lines + 20 evidence lines = 488, within the authorized inclusive cap of 500; correction is 37/60 lines.
+- Rollback boundary: remove only the positive-deadline pending-fetch regression and this evidence appendix.

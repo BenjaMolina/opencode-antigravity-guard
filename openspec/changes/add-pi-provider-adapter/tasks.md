@@ -4,19 +4,19 @@
 
 | Field | Value |
 |-------|-------|
-| Estimated changed lines | 2,060–2,910 authored lines across eight behavior units; lockfile churn tracked separately |
+| Estimated changed lines | 2,190–3,140 authored lines across nine behavior units; lockfile churn tracked separately |
 | 400-line budget risk | High |
 | Chained PRs recommended | Yes |
-| Suggested split | Candidate work units A → B → C → D1 → E → F → G → H; final PR/branch arrangement awaits human choice |
-| Delivery strategy | ask-on-risk |
-| Chain strategy | pending |
+| Suggested split | Feature-branch chain: A → B → C1 → C2 → D1 → E → F → G → H; C1/C2 are the selected cohesive split of former C |
+| Delivery strategy | ask-on-risk (decision recorded) |
+| Chain strategy | feature-branch-chain |
 
-Decision needed before apply: Yes
+Decision needed before apply: No
 Chained PRs recommended: Yes
-Chain strategy: pending
+Chain strategy: feature-branch-chain
 400-line budget risk: High
 
-The forecast exceeds the 400 changed-line review budget even though each autonomous unit is planned below that threshold. Under `ask-on-risk`, pause after these tasks are accepted and obtain a human delivery decision before apply. This plan does not select `stacked-to-main`, `feature-branch-chain`, a single oversized PR, or `size:exception`.
+The forecast exceeds the 400 changed-line review budget even though every autonomous unit is planned at or below that threshold. The maintainer selected the cohesive C1/C2 split under `ask-on-risk`; implement through the selected feature-branch chain. This plan does not authorize or require a `size:exception`.
 
 ## Guardrails and evidence protocol
 
@@ -32,11 +32,12 @@ The forecast exceeds the 400 changed-line review budget even though each autonom
 |------|------------|----------------------:|-------------------|-------------------|
 | A — workspace/distribution foundation | None | 250–350 | Root, core, and Pi package topology can build/test/pack without source-path runtime imports | Workspace manifests, tsconfigs, test/build scripts, pack harness, and lockfile wiring |
 | B — neutral-core extraction | A | 280–380 | OpenCode consumes equivalent pure OAuth/header/expiry primitives through core | Core primitives plus the four named OpenCode wrapper seams |
-| C — Pi auth HTTP/project operations | A | 260–360 | Pi can safely exchange/refresh tokens and resolve a project without OpenCode storage | `packages/pi/src/auth-http.ts`, `project.ts`, and their tests |
+| C1 — Pi token exchange/refresh HTTP | A | 190–290 | Pi safely exchanges and refreshes tokens without OpenCode storage | `packages/pi/src/auth-http.ts` and its tests |
+| C2 — Pi project-resolution HTTP | A | 200–300 | Pi resolves a project per access token with exact metadata/headers and no persistence | `packages/pi/src/project.ts` and its tests |
 | D1 — secure loopback receiver | A | 260–360 | A bounded loopback/manual callback receiver validates and cleans up one OAuth attempt | `packages/pi/src/loopback.ts` and its tests |
-| E — Pi OAuth lifecycle | C, D1 | 260–350 | Pi login/refresh lifecycle maps isolated credentials and settles cancellation safely | `packages/pi/src/oauth.ts` and its tests |
+| E — Pi OAuth lifecycle | C1, C2, D1 | 260–350 | Pi login/refresh lifecycle maps isolated credentials and settles cancellation safely | `packages/pi/src/oauth.ts` and its tests |
 | F — text context and byte framing | A | 230–330 | Supported text is serialized exactly and SSE bytes are framed safely | `packages/pi/src/context.ts`, `sse.ts`, and their tests |
-| G — response validation and native stream | C, F | 300–400 | Validated Antigravity SSE becomes one correctly finalized Pi text stream | `packages/pi/src/response.ts`, `stream.ts`, and their tests |
+| G — response validation and native stream | C2, F | 300–400 | Validated Antigravity SSE becomes one correctly finalized Pi text stream | `packages/pi/src/response.ts`, `stream.ts`, and their tests |
 | H — discoverable vertical slice/docs | E, G | 220–380 | Pi registers exactly one model and packed consumers can load the documented text-only provider | `packages/pi/src/provider.ts`, `extension.ts`, package/docs, and acceptance fixtures |
 
 ## A — Establish workspace and packed-distribution foundation
@@ -61,16 +62,27 @@ Depends on A. Allowed edit surfaces: `packages/core/src/{oauth.ts,constants.ts,h
   - **TRIANGULATE:** compare multiple PKCE/state inputs, refresh-token inputs, platform/version header variants, and expiry boundaries against root characterization fixtures; assert core has no Pi/OpenCode SDK, filesystem, persistence, account, quota, or recovery imports.
   - **REFACTOR/verify:** run `npx vitest run packages/core/src/oauth.test.ts packages/core/src/headers.test.ts packages/core/src/expiry.test.ts src/antigravity/oauth.test.ts src/plugin/token.test.ts src/plugin/auth.test.ts`, then `npm run typecheck` and `npm test`; record exact results. Roll back core plus only the four named root seams as one unit.
 
-## C — Implement Pi-local token and project HTTP domain operations
+## C1 — Implement Pi-local token exchange and refresh HTTP
 
-Depends on A. Allowed edit surfaces: `packages/pi/src/{auth-http.ts,project.ts,auth-http.test.ts,project.test.ts,types.ts}` and `packages/pi/package.json` only if a Pi-local runtime dependency is proven necessary. Use only core forms/constants/headers and injected fetch/clock; do not import `src/plugin/*`, read files, or add credential persistence.
+Depends on A. Allowed edit surfaces: `packages/pi/src/{auth-http.ts,auth-http.test.ts,types.ts}` and Pi-local HTTP test helpers under `packages/pi/src/test/`; `packages/pi/package.json` only if a Pi-local runtime dependency is proven necessary. Use only core OAuth forms/expiry and injected fetch/clock; do not import `src/plugin/*`, read files, resolve projects, or add credential persistence.
 
-- [ ] Add Pi-local, abort-aware OAuth exchange/refresh and per-access-token project resolution that validate responses, redact diagnostics, and return neutral/Pi credential data without accessing OpenCode account state. <!-- sdd-owner: implementation -->
+- [x] Add Pi-local, abort-aware OAuth code-exchange and refresh operations that validate token responses, preserve refresh semantics, and redact all diagnostics without accessing OpenCode account state. <!-- sdd-owner: implementation -->
 
-  - **RED:** use mocked fetch/clock tests for token success, missing fields, non-finite expiry, rotated and absent refresh tokens, `invalid_grant`, bounded error bodies containing canary secrets, abort before/during fetch, required project response shapes, and no project-cache cross-token reuse.
-  - **GREEN:** implement ten-second/remaining-attempt bounded HTTP calls, core form use, safe error kinds/status messages, refresh-token preservation, exact Pi mapping `{ refresh, access, expires }`, and `loadCodeAssist` project lookup with fixed metadata/headers and accepted project shapes only.
-  - **TRIANGULATE:** assert exact request URL/form/headers for exchange, refresh, and both Windows/non-Windows project metadata; test malformed JSON, response/body aborts, redirects, missing project, and every canary’s absence from errors/loggable outputs.
-  - **REFACTOR/verify:** run `npx vitest run packages/pi/src/auth-http.test.ts packages/pi/src/project.test.ts` after `npm run build --workspace=@benjamolina/antigravity-guard-core`, then workspace typecheck and `npm test`; record exact results. Roll back only C’s Pi-local HTTP/project files.
+  - **RED:** use mocked fetch/clock tests for code exchange and refresh success, missing access/refresh fields, non-finite or nonpositive expiry, rotated and absent refresh tokens, `invalid_grant`, bounded error bodies containing canary secrets, and abort before/during fetch or body read.
+  - **GREEN:** implement ten-second/remaining-attempt bounded token calls using core forms/expiry, redirect-error handling, safe allowlisted error kinds/status messages, exact Pi credential mapping `{ refresh, access, expires }`, and prior-refresh preservation when rotation is absent.
+  - **TRIANGULATE:** assert exact token endpoint/forms/redirect URI for exchange and refresh; test malformed JSON, redirect responses, HTTP/body aborts, transport failures, and every canary’s absence from errors/loggable outputs.
+  - **REFACTOR/verify:** run `npx vitest run packages/pi/src/auth-http.test.ts` after `npm run build --workspace=@benjamolina/antigravity-guard-core`, then the Pi workspace typecheck and `npm test`; record exact results. Roll back only C1’s auth HTTP, types limited to its contract, and HTTP test-helper files.
+
+## C2 — Implement Pi-local per-access-token project resolution
+
+Depends on A. Allowed edit surfaces: `packages/pi/src/{project.ts,project.test.ts,types.ts}` and Pi-local HTTP test helpers under `packages/pi/src/test/`. Use only core endpoint/header primitives and injected fetch/clock; do not import `src/plugin/*`, invoke C1, read files, cache project results, or add credential persistence.
+
+- [ ] Add Pi-local, abort-aware `loadCodeAssist` project resolution that sends exact Antigravity metadata and headers for each access token, accepts only supported project shapes, and redacts failures. <!-- sdd-owner: implementation -->
+
+  - **RED:** use mocked fetch/clock tests for accepted nonempty `cloudaicompanionProject` string and `.id` shapes, missing/empty/invalid projects, per-access-token isolation with no cache reuse, bounded error bodies with canary secrets, and abort before/during fetch or body read.
+  - **GREEN:** implement ten-second/remaining-attempt bounded `POST https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist` calls with fixed Antigravity metadata, deterministic Gemini CLI/Antigravity headers, redirect-error handling, safe allowlisted error kinds/status messages, and no persisted project data.
+  - **TRIANGULATE:** assert exact URL/body/headers for Windows and non-Windows platform mapping; test malformed JSON, redirects, 401/403 guidance, HTTP/body aborts, transport failures, and every canary’s absence from errors/loggable outputs.
+  - **REFACTOR/verify:** run `npx vitest run packages/pi/src/project.test.ts` after `npm run build --workspace=@benjamolina/antigravity-guard-core`, then the Pi workspace typecheck and `npm test`; record exact results. Roll back only C2’s project resolver, types limited to its contract, and HTTP test-helper files.
 
 ## D1 — Build the bounded, loopback-only OAuth callback receiver
 
@@ -85,14 +97,14 @@ Depends on A. Allowed edit surfaces: `packages/pi/src/{loopback.ts,loopback.test
 
 ## E — Compose the Pi OAuth lifecycle and isolated credentials
 
-Depends on C and D1. Allowed edit surfaces: `packages/pi/src/{oauth.ts,oauth.test.ts,types.ts}` and Pi-local test helpers. It may call C/D1/core only; it must not modify or read `src/plugin/accounts.ts`, `storage.ts`, `refresh-queue.ts`, or any OpenCode credential file.
+Depends on C1, C2, and D1. Allowed edit surfaces: `packages/pi/src/{oauth.ts,oauth.test.ts,types.ts}` and Pi-local test helpers. It may call C1/C2/D1/core only; it must not modify or read `src/plugin/accounts.ts`, `storage.ts`, `refresh-queue.ts`, or any OpenCode credential file.
 
 - [ ] Compose browser/loopback and manual callback-URL login, token/project completion, refresh, cancellation, single-attempt coordination, and Pi credential mapping through Pi’s OAuth lifecycle only. <!-- sdd-owner: implementation -->
 
   - **RED:** add deferred-callback/clock tests for browser versus manual selection, empty/rejected prompt, listener failure and expiry fallback, concurrent login busy response, cancellation at every lifecycle phase, late prompt/callback races, denied/invalid state without exchange, and no secret-bearing diagnostic.
-  - **GREEN:** create independent random state/verifier/challenge per attempt, retain verifier only in attempt memory, call `onAuth` only with the authorization URL, use full callback-URL manual input, compose signals/deadlines, invoke C/D1 operations, resolve project before returning credentials, and make shared terminal cleanup idempotent.
+  - **GREEN:** create independent random state/verifier/challenge per attempt, retain verifier only in attempt memory, call `onAuth` only with the authorization URL, use full callback-URL manual input, compose signals/deadlines, invoke C1/C2/D1 operations, resolve project before returning credentials, and make shared terminal cleanup idempotent.
   - **TRIANGULATE:** exercise automatic-to-manual fallback without regenerating state/verifier, refresh with Pi’s abort signal, absent refresh rotation, successful and failed project resolution, and an installed-Pi login UI fixture that proves cancellation tears down prompts/listeners without browser or account access.
-  - **REFACTOR/verify:** run `npx vitest run packages/pi/src/oauth.test.ts` plus the Pi OAuth compatibility fixture and workspace typecheck; record exact results. Roll back only E’s lifecycle/test files, leaving C/D1 independently testable.
+  - **REFACTOR/verify:** run `npx vitest run packages/pi/src/oauth.test.ts` plus the Pi OAuth compatibility fixture and workspace typecheck; record exact results. Roll back only E’s lifecycle/test files, leaving C1/C2/D1 independently testable.
 
 ## F — Serialize text-only context and frame SSE bytes
 
@@ -107,14 +119,14 @@ Depends on A. Allowed edit surfaces: `packages/pi/src/{context.ts,context.test.t
 
 ## G — Validate response semantics and emit one Pi-native stream terminal
 
-Depends on C and F. Allowed edit surfaces: `packages/pi/src/{response.ts,response.test.ts,stream.ts,stream.test.ts,types.ts}` and Pi-local stream fixtures. Do not import OpenCode response transformers, add retries/fallback, write responses to disk, or change quota/account/recovery modules.
+Depends on C2 and F. Allowed edit surfaces: `packages/pi/src/{response.ts,response.test.ts,stream.ts,stream.test.ts,types.ts}` and Pi-local stream fixtures. G consumes the access credential supplied by Pi’s stream boundary and therefore does not directly depend on C1; C1 remains transitively required by E/H to obtain or refresh that credential. Do not import OpenCode response transformers, add retries/fallback, write responses to disk, or change quota/account/recovery modules.
 
 - [ ] Implement the fixed-origin Antigravity HTTP/SSE consumer that validates response/usage semantics and emits ordered Pi partial text events with exactly one success, error, or aborted terminal outcome. <!-- sdd-owner: implementation -->
 
   - **RED:** use fake-fetch `Response` fixtures consumed through the real Pi event stream to fail on start/order/mutable-partial-state contract errors, public-versus-wire model misuse, invalid options/hooks/headers, non-SSE or non-2xx bodies, every HTTP class guidance case, byte-boundary aborts, malformed/truncated/empty/over-limit streams, finish-plus-error, and terminal races.
   - **GREEN:** validate fixed endpoint/model/API, merge safe headers case-insensitively, bound total/inactivity time, resolve project per generation, parse exactly one candidate/allowed text delta/metadata usage, map STOP/MAX_TOKENS, update cost/usage snapshots, and centralize finalization so `done` or `error` plus `stream.end` occurs once and `stream.result` always settles.
   - **TRIANGULATE:** cover each UTF-8 framing boundary, repeated deltas, BOM/comments/trailers/`[DONE]`, late transport errors, prompt blocks, forbidden thought/function/image output, candidate conflicts, unknown finish reasons, usage discrepancies/cache arithmetic, 401/403/404/429/RESOURCE_EXHAUSTED safe messages, and concurrent stream isolation.
-  - **REFACTOR/verify:** run `npx vitest run packages/pi/src/response.test.ts packages/pi/src/stream.test.ts` after core build, then workspace typecheck and `npm test`; record exact results. Roll back only G’s response/stream files and fixtures, leaving C/F separately usable.
+  - **REFACTOR/verify:** run `npx vitest run packages/pi/src/response.test.ts packages/pi/src/stream.test.ts` after core build, then workspace typecheck and `npm test`; record exact results. Roll back only G’s response/stream files and fixtures, leaving C2/F separately usable.
 
 ## H — Register the complete Pi vertical slice and document safe use
 
@@ -125,7 +137,7 @@ Depends on E and G. Allowed edit surfaces: `packages/pi/src/{provider.ts,provide
   - **RED:** add Pi registration/resource-loader tests that fail for missing default extension factory, asynchronous registration, zero/multiple/alternate models, wrong public descriptor metadata, wrong wire serialization, missing OAuth handlers, or packed artifacts that resolve a repository path; add docs assertions for text-only/tools, manual callback URL, account separation, fixed port, removal, and unverified live availability.
   - **GREEN:** synchronously register the legacy provider with exact name/API/model descriptor, pure factory default export only in `extension.ts`, `streamSimple` that returns immediately and owns failures, and the completed E/G handlers; write Pi/root docs covering `/login antigravity-guard`, fresh `--no-builtin-tools` text-only sessions, no active extension tools, zero/unpriced costs, independent credentials, and removal without credential deletion/revocation.
   - **TRIANGULATE:** execute an offline end-to-end fixture for login, refresh, project resolution, and streamed text; pack core/root/Pi then load the Pi resource via its host loader in a clean Node 22.19+ consumer with exact host peers and no workspace symlinks; separately import packed root/core in Node 20. Assert no peer duplication and no alternate-model substitution.
-  - **REFACTOR/verify:** run targeted provider/extension tests, the packed-consumer script, `npm run build`, `npm run typecheck`, `npm test`, all-workspace build/typecheck, and `npm run test:coverage`; record exact results and any environment-backed gap. Roll back H in isolation: registration/docs/pack acceptance fixtures only; before-release rollback proceeds H → G/F → E/D1/C → B → A without resetting unrelated files.
+  - **REFACTOR/verify:** run targeted provider/extension tests, the packed-consumer script, `npm run build`, `npm run typecheck`, `npm test`, all-workspace build/typecheck, and `npm run test:coverage`; record exact results and any environment-backed gap. Roll back H in isolation: registration/docs/pack acceptance fixtures only; before-release rollback proceeds H → G/F → E/D1/C2/C1 → B → A without resetting unrelated files.
 
 ## Final verification and release limitations
 
