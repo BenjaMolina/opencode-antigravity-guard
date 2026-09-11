@@ -88,7 +88,7 @@ Depends on A. Allowed edit surfaces: `packages/pi/src/{project.ts,project.test.t
 
 Depends on A. Allowed edit surfaces: `packages/pi/src/{loopback.ts,loopback.test.ts,types.ts}` and Pi-local test helpers under `packages/pi/src/test/`. No root OAuth change, no listener in manual mode, and no Google/token HTTP calls in this unit.
 
-- [ ] Implement a single-attempt callback receiver that binds `127.0.0.1:51121`, validates one complete callback URL and state, offers safe manual fallback conditions, and closes every owned resource on all terminal paths. <!-- sdd-owner: implementation -->
+- [x] Implement a single-attempt callback receiver that binds `127.0.0.1:51121`, validates one complete callback URL and state, offers safe manual fallback conditions, and closes every owned resource on all terminal paths. <!-- sdd-owner: implementation -->
 
   - **RED:** add fake-server/state-validator tests for wrong host/path/method/remote address, 8-KiB overflow, duplicate code/state/error parameters, code-plus-error, wrong/late state, denial, occupied port, timeout, cancellation, repeat callbacks, and socket cleanup.
   - **GREEN:** implement fixed redirect/path validation, cryptographic timing-safe state comparison after length validation, synchronous winner claiming, 30-second loopback window within a five-minute total deadline, static no-store/CSP response, listener-failure/timeout fallback signals, and idempotent timer/listener/socket cleanup.

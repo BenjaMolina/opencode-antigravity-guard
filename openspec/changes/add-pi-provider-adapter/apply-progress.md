@@ -293,3 +293,70 @@ The Pi workspace is intentionally a metadata/distribution skeleton in this unit:
 - `npx vitest run packages/pi/src/project.test.ts`, `npx tsc -p packages/pi/tsconfig.json --noEmit`, and `npm test` — exit 0; full suite: 46 files / 1,154 passed / 25 todo.
 - C2 now totals 320 source/test lines, 2 checkbox lines, and 47 progress-evidence lines: 369 changed lines, leaving 31 below the 400-line ceiling.
 - Rollback boundary: revert only the dependency-normalization/reader-guard changes and their remediation tests/evidence; retain the original C2 resolver behavior and prior A/B/C1 work.
+
+## Work unit D1 — secure loopback receiver
+
+- Authority consumed: fresh parent status selected `add-pi-provider-adapter`, repo-local root `C:\Github\Ordico\opencode-antigravity-guard`, apply ready at 4/9 with `nextRecommended: apply`; runtime token `D1-secure-loopback-receiver` is held by the parent. No action-context warnings, commit, push, PR, publication, Google call, root OAuth, or E–H work occurred.
+- Completed and persisted: D1's implementation-owned checkbox is `[x]`; progress is now 5/9.
+- Files changed: `packages/pi/src/loopback.ts`, `packages/pi/src/loopback.test.ts`, `tasks.md`, and this cumulative progress artifact. `types.ts` and test helpers were not needed.
+- The receiver binds only `127.0.0.1:51121`, validates GET/host/path/remote address, URL size and singleton OAuth parameters, uses length-first timing-safe state comparison, and synchronously claims one terminal result. It bounds the 30-second callback window by a five-minute maximum, returns safe manual fallback signals, and idempotently closes timers, listeners, and tracked sockets.
+
+### TDD Cycle Evidence — D1
+
+| Stage | Command | Exit | Evidence |
+|---|---|---:|---|
+| RED | `npx vitest run packages/pi/src/loopback.test.ts` | 1 | The new receiver contract could not import absent `loopback.ts`. |
+| GREEN | same focused command | 0 | 4 tests passed after the minimum listener, validator, winner, response, and cleanup implementation. |
+| TRIANGULATE | same focused command | 0 | 5 tests cover malformed/duplicate callbacks, denial, occupied port, timeout fallback, manual mode, accepted/rebind, malformed closure, cancellation, late arrival, and socket cleanup. |
+| REFACTOR | same focused command; Pi `tsc` | 0 each | Response completion was made graceful before owned socket destruction; 5 focused tests and typecheck passed. |
+
+## D1 verification, workload, and rollback
+
+- `npx vitest run packages/pi/src/loopback.test.ts` — exit 0; 1 file / 5 tests. The focused suite is the real local loopback fixture; it uses readiness and port rebinding rather than wall-clock waits.
+- `npx tsc -p packages/pi/tsconfig.json --noEmit` and `git diff --check -- packages/pi/src/loopback.ts packages/pi/src/loopback.test.ts` — exit 0.
+- `npm test` — exit 0; 47 files / 1,159 passed / 25 todo. Existing invalid-aspect-ratio diagnostics appeared on stderr without failures.
+- D1 is the feature-branch-chain child after C2. Its implementation/test delta is 263 additions; task/progress persistence is within the 400-line work-unit cap.
+- Design deviation: none. Manual completion parsing and token exchange remain E-owned, so D1 opens no socket in manual mode and returns only safe terminal signals.
+- Rollback boundary: remove only D1 receiver/tests and its checkbox/progress evidence; retain A, B, C1, C2, and unrelated dirty files.
+
+## Remaining implementation tasks
+
+- [ ] Compose browser/loopback and manual callback-URL login, token/project completion, refresh, cancellation, single-attempt coordination, and Pi credential mapping through Pi’s OAuth lifecycle only. <!-- sdd-owner: implementation -->
+- [ ] Implement immutable text-only context serialization with explicit unsupported-content errors and a bounded incremental UTF-8 SSE framer that preserves records across arbitrary byte boundaries. <!-- sdd-owner: implementation -->
+- [ ] Implement the fixed-origin Antigravity HTTP/SSE consumer that validates response/usage semantics and emits ordered Pi partial text events with exactly one success, error, or aborted terminal outcome. <!-- sdd-owner: implementation -->
+- [ ] Register exactly `antigravity-guard` with one public model `antigravity-gemini-3.8-flash`, wire it to `gemini-3.8-flash`, connect the completed OAuth and stream behaviors, prove package discovery from a packed consumer, and document the text-only operating limits. <!-- sdd-owner: implementation -->
+
+## D1 hostile-input correction
+
+- Authority: the parent confirmed D1 remains the selected repo-local work unit; scope stayed limited to its receiver, test, and progress artifact. The persisted D1 checkbox remains `[x]`.
+- Raw origin-form validation now rejects network-path, dot-segment/encoded path, fragment, malformed-percent, and non-exact callback targets before query parsing. The 8-KiB cap uses UTF-8 encoded bytes and allows the exact boundary only.
+- State validation first rejects malformed surrogate Unicode, then compares UTF-8 byte lengths before `timingSafeEqual`. Validator and HTTP handler both contain defensive error-to-rejection boundaries.
+
+### TDD Cycle Evidence — D1 hostile correction
+
+| Stage | Command | Exit | Evidence |
+|---|---|---:|---|
+| Safety net | `npx vitest run packages/pi/src/loopback.test.ts` | 0 | 5 tests passed before correction. |
+| RED | same focused command | 1 | New hostile target test accepted a fragment-bearing callback. |
+| GREEN / TRIANGULATE | same focused command | 0 | 6 tests passed for Unicode state, raw-target normalization, malformed escapes, and exact byte cap. |
+| REFACTOR | focused test and Pi `tsc` | 0 | Parser-free raw-path validation retained graceful winner response cleanup. |
+
+- Verification: focused suite and `npx tsc -p packages/pi/tsconfig.json --noEmit` passed; `npm test` passed with 47 files / 1,160 tests / 25 todo.
+- Cumulative D1 diff is 366 changed lines: 313 source/test additions, 51 progress additions, and the existing checkbox replacement (1 addition, 1 deletion). This correction adds 69 changed lines and remains 34 below the 400-line cap.
+- Rollback boundary: revert only the hostile-input validation/helpers, their tests, and this evidence appendix; retain original D1 behavior and prior work units.
+
+## D1 final winner-claim correction
+
+- Parent reacquired `proceed` for the same D1 objective after the authorized ledger reset and 450-line exception. Scope remained receiver, test, and progress only.
+- Fragments are rejected before raw-path branching. The winning acknowledgement defers terminal cleanup by one event-loop turn, allowing an already-buffered losing callback to receive deterministic 409 before its socket is destroyed.
+
+### TDD Cycle Evidence — D1 final correction
+
+| Stage | Command | Exit | Evidence |
+|---|---|---:|---|
+| Safety net | `npx vitest run packages/pi/src/loopback.test.ts` | 0 | 6 tests passed. |
+| RED | same focused command | 1 | Fragment-before-query returned 404 and the pipelined second callback was truncated. |
+| GREEN / TRIANGULATE | same focused command | 0 | 7 tests passed, including two live callbacks with 200/409, closed socket, and port rebind. |
+| REFACTOR | Pi `tsc` and focused suite | 0 | Deferred cleanup retains bounded resource destruction after acknowledgement. |
+
+- Verification: Pi typecheck and `npm test` passed; full suite is 47 files / 1,161 passed / 25 todo. Cumulative D1 is 403 changed lines; this correction adds 37 and remains within the 450-line exception. Rollback removes only this fragment/winner cleanup adjustment and fixture.
