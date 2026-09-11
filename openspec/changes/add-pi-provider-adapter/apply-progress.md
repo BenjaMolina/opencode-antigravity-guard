@@ -360,3 +360,72 @@ The Pi workspace is intentionally a metadata/distribution skeleton in this unit:
 | REFACTOR | Pi `tsc` and focused suite | 0 | Deferred cleanup retains bounded resource destruction after acknowledgement. |
 
 - Verification: Pi typecheck and `npm test` passed; full suite is 47 files / 1,161 passed / 25 todo. Cumulative D1 is 403 changed lines; this correction adds 37 and remains within the 450-line exception. Rollback removes only this fragment/winner cleanup adjustment and fixture.
+
+## Work unit E — Pi OAuth lifecycle
+
+- Authority/status: user-selected `add-pi-provider-adapter` E at `5/9`, `acquire proceed` held by parent; repo-local `C:\Github\Ordico\opencode-antigravity-guard` is the only edit root, with no action-context warnings. Feature-branch-chain E only; no commit, push, PR, publish, live call, or F–H work.
+- Completed/persisted: E's implementation-owned task is visibly `[x]` in `tasks.md`.
+- Files: `packages/pi/src/oauth.ts`, `packages/pi/src/oauth.test.ts`, `tasks.md`, and this progress artifact; `types.ts` and test helpers were not needed.
+- Behavior: isolated Pi lifecycle uses fresh state/verifier/S256 challenge, browser loopback or full-URL manual fallback without state regeneration, C1/C2 completion, Pi-only credential mapping/refresh, composed deadline/signals, busy rejection, and safe terminal cleanup/diagnostics.
+
+### TDD Cycle Evidence — E
+
+| Stage | Command | Exit | Evidence |
+|---|---|---:|---|
+| RED | `npx vitest run packages/pi/src/oauth.test.ts` | 1 | New lifecycle test could not import absent `oauth.ts`. |
+| GREEN | same | 0 | Minimum manual full-callback token/project path passed: 1 test. |
+| TRIANGULATE | same | 1 then 0 | Browser/manual fallback, denial/state rejection, cancellation races, refresh rotation, project failure, and installed-Pi callback fixture failed before lifecycle support, then 8 tests passed. |
+| REFACTOR | same; Pi `tsc --skipLibCheck` | 0 | Centralized abort race, credential mapping, and safe terminal handling retained 8/8 coverage. |
+
+- Verification: core workspace build and focused OAuth/installed-Pi compatibility fixture passed; direct `npx tsc -p packages/pi/tsconfig.json --noEmit` is blocked by existing `@google/genai` declaration errors for missing MCP client/ErrorEvent, while the direct source check with `--skipLibCheck` passed. Final `npm test` passed: 48 files, 1,169 passed, 25 todo.
+- Design deviation: none; compatibility fixture uses installed `OAuthLoginCallbacks` and injected loopback only, with no browser or account access.
+- Workload: E is the feature-branch-chain child after D1; the initial source/test delta was 336 additions, plus 2 task-checkbox lines and this 25-line evidence appendix, totalling 363 under the 400-line inclusive cap.
+- Rollback: remove only E lifecycle/tests and its task/progress evidence; retain C1/C2/D1 and unrelated dirty files.
+- Remaining implementation rows:
+  - [ ] Implement immutable text-only context serialization with explicit unsupported-content errors and a bounded incremental UTF-8 SSE framer that preserves records across arbitrary byte boundaries. <!-- sdd-owner: implementation -->
+  - [ ] Implement the fixed-origin Antigravity HTTP/SSE consumer that validates response/usage semantics and emits ordered Pi partial text events with exactly one success, error, or aborted terminal outcome. <!-- sdd-owner: implementation -->
+  - [ ] Register exactly `antigravity-guard` with one public model `antigravity-gemini-3.8-flash`, wire it to `gemini-3.8-flash`, connect the completed OAuth and stream behaviors, prove package discovery from a packed consumer, and document the text-only operating limits. <!-- sdd-owner: implementation -->
+
+## E remaining-cap safety correction
+
+- Authority: one original <=400 E attempt remained; this bounded correction adds narrow Pi OAuth type imports and protects synchronous setup/cleanup from leaking or wedging the busy slot.
+| Stage | Command | Exit | Evidence |
+|---|---|---:|---|
+| Safety net | `npx vitest run packages/pi/src/oauth.test.ts` | 0 | 8 tests passed. |
+| RED | same | 1 | Synchronous setup leaked `CANARY-setup`; rejected cleanup also became an unhandled `CANARY-cleanup`. |
+| GREEN/TRIANGULATE | same | 0 | 10 tests pass; setup and rejected cleanup are normalized, and a second login is cancelled, not busy. |
+| REFACTOR | raw Pi `tsc` | 2 | The narrow `@earendil-works/pi-ai/oauth` imports compile to the same external `@google/genai` MCP-client/ErrorEvent declaration blocker. |
+- Final E ledger: 353 source/test additions + 2 checkbox lines + 36 progress lines = 391 changed lines, within the original 400-line cap. Roll back only this import/setup/cleanup guard and its regression/evidence.
+
+## E remediation — trusted dependency errors and Pi declaration compatibility
+
+- Authority: user-selected `E-pi-oauth-lifecycle` remediation, bound to failed evidence `sha256:6d3264633169dd3dc0f795726c8206e35560f391923b873f04c90fe5a5b52286`; repo-local root only, with the approved cumulative 500-line E exception. No commit, push, PR, publication, live call, or F–H work occurred.
+- Completed/persisted: the E implementation-owned row remains visibly `[x]` in `tasks.md` after this remediation.
+- Dependency callbacks for exchange, project resolution, and refresh now discard every rejection value and recreate fixed lifecycle errors; empty or rejected manual prompts resolve as fixed cancellation, and matching-state `access_denied` resolves as fixed authorization denial.
+- Pi's compiler now explicitly includes `DOM` and the exact `@modelcontextprotocol/sdk@1.25.2` development dependency required by the installed `@google/genai` declarations. The resulting lockfile wiring is generated dependency churn, not authored E implementation.
+
+### TDD Cycle Evidence — E remediation
+
+| Stage | Command | Exit | Evidence |
+|---|---|---:|---|
+| RED | `npx vitest run packages/pi/src/oauth.test.ts` | 1 | 11 tests ran; empty prompt returned callback instructions and forged lifecycle errors from injected dependencies bypassed redaction. |
+| GREEN | same focused command | 0 | All 11 tests passed after normalizing dependency failures and manual denial/cancellation branches. |
+| TRIANGULATE | `npx tsc -p packages/pi/tsconfig.json --noEmit`; focused OAuth test | 2 then 0 | The raw compiler first exposed missing MCP declarations and `ErrorEvent`; adding DOM plus the exact SDK dependency made it pass without `skipLibCheck`. |
+| REFACTOR | focused OAuth test; raw Pi `tsc`; core build; `npm run build:all`; `npm test` | 0 each | Fixed-message helper retained redaction and final verification passed 48 files / 1,172 tests / 25 todo. |
+
+## E remediation verification, workload, and rollback
+
+- `npx vitest run packages/pi/src/oauth.test.ts`, raw Pi `tsc --noEmit`, `npm run build --workspace=@benjamolina/antigravity-guard-core`, `npm run build:all`, `npm test`, and `git diff --check` passed; no `skipLibCheck`, ambient module, or live OAuth workaround was used.
+- E's source/test snapshot is now 401 lines versus the prior 353, a 48-line substantive increase. Including the 3-line manifest addition and 2-line tsconfig replacement, the cumulative authored E count is 444 before this 22-line evidence appendix and 466 including it, within the explicitly authorized 500-line cap. Generated `package-lock.json` churn is 1,147 additions and 8 deletions, reported separately.
+- Rollback: revert only `oauth.ts`/`oauth.test.ts` trusted-boundary and manual-result changes, Pi DOM/SDK declaration wiring, and this appendix; retain C1/C2/D1, prior E behavior, and unrelated dirty files.
+
+## E final receiver and SDK correction
+- Authority/status: user-bound final failed-evidence remediation proceeded for E; produced status is `repo-local` at the sole workspace root with no action-context warnings, and the E checkbox remains `[x]`.
+- Loopback boundaries normalize errors; trusted marks are consumed on delivery, while direct busy delivery uses an ordinary fixed Error. The dev-only SDK is exact `1.30.0`.
+| Stage | Command | Exit | Evidence |
+|---|---|---:|---|
+| RED | `npx vitest run packages/pi/src/oauth.test.ts` | 1 | Replayed receiver/`onSelect` cancellation and direct busy error leaked canaries. |
+| GREEN | same | 0 | 12 tests cover receiver paths, one-shot replay, and direct-busy replay. |
+| TRIANGULATE | raw Pi `tsc`; `npm audit --omit=dev` | 0 | SDK 1.30.0 compiles and production audit has zero vulnerabilities. |
+| REFACTOR | `npm test`; `npm pack --dry-run --json` | 0 | 48 files/1,173 tests pass; pack has no bundled dependencies. |
+- E is **495/500** authored lines: prior 466 + 18 source/test + 11 evidence. Generated lockfile delta is **+1,165/-12** total (**+18/-4** this correction); rollback restores error provenance, SDK pin/lock wiring, and this evidence only.

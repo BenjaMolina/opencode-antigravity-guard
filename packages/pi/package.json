@@ -27,5 +27,8 @@
     "build": "node --eval \"\"",
     "typecheck": "node --eval \"\"",
     "prepack": "npm run build"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0"
   }
 }

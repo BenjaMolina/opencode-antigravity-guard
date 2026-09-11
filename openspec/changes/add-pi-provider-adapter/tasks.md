@@ -99,7 +99,7 @@ Depends on A. Allowed edit surfaces: `packages/pi/src/{loopback.ts,loopback.test
 
 Depends on C1, C2, and D1. Allowed edit surfaces: `packages/pi/src/{oauth.ts,oauth.test.ts,types.ts}` and Pi-local test helpers. It may call C1/C2/D1/core only; it must not modify or read `src/plugin/accounts.ts`, `storage.ts`, `refresh-queue.ts`, or any OpenCode credential file.
 
-- [ ] Compose browser/loopback and manual callback-URL login, token/project completion, refresh, cancellation, single-attempt coordination, and Pi credential mapping through Pi’s OAuth lifecycle only. <!-- sdd-owner: implementation -->
+- [x] Compose browser/loopback and manual callback-URL login, token/project completion, refresh, cancellation, single-attempt coordination, and Pi credential mapping through Pi’s OAuth lifecycle only. <!-- sdd-owner: implementation -->
 
   - **RED:** add deferred-callback/clock tests for browser versus manual selection, empty/rejected prompt, listener failure and expiry fallback, concurrent login busy response, cancellation at every lifecycle phase, late prompt/callback races, denied/invalid state without exchange, and no secret-bearing diagnostic.
   - **GREEN:** create independent random state/verifier/challenge per attempt, retain verifier only in attempt memory, call `onAuth` only with the authorization URL, use full callback-URL manual input, compose signals/deadlines, invoke C1/C2/D1 operations, resolve project before returning credentials, and make shared terminal cleanup idempotent.
