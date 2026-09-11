@@ -4,11 +4,11 @@
 
 | Field | Value |
 |-------|-------|
-| Estimated changed lines | 2,450–3,500 authored lines across ten behavior units; lockfile churn tracked separately |
+| Estimated changed lines | 2,500–3,600 authored lines across eleven behavior units; lockfile churn tracked separately |
 | 400-line budget risk | High |
 | Chained PRs recommended | Yes |
-| Suggested split | Feature-branch chain: A → B → C1 → C2 → D1 → E → F → G1 → G2 → H; C1/C2 and G1/G2 are the selected cohesive splits of former C and G |
-| Delivery strategy | ask-on-risk (decision recorded) |
+| Suggested split | Feature-branch chain: A → B → C1 → C2 → D1 → E → F → G1 → G2a → G2b → H; C1/C2, G1/G2, and G2a/G2b are selected cohesive splits |
+| Delivery strategy | ask-on-risk (maintainer-authorized native split recorded) |
 | Chain strategy | feature-branch-chain |
 
 Decision needed before apply: No
@@ -16,7 +16,7 @@ Chained PRs recommended: Yes
 Chain strategy: feature-branch-chain
 400-line budget risk: High
 
-The forecast exceeds the 400 changed-line review budget even though every autonomous unit is planned at or below that threshold. The maintainer selected the cohesive C1/C2 and G1/G2 splits under `ask-on-risk`; implement through the selected feature-branch chain. This plan does not authorize or require a `size:exception`.
+The forecast exceeds the 400 changed-line review budget even though every autonomous unit is planned at or below that threshold. The maintainer selected the cohesive C1/C2, G1/G2, and native-authorized G2a/G2b splits under `ask-on-risk`; implement through the selected feature-branch chain. This plan has no effective `size:exception`.
 
 ## Guardrails and evidence protocol
 
@@ -38,8 +38,9 @@ The forecast exceeds the 400 changed-line review budget even though every autono
 | E — Pi OAuth lifecycle | C1, C2, D1 | 260–350 | Pi login/refresh lifecycle maps isolated credentials and settles cancellation safely | `packages/pi/src/oauth.ts` and its tests |
 | F — text context and byte framing | A | 230–330 | Supported text is serialized exactly and SSE bytes are framed safely | `packages/pi/src/context.ts`, `sse.ts`, and their tests |
 | G1 — Antigravity SSE response semantics | F | 260–360 | SSE records are semantically validated and map candidates/text/finish/usage without HTTP or Pi lifecycle ownership | `packages/pi/src/response.ts`, `response.test.ts`, and semantic fixtures |
-| G2 — fixed-origin execution and Pi stream lifecycle | C2, F, G1 | 300–400 | Fixed-origin HTTP/SSE execution consumes G1 and finalizes one Pi-native text stream exactly once | `packages/pi/src/stream.ts`, `stream.test.ts`, and lifecycle fixtures |
-| H — discoverable vertical slice/docs | E, G2 | 220–380 | Pi registers exactly one model and packed consumers can load the documented text-only provider | `packages/pi/src/provider.ts`, `extension.ts`, package/docs, and acceptance fixtures |
+| G2a — fixed-origin HTTP/SSE transport | C2, F, G1 | 260–360 | Fixed-origin request validation, per-generation project lookup, bounded HTTP/SSE byte transport, and G1 semantic delivery through an injected neutral callback boundary | `packages/pi/src/stream.ts`, `stream.test.ts`, and transport fixtures |
+| G2b — Pi-native stream lifecycle | G2a | 260–380 | Pi partial-event ordering, mutable snapshots, usage/cost propagation, and exactly-once terminal/result/cleanup lifecycle | `packages/pi/src/stream.ts`, `stream.test.ts`, and lifecycle fixtures |
+| H — discoverable vertical slice/docs | E, G2b | 220–380 | Pi registers exactly one model and packed consumers can load the documented text-only provider | `packages/pi/src/provider.ts`, `extension.ts`, package/docs, and acceptance fixtures |
 
 ## A — Establish workspace and packed-distribution foundation
 
@@ -129,22 +130,33 @@ Depends on F. Allowed edit surfaces: `packages/pi/src/{response.ts,response.test
   - **TRIANGULATE:** cover BOM/comments/trailers/`[DONE]`, repeated deltas, candidate conflicts, late text/second finish/error after finish, response ID/model metadata, usage omission/discrepancy/cache bounds, and all forbidden output kinds.
   - **REFACTOR/verify:** run `npx vitest run packages/pi/src/response.test.ts` after the core build and Pi workspace typecheck; record exact results. Roll back only G1 response semantics, G1-limited types, and semantic fixtures, leaving F independently usable.
 
-## G2 — Execute fixed-origin HTTP/SSE and own the Pi-native stream lifecycle
+## G2a — Execute fixed-origin HTTP/SSE transport through a neutral callback boundary
 
-Depends on C2, F, and G1. Allowed edit surfaces: `packages/pi/src/{stream.ts,stream.test.ts,types.ts}` and Pi-local stream lifecycle fixtures. G2 consumes G1 semantic results and F framing; it owns fixed-origin request execution, project resolution per generation, Pi partial-event ordering, and exactly-once terminal settlement. Do not modify `response.ts` except through a separately authorized G1 correction; do not import OpenCode response transformers, add retries/fallback, write responses to disk, or change quota/account/recovery modules.
+Depends on C2, F, and G1. Allowed edit surfaces: `packages/pi/src/{stream.ts,stream.test.ts,types.ts}` and Pi-local transport fixtures. G2a validates the fixed request/API/model/header/status/content-type contract, resolves the project for every generation, bounds HTTP/SSE byte transport through F, and delivers G1 semantic results through an injected framework-neutral callback boundary. It MUST NOT emit Pi events, mutate Pi assistant snapshots, finalize a Pi event stream, settle `stream.result`, or own Pi terminal lifecycle behavior. Do not modify `response.ts` except through a separately authorized G1 correction; do not import OpenCode response transformers, add retries/fallback, write responses to disk, or change quota/account/recovery modules.
 
-- [ ] Implement and verify the behavior in `packages/pi/src/stream.ts`: execute the fixed Antigravity HTTP/SSE request and emit ordered Pi partial text events with exactly one success, error, or aborted terminal outcome. <!-- sdd-owner: implementation -->
+- [x] Implement and verify the behavior in `packages/pi/src/stream.ts`: validate and execute the fixed Antigravity HTTP/SSE request, then deliver bounded G1 semantic results through an injected neutral callback boundary without Pi terminal lifecycle ownership. <!-- sdd-owner: implementation -->
 
-  - **RED:** use fake-fetch `Response` fixtures consumed through the real Pi event stream to fail on start/order/mutable-partial-state contract errors, public-versus-wire model misuse, invalid options/hooks/headers, non-SSE or non-2xx bodies, every HTTP guidance class, byte-boundary aborts, G1 semantic failures, and terminal races.
-  - **GREEN:** validate fixed endpoint/model/API, merge safe headers case-insensitively, bound total/inactivity time, resolve the project per generation, consume F/G1 results, update cost/usage snapshots, and centralize finalization so `done` or `error` plus `stream.end` occurs once and `stream.result` always settles.
-  - **TRIANGULATE:** cover each UTF-8 framing boundary through F, late transport errors including after finish, 401/403/404/429/RESOURCE_EXHAUSTED safe messages, hooks, custom-header collisions, concurrent stream isolation, and cleanup/cancellation with no mutation after terminal.
-  - **REFACTOR/verify:** run `npx vitest run packages/pi/src/stream.test.ts` after core build, then Pi workspace typecheck and `npm test`; record exact results. Roll back only G2 stream lifecycle, G2-limited types, and lifecycle fixtures, leaving C2/F/G1 separately usable.
+  - **RED:** use injected fetch, project resolver, clock, and semantic callback fixtures to fail on public-versus-wire model/API/endpoint misuse, protected-header collisions, invalid options/hooks, per-generation project reuse, non-SSE or non-2xx responses, HTTP guidance classes, byte-boundary aborts, and G1 semantic failures.
+  - **GREEN:** validate fixed origin/model/API and case-insensitive protected headers; resolve the project per generation; apply total/inactivity bounds; inspect bounded HTTP failures; consume F framing and G1 semantics; and invoke only the injected neutral callback for semantic delivery.
+  - **TRIANGULATE:** cover 401/403/404/429/RESOURCE_EXHAUSTED guidance, content-type parameters, hook failures, custom-header collisions, every relevant F byte boundary, late transport errors, and cancellation/reader cleanup without emitting or finalizing Pi events.
+  - **REFACTOR/verify:** run `npx vitest run packages/pi/src/stream.test.ts` after core build, then Pi workspace typecheck and `npm test`; record exact results. Roll back only G2a transport/callback behavior, G2a-limited types, and transport fixtures, leaving C2/F/G1 separately usable.
+
+## G2b — Own Pi-native partial events and exactly-once stream lifecycle
+
+Depends on G2a. Allowed edit surfaces: `packages/pi/src/{stream.ts,stream.test.ts,types.ts}` and Pi-local lifecycle fixtures. G2b consumes G2a's neutral semantic callback boundary and owns only Pi-native output adaptation: partial event ordering, mutable assistant snapshots, usage/cost propagation, abort/error/done exactly-once finalization, result settlement, and race/concurrency cleanup. It MUST NOT duplicate G2a fixed-origin validation, project resolution, HTTP status/content-type handling, or byte transport. Do not import OpenCode response transformers, add retries/fallback, write responses to disk, or change quota/account/recovery modules.
+
+- [ ] Implement and verify the behavior in `packages/pi/src/stream.ts`: consume G2a semantic delivery to emit ordered Pi partial text events, maintain mutable snapshots and usage/cost, and finalize done, error, or aborted outcomes exactly once with settled results and cleanup. <!-- sdd-owner: implementation -->
+
+  - **RED:** use real Pi event-stream fixtures backed by injected G2a callbacks to fail on start/text_start/text_delta/text_end ordering, shared mutable partial snapshots, usage/cost updates, missing result settlement, abort/error/done races, duplicate terminals, concurrent stream interference, and mutation after terminal.
+  - **GREEN:** adapt G2a callbacks into Pi events; append and mutate the live text part before each delta; update cumulative usage and Pi cost; centralize guarded finalization; and ensure `stream.end`, error/done outcome, result settlement, transport cancellation, and cleanup execute once.
+  - **TRIANGULATE:** cover success STOP/MAX_TOKENS, transport or semantic errors before and after finish, abort before/during delivery, empty/error setup, caller abandonment, concurrent streams, and cleanup rejection handling while preserving delivered text and usage safely.
+  - **REFACTOR/verify:** run `npx vitest run packages/pi/src/stream.test.ts` after core build, then Pi workspace typecheck and `npm test`; record exact results. Roll back only G2b Pi lifecycle adaptation, G2b-limited types, and lifecycle fixtures, leaving G2a independently testable.
 
 ## H — Register the complete Pi vertical slice and document safe use
 
-Depends on E and G2. Allowed edit surfaces: `packages/pi/src/{provider.ts,provider.test.ts,extension.ts,extension.test.ts}`, `packages/pi/{package.json,README.md}`, root `README.md`, `scripts/pack-*.ts`, and package/pack test fixtures created in A. Do not change root provider registration, OpenCode model definitions/resolver, or publish packages.
+Depends on E and G2b. Allowed edit surfaces: `packages/pi/src/{provider.ts,provider.test.ts,extension.ts,extension.test.ts}`, `packages/pi/{package.json,README.md}`, root `README.md`, `scripts/pack-*.ts`, and package/pack test fixtures created in A. Do not change root provider registration, OpenCode model definitions/resolver, or publish packages.
 
-- [ ] Register exactly `antigravity-guard` with one public model `antigravity-gemini-3.8-flash`, wire it to `gemini-3.8-flash`, connect the completed OAuth and stream behaviors, prove package discovery from a packed consumer, and document the text-only operating limits. <!-- sdd-owner: implementation -->
+- [ ] Register exactly `antigravity-guard` with one public model `antigravity-gemini-3.8-flash`, wire it to `gemini-3.8-flash`, connect the completed OAuth and G2b stream behaviors, prove package discovery from a packed consumer, and document the text-only operating limits. <!-- sdd-owner: implementation -->
 
   - **RED:** add Pi registration/resource-loader tests that fail for missing default extension factory, asynchronous registration, zero/multiple/alternate models, wrong public descriptor metadata, wrong wire serialization, missing OAuth handlers, or packed artifacts that resolve a repository path; add docs assertions for text-only/tools, manual callback URL, account separation, fixed port, removal, and unverified live availability.
   - **GREEN:** synchronously register the legacy provider with exact name/API/model descriptor, pure factory default export only in `extension.ts`, `streamSimple` that returns immediately and owns failures, and the completed E/G handlers; write Pi/root docs covering `/login antigravity-guard`, fresh `--no-builtin-tools` text-only sessions, no active extension tools, zero/unpriced costs, independent credentials, and removal without credential deletion/revocation.

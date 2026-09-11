@@ -547,3 +547,120 @@ The Pi workspace is intentionally a metadata/distribution skeleton in this unit:
 - `git diff --check -- packages/pi/src/response.ts packages/pi/src/response.test.ts openspec/changes/add-pi-provider-adapter/apply-progress.md` — exit 0.
 - Exact correction source/test diff from the prior G1 snapshot is +14/-1 (15 changed lines): +13 test lines and one production-line replacement. This 22-line evidence appendix raises the G1 review unit from 257 to 294/400 changed lines; no exception is needed.
 - Rollback boundary: revert only the exact-one candidate guard, the empty/multiple candidate regressions, and this correction appendix; retain prior G1, F, and unrelated dirty files.
+
+## G2 — blocked by the 400-line workload cap
+
+- Authority consumed: parent-selected `G2-pi-stream-lifecycle` was `proceed`; the parent retains its token. The supplied `gentle-ai.sdd-status@2` selected `add-pi-provider-adapter`, reported apply-ready at 8/10, and permits only `C:/Github/Ordico/opencode-antigravity-guard` with no action-context warnings.
+- A single honest sizing pass found the full revised G2 contract cannot fit the hard inclusive 400-line cap: minimally 270 lines of lifecycle execution (fixed-origin validation, protected headers, project lookup, hooks/timeouts, HTTP guidance, reader cleanup, F/G1 consumption, usage/cost updates, and exactly-once finalization), 160 lines of deterministic real-Pi-stream fixture coverage, plus task/progress persistence exceeds 450 lines. Omitting cases or separating tests would violate the requested strict-TDD and cohesive-unit contracts.
+- No RED test, production source, task checkbox, live request, commit, push, PR, or publish was made; GREEN, TRIANGULATE, REFACTOR, core build, focused test, raw Pi typecheck, and full suite are N/A. G2 remains visibly unchecked in `tasks.md`.
+- Decision required: authorize a G2 `size:exception` of at least 460 changed lines, or approve a further cohesive split with tests retained with each behavior. Rollback boundary: remove only this blocking evidence; unrelated `.atl/*`, `.gitignore`, and `.pi/*` remain untouched.
+
+## G2 native-authorized narrower successor split
+
+- The native authority refused the maintainer's initial 500-line G2 budget expansion; no effective `size:exception` was granted.
+- The maintainer then explicitly authorized a cohesive successor split. Native `sdd-attempt rescope` committed objective `G2a-http-sse-transport` with a maximum of 400 changed lines and the evidence goal of fixed-origin Antigravity HTTP request validation plus bounded SSE transport consumption, without Pi terminal lifecycle ownership.
+- G2a is sequentially first and owns fixed-origin request/API/model/header/status/content-type validation, per-generation project resolution, bounded HTTP/SSE byte transport through F, and G1 semantic consumption through a framework-neutral injected callback boundary. Its behavior and tests remain together; it does not own Pi event-stream terminal lifecycle behavior.
+- G2b depends on G2a and owns Pi-native partial-event ordering, mutable snapshots, usage/cost propagation, abort/error/done exactly-once finalization, result settlement, and race/concurrency cleanup, with its tests kept with that behavior. H now depends on G2b.
+- G1 remains complete and committed. Revised progress is exactly 8/11: A, B, C1, C2, D1, E, F, and G1 are complete; G2a, G2b, and H remain unchecked. Delivery remains `ask-on-risk` with `feature-branch-chain`.
+
+## Work unit G2a — fixed-origin HTTP/SSE transport
+
+- Authority/status: parent-selected `G2a-http-sse-transport` proceeded under the supplied hybrid repo-local status. The sole allowed root is `C:/Github/Ordico/opencode-antigravity-guard`; no action-context warnings. The parent retains the runtime token; no acquire or settle occurred.
+- Completed and persisted: G2a is visibly `[x]` in `tasks.md`. G2b/H, Pi events, assistant snapshots, terminal/result ownership, provider registration, live calls, commits, pushes, PRs, and publication remain out of scope.
+- Files: `packages/pi/src/stream.ts`, `packages/pi/src/stream.test.ts`, `tasks.md`, and this progress artifact.
+- Behavior: fixed daily Antigravity origin, public-to-wire serializer boundary, protected headers, per-generation injected project lookup, 120-second total and 30-second read-inactivity bounds, bounded HTTP inspection/guidance, F framing, G1 semantic validation, and injected semantic callback delivery only.
+
+### TDD Cycle Evidence — G2a
+
+| Stage | Command | Exit | Evidence |
+|---|---|---:|---|
+| Safety net | N/A | N/A | `stream.ts` and `stream.test.ts` did not exist before this unit. |
+| RED | `npx vitest run packages/pi/src/stream.test.ts` | 1 | The new transport test could not import absent `stream.ts`. |
+| GREEN | same focused command | 0 | One deterministic injected stream test passed after minimum fixed request, F/G1 consumption, and neutral callback delivery. |
+| TRIANGULATE | same focused command | 1 then 0 | Resource-exhausted HTTP guidance initially returned generic response handling; 401/403/404/429, RESOURCE_EXHAUSTED, and protected-header cases then passed in 2 tests. |
+| REFACTOR | core build, focused test, raw Pi `tsc`, and `npm test` | 0 each | The bounded HTTP-body helper retained the focused behavior without introducing Pi lifecycle ownership. |
+
+## G2a verification, workload, and rollback
+
+- `npm run build --workspace=@benjamolina/antigravity-guard-core`, `npx vitest run packages/pi/src/stream.test.ts`, `npx tsc -p packages/pi/tsconfig.json --noEmit`, and `npm test` all exited 0; full suite: 52 files / 1,201 passed / 25 todo.
+- `git diff --check -- packages/pi/src/stream.ts packages/pi/src/stream.test.ts` exited 0. The runtime harness is deterministic injected fetch/project/callback plus `ReadableStream`; live transport is unauthorized and N/A.
+- Passing settle remediation: this focused and full-suite evidence replaces failed evidence `sha256:56c88e0e7287c34e6cdba28558aa3e0087ade0d7a5c36e8897797c2d35c42d51` for this G2a boundary.
+- Workload / PR boundary: feature-branch-chain G2a only. Source and tests are 225 lines; task/progress persistence remains below the hard 400-line unit cap. No code was compressed to fit.
+- Rollback boundary: remove only G2a transport/callback behavior, its tests, G2a checkbox, and this evidence; retain C2/F/G1 and unrelated dirt.
+- Remaining implementation rows:
+  - [ ] Implement and verify the behavior in `packages/pi/src/stream.ts`: consume G2a semantic delivery to emit ordered Pi partial text events, maintain mutable snapshots and usage/cost, and finalize done, error, or aborted outcomes exactly once with settled results and cleanup. <!-- sdd-owner: implementation -->
+  - [ ] Register exactly `antigravity-guard` with one public model `antigravity-gemini-3.8-flash`, wire it to `gemini-3.8-flash`, connect the completed OAuth and G2b stream behaviors, prove package discovery from a packed consumer, and document the text-only operating limits. <!-- sdd-owner: implementation -->
+
+## G2a correction — blocked by the remaining review budget
+
+- Fresh parent authority selected `add-pi-provider-adapter` G2a, repo-local sole root, and `proceed`; this correction did not acquire or settle an attempt. Only the G2a transport files and this correction evidence were authorized. No checkbox, lifecycle, live call, commit, push, PR, or publication action occurred.
+- The current conservative G2a ledger is 310/400, leaving 90 lines inclusive of correction evidence. The verifier requires three new observable contracts (hook replacement/response normalization, fixed API validation, and bounded non-SSE success-body consumption) plus tests for public/wire/API misuse, arbitrary safe headers, repeated lookup, timeouts, non-SSE bounds, abort/reader cleanup, callbacks/late errors, no Pi lifecycle, canary redaction, and concurrency.
+- A strict-TDD correction cannot honestly fit that remainder: the test matrix needs distinct injected-stream fixtures and assertions, while the hook and bounded-body branches require production changes and final evidence. Writing a partial RED suite would leave the focused suite intentionally failing and silently omit the other required cases, so no source/test edit was started.
+- Smallest honest additional requirement: raise this exact G2a correction boundary by at least 60 lines (to 460 inclusive) or authorize a further cohesive correction slice with its tests. Rollback boundary: remove only this blocked-correction evidence; existing G2a behavior and all task checkboxes remain unchanged.
+
+## G2a remediation — fixed input, hooks, and non-SSE bounds
+
+- Authority: parent supplied `proceed` for `G2a-http-sse-transport`; only `stream.ts`, `stream.test.ts`, and this evidence append changed. No checkbox, G2b/H, lifecycle ownership, live request, commit, push, PR, or publication action occurred.
+- The transport now rejects a non-selected public model or API before project lookup/fetch, accepts arbitrary non-protected request headers, invokes Pi payload and response hooks, and converts hook failures to fixed callback errors without callback text.
+- A successful non-SSE body is bounded and cancelled before the fixed content-type error. Existing total/inactivity signals, project-per-call resolution, semantic callback normalization, late reader failure propagation, and reader release/cancellation remain transport-only behavior.
+
+### TDD Cycle Evidence — G2a remediation
+
+| Stage | Command | Exit | Evidence |
+|---|---|---:|---|
+| Safety net | `npx vitest run packages/pi/src/stream.test.ts` | 0 | Existing focused suite passed: 2 tests. |
+| RED | same focused command | 1 | New hook, fixed-API, and bounded non-SSE assertions failed: 3 tests failed. |
+| GREEN | same focused command | 0 | Three focused tests passed after input guards, normalized hooks, and bounded non-SSE consumption. |
+| TRIANGULATE / REFACTOR | same focused command; raw Pi `tsc` | 0 | Safe header forwarding plus payload/response canary failures pass; no lifecycle code was added. |
+
+- Verification: focused stream test (3/3), raw Pi typecheck, `npm test` (52 files / 1,202 passed / 25 todo), and authorized `git diff --check` all exited 0.
+- Arithmetic correction: G2a is now 175 stream + 97 test + 42 task + 68 progress lines = **383/400**. This remediation adds 27 production, 20 test, and 18 evidence lines (65 total); no exception is required.
+- Runtime rationale: all coverage uses injected fetch/project/callback and `ReadableStream` fixtures; live Antigravity access remains unauthorized. Rollback removes only the fixed API/hook/non-SSE branches, their regressions, and this appendix.
+
+## Authorized final G2a correction — total-stage deadline
+
+- Authority: parent supplied the final G2a correction and maintainer-approved cumulative maximum of 500; scope remained `stream.ts`, `stream.test.ts`, and this evidence only. G2b/H, task checkboxes, Pi lifecycle ownership, and live/delivery actions remain untouched.
+- `loadProject` now races the same total signal as fetch, both hooks, body reads, and the SSE reader, so a hung resolver cannot exceed the generation deadline. Transport still returns `void` and delivers only injected G1 semantics; it owns no Pi event/result lifecycle.
+
+### TDD Cycle Evidence — final G2a correction
+
+| Stage | Command | Exit | Evidence |
+|---|---|---:|---|
+| Safety net | `npx vitest run packages/pi/src/stream.test.ts` | 0 | 6 focused tests passed. |
+| RED | same | 1 | A hanging project resolver escaped the ten-millisecond total deadline and the watchdog rejected. |
+| GREEN | same | 0 | Wrapping project resolution in the shared abort race made resolver, payload hook, and response hook all settle as `aborted`. |
+| TRIANGULATE / REFACTOR | focused test; raw Pi `tsc` | 0 | Repeated/concurrent isolated lookups, wire-model body mapping, F CRLF byte framing, reader cancel/late failure, semantic redaction, inactivity/total aborts, and neutral callback-only delivery remain covered. |
+
+- Verification: core build, focused stream test (6/6), raw Pi `tsc`, full `npm test` (52 files / 1,205 passed / 25 todo), and `git diff --check` each exited 0. Failed evidence `sha256:a8c1b822d9765177ecd6d630dd81a24494808aa755a340d5c377178b7faf4b0a` is remediated.
+- Workload / rollback: verified baseline corrected from 382 to 383; this small source/test/evidence correction remains below the authorized 500-line cumulative maximum. Roll back only the project-resolution abort race, its deadline/repeat-lookup regressions, and this appendix.
+
+## G2a final correction attempt — blocked by the 500-line cap
+
+- Authority consumed: the parent explicitly selected `add-pi-provider-adapter` / final G2a correction as repo-local and apply-ready at 9/11. The sole allowed root is `C:/Github/Ordico/opencode-antigravity-guard`; no action-context warnings were supplied. Per parent instruction, no status, acquire, or settle action was performed.
+- Independent conservative baseline is **473/500**, leaving 27 lines. The required trusted-error provenance change alone needs 43 changed source lines: a module-local safe-error marker/factory, replacement of all 18 local `StreamTransportError` constructions, and the catch-boundary provenance check. A dependency-forged exported `StreamTransportError` therefore cannot be safely preserved within the remaining allowance.
+- The mandatory strict-TDD coverage needs a minimum 61 changed test lines for forged project/fetch/payload/response/semantic-callback errors, stalled-reader inactivity, pending-fetch deadline/abort, reader lock release after cancellation, and an explicit neutral/no-Pi-result-lifecycle assertion. The required correction-evidence budget is 13 lines, bringing the minimum correction to 117 lines.
+- The smallest honest cumulative cap is therefore **590 lines** (`473 + 117`), exceeding the authorized cap by 90. No RED test, production edit, checkbox update, lifecycle ownership change, live call, commit, push, PR, or publication was made. Strict-TDD stages and verification commands are N/A because the workload gate stopped work before RED.
+- Rollback boundary: remove only this truthful blocking evidence; no implementation rollback is required.
+
+## G2a final correction — trusted transport boundaries and deadlines
+
+- Parent authority selected `add-pi-provider-adapter` G2a at 9/11 with repo-local allowed root only, retained the runtime token, and explicitly accepted the cumulative 590-line `size:exception`; no status/acquire/settle, task, G2b/H, lifecycle, live, or delivery action occurred.
+- Local transport errors are now provenance-marked in a module-private `WeakSet`; forged exported `StreamTransportError` values from project lookup, fetch, payload/response hooks, and semantic callbacks are normalized to fixed safe classifications with no canary or forged status.
+- An injected inactivity timeout makes the fixed 30-second production reader deadline deterministically testable; stalled reads settle aborted, cancel the reader, and release its lock. Pending fetches now share the existing total deadline proof.
+- `executeStreamTransport()` remains `Promise<void>` and the explicit neutral-callback fixture proves it returns no Pi event stream or result lifecycle while delivering only G1 semantics.
+
+### TDD Cycle Evidence — G2a final correction
+
+| Stage | Command | Exit | Evidence |
+|---|---|---:|---|
+| Safety net | `npx vitest run packages/pi/src/stream.test.ts` | 0 | 6 focused transport tests passed before correction. |
+| RED | same focused command | 1 | Forged dependency errors retained the attacker-controlled `418` status and message; stalled reader test also hung because its deadline was not injectable. |
+| GREEN | same focused command | 0 | 9 tests passed after local provenance, bounded inactivity, abort, cancellation, and lock-release handling. |
+| TRIANGULATE / REFACTOR | same focused command | 0 | 10 tests cover project/fetch/hook/semantic canaries, pending fetch, stalled reader cleanup, and neutral-only delivery; no further refactor was needed. |
+
+## Final correction verification and rollback
+
+- Passed: core workspace build, focused stream suite (10/10), raw Pi `tsc --noEmit`, full `npm test` (52 files, 1,209 passed, 25 todo), and scoped `git diff --check`.
+- Passing evidence remediates `sha256:54757c7b4fda7ca0ac3c677d72bc58f86726ba02a7ef38aa4054f13be8677e4d`.
+- Exact conservative cumulative ledger: 473 baseline + 117 final-correction changed lines = **590/590 changed lines**; no task artifact changed because G2a was already persisted `[x]` and this is correction-only evidence.
+- Rollback: revert only local-error provenance/inactivity injection, the final transport regressions, and this appendix; retain prior G2a behavior and all unrelated worktree changes.
