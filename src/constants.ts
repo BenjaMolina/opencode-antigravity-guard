@@ -1,37 +1,39 @@
+import {
+  ANTIGRAVITY_ENDPOINTS,
+  ANTIGRAVITY_OAUTH_CLIENT,
+  ANTIGRAVITY_VERSION_FALLBACK as CORE_ANTIGRAVITY_VERSION_FALLBACK,
+  buildAntigravityHeaders,
+  GEMINI_CLI_HEADERS as CORE_GEMINI_CLI_HEADERS,
+} from "@benjamolina/antigravity-guard-core";
+
 /**
  * Constants used for Antigravity OAuth flows and Cloud Code Assist API integration.
  */
-export const ANTIGRAVITY_CLIENT_ID = "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com";
+export const ANTIGRAVITY_CLIENT_ID = ANTIGRAVITY_OAUTH_CLIENT.clientId;
 
 /**
  * Client secret issued for the Antigravity OAuth application.
  */
-export const ANTIGRAVITY_CLIENT_SECRET = "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";
+export const ANTIGRAVITY_CLIENT_SECRET = ANTIGRAVITY_OAUTH_CLIENT.clientSecret;
 
 /**
  * Scopes required for Antigravity integrations.
  */
-export const ANTIGRAVITY_SCOPES: readonly string[] = [
-  "https://www.googleapis.com/auth/cloud-platform",
-  "https://www.googleapis.com/auth/userinfo.email",
-  "https://www.googleapis.com/auth/userinfo.profile",
-  "https://www.googleapis.com/auth/cclog",
-  "https://www.googleapis.com/auth/experimentsandconfigs",
-];
+export const ANTIGRAVITY_SCOPES = [...ANTIGRAVITY_OAUTH_CLIENT.scopes];
 
 /**
  * OAuth redirect URI used by the local CLI callback server.
  */
-export const ANTIGRAVITY_REDIRECT_URI = "http://localhost:51121/oauth-callback";
+export const ANTIGRAVITY_REDIRECT_URI = ANTIGRAVITY_OAUTH_CLIENT.redirectUri;
 
 /**
  * Root endpoints for the Antigravity API (in fallback order).
  * CLIProxy and Vibeproxy use the daily sandbox endpoint first,
  * then fallback to autopush and prod if needed.
  */
-export const ANTIGRAVITY_ENDPOINT_DAILY = "https://daily-cloudcode-pa.sandbox.googleapis.com";
-export const ANTIGRAVITY_ENDPOINT_AUTOPUSH = "https://autopush-cloudcode-pa.sandbox.googleapis.com";
-export const ANTIGRAVITY_ENDPOINT_PROD = "https://cloudcode-pa.googleapis.com";
+export const ANTIGRAVITY_ENDPOINT_DAILY = ANTIGRAVITY_ENDPOINTS.daily;
+export const ANTIGRAVITY_ENDPOINT_AUTOPUSH = ANTIGRAVITY_ENDPOINTS.autopush;
+export const ANTIGRAVITY_ENDPOINT_PROD = ANTIGRAVITY_ENDPOINTS.production;
 
 /**
  * Endpoint fallback order (daily → autopush → prod).
@@ -70,7 +72,7 @@ export const GEMINI_CLI_ENDPOINT = ANTIGRAVITY_ENDPOINT_PROD;
  */
 export const ANTIGRAVITY_DEFAULT_PROJECT_ID = "rising-fact-p41fc";
 
-export const ANTIGRAVITY_VERSION_FALLBACK = "1.19.4";
+export const ANTIGRAVITY_VERSION_FALLBACK = CORE_ANTIGRAVITY_VERSION_FALLBACK;
 let antigravityVersion = ANTIGRAVITY_VERSION_FALLBACK;
 let versionLocked = false;
 
@@ -91,9 +93,10 @@ export const ANTIGRAVITY_VERSION = ANTIGRAVITY_VERSION_FALLBACK;
 
 export function getAntigravityHeaders(): HeaderSet & { "Client-Metadata": string } {
   return {
-    "User-Agent": `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Antigravity/${getAntigravityVersion()} Chrome/138.0.7204.235 Electron/37.3.1 Safari/537.36`,
-    "X-Goog-Api-Client": "google-cloud-sdk vscode_cloudshelleditor/0.1",
-    "Client-Metadata": `{"ideType":"ANTIGRAVITY","platform":"${process.platform === "win32" ? "WINDOWS" : "MACOS"}","pluginType":"GEMINI"}`,
+    ...buildAntigravityHeaders({
+      version: getAntigravityVersion(),
+      platform: process.platform,
+    }),
   };
 }
 
@@ -104,11 +107,11 @@ export const ANTIGRAVITY_HEADERS = {
   "Client-Metadata": `{"ideType":"ANTIGRAVITY","platform":"${process.platform === "win32" ? "WINDOWS" : "MACOS"}","pluginType":"GEMINI"}`,
 } as const;
 
-export const GEMINI_CLI_HEADERS = {
-  "User-Agent": "google-api-nodejs-client/9.15.1",
-  "X-Goog-Api-Client": "gl-node/22.17.0",
-  "Client-Metadata": "ideType=IDE_UNSPECIFIED,platform=PLATFORM_UNSPECIFIED,pluginType=GEMINI",
-} as const;
+export const GEMINI_CLI_HEADERS: {
+  "User-Agent": string;
+  "X-Goog-Api-Client": string;
+  "Client-Metadata": string;
+} = { ...CORE_GEMINI_CLI_HEADERS };
 
 const ANTIGRAVITY_PLATFORMS = ["windows/amd64", "darwin/arm64", "darwin/amd64"] as const;
 

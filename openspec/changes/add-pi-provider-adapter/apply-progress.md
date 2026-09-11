@@ -73,6 +73,32 @@ The Pi workspace is intentionally a metadata/distribution skeleton in this unit:
 - [ ] Implement the fixed-origin Antigravity HTTP/SSE consumer that validates response/usage semantics and emits ordered Pi partial text events with exactly one success, error, or aborted terminal outcome. <!-- sdd-owner: implementation -->
 - [ ] Register exactly `antigravity-guard` with one public model `antigravity-gemini-3.8-flash`, wire it to `gemini-3.8-flash`, connect the completed OAuth and stream behaviors, prove package discovery from a packed consumer, and document the text-only operating limits. <!-- sdd-owner: implementation -->
 
+## Authorized B neutral-core compatibility corrections
+
+- Runtime correction authority: `acquire state: proceed` for `B-neutral-core-compatibility-corrections`; parent retains its token. Native status supplied by the gatekeeper selects `add-pi-provider-adapter`, reports `2/8`, `applyState: ready`, `nextRecommended: apply`, and permits only the repo-local workspace root. No task checkbox, commit, push, PR, publish, or C–H work occurred.
+- Root compatibility restored: `ANTIGRAVITY_SCOPES` and `GEMINI_CLI_HEADERS` are mutable root-owned copies, while `getAntigravityHeaders()` returns a new mutable copy on every call. Core remains immutable and is not exposed by those root values.
+- Root characterization added: OAuth code exchange asserts the existing token endpoint, content type, form field order/wire values, and successful legacy token shape; `src/plugin/auth.ts` re-export asserts the established expiry behavior. No core immutability test was added because the correction is strictly root compatibility, not a new core contract.
+- No root OAuth, auth, or token production change was necessary: the compatibility gap was resolved entirely at the authorized `src/constants.ts` wrapper seam.
+
+### TDD Cycle Evidence — B compatibility correction
+
+| Stage | Command | Exit | Evidence |
+|---|---|---:|---|
+| Safety net | `npx vitest run src/constants.test.ts src/antigravity/oauth.test.ts src/plugin/auth.test.ts` | 0 | 4 files / 31 tests passed before correction. |
+| RED | `npx vitest run src/constants.test.ts` | 1 | New root compatibility characterizations failed: frozen scopes could not be extended and a frozen header result could not be assigned. |
+| GREEN | `npx vitest run src/constants.test.ts` | 0 | 2 files / 13 tests passed after mutable root copies and per-call header copies. |
+| TRIANGULATE | `npx vitest run src/constants.test.ts src/antigravity/oauth.test.ts src/plugin/auth.test.ts` | 0 | 4 files / 36 tests passed, covering copy isolation plus root code-exchange and expiry re-export behavior. |
+| REFACTOR | `npx vitest run src/constants.test.ts src/antigravity/oauth.test.ts src/plugin/auth.test.ts` | 0 | 4 files / 35 tests passed after combining duplicate mutable-root assertions without changing coverage. |
+
+## Correction verification, workload, and rollback
+
+- `npm run typecheck` — exit 0.
+- `npm test` — exit 0; 44 files, 1,119 passed, 25 todo.
+- `git diff --check -- src/constants.ts src/constants.test.ts src/plugin/auth.test.ts openspec/changes/add-pi-provider-adapter/apply-progress.md` — exit 0.
+- Runtime harness: N/A; these are pure root compatibility wrappers and mocked OAuth characterization, with no authorized live-account operation.
+- Corrected B arithmetic: the prior `430` figure incorrectly included OpenSpec persistence in the unit-B review count. The pre-correction B implementation/test delta was 326 additions + 68 deletions = 394; this correction is 95 additions + 4 deletions = 99; total B implementation/test delta is 421 additions + 72 deletions = 493. The maintainer explicitly authorized `size:exception` up to 500 total unit-B lines, so the corrected total is within the authorization. OpenSpec evidence is tracked separately and does not expand that delivery boundary.
+- Rollback boundary: revert only the mutable root wrappers and their root characterizations in `src/constants.ts`, `src/constants.test.ts`, `src/antigravity/oauth.test.ts`, and `src/plugin/auth.test.ts`; retain B core extraction, A, and unrelated dirty files.
+
 ## Authorized work-unit A correction: distribution safeguards
 
 - Runtime authority: `acquire state: proceed`; active change and correction slice explicitly selected as `add-pi-provider-adapter` / `A-workspace-distribution-foundation-corrections`. The earlier native status had an ambiguous change selection, but this bounded runtime authority resolves the target for this correction only.
@@ -96,3 +122,38 @@ The Pi workspace is intentionally a metadata/distribution skeleton in this unit:
 - The correction adds 84 lines and deletes 8 lines across the authorized files, below the 150-line correction limit; the existing unit-A task remains checked and unchanged.
 - Rollback boundary: remove only `packages/core/LICENSE`, `packages/pi/LICENSE`, the two manifest allowlist entries, and the pack-harness inventory/declaration checks; retain all original unit-A workspace work and unrelated dirty files.
 - Remaining implementation tasks are unchanged and remain the seven unchecked implementation-owned rows above.
+
+## Work unit B — neutral core extraction
+
+- Runtime authority: `acquire state: proceed`; work unit `B-neutral-core-extraction`; parent retains the opaque settle token. Status/action context consumed: `gentle-ai.sdd-status@2`, hybrid, repo-local, `C:\Github\Ordico\opencode-antigravity-guard` is the only allowed root, with no warnings.
+- Completed and persisted: B's implementation-owned checkbox is now `[x]` in `tasks.md`.
+- Files changed: `package.json`, `package-lock.json`, core `constants.ts`, `headers.ts`, `oauth.ts`, `expiry.ts`, `index.ts` and their tests; root `constants.ts`, `antigravity/oauth.ts`, `plugin/auth.ts`, `plugin/token.ts`, and their characterized tests.
+- Compatibility: root wrappers preserve OAuth state encoding, token-form field order and values, expiry fallback/invalid values, version locking, cache/error/persistence ownership, and deterministic headers. Core production imports only its local OAuth type and imports no host SDK, filesystem, persistence, account, quota, or recovery code.
+
+### TDD Cycle Evidence — B
+
+| Stage | Command | Exit | Evidence |
+|---|---|---:|---|
+| Safety net | `npx vitest run packages/core/src/index.test.ts src/constants.test.ts src/plugin/auth.test.ts src/plugin/token.test.ts` | 0 | 4 files, 32 tests passed before edits. |
+| RED | `npx vitest run packages/core/src/oauth.test.ts`; `npx vitest run packages/core/src/headers.test.ts packages/core/src/expiry.test.ts packages/core/src/constants.test.ts` | 1 each | Missing `./oauth.ts`, then missing `./headers.ts`, `./expiry.ts`, and `./constants.ts`; no tests executed. |
+| GREEN | `npx vitest run packages/core/src/oauth.test.ts` | 0 | 1 authorization-URL test passed after the minimum OAuth builder. |
+| TRIANGULATE | `npx vitest run packages/core/src/oauth.test.ts packages/core/src/headers.test.ts packages/core/src/expiry.test.ts packages/core/src/constants.test.ts` | 0 | 4 files, 7 tests passed for distinct forms/PKCE-state, Windows/macOS headers, expiry boundaries, and endpoints. |
+| REFACTOR | `npx vitest run packages/core/src/oauth.test.ts packages/core/src/headers.test.ts packages/core/src/expiry.test.ts packages/core/src/constants.test.ts src/antigravity/oauth.test.ts src/plugin/token.test.ts src/plugin/auth.test.ts src/constants.test.ts` | 0 | 8 files, 41 tests passed after root wrappers adopted core. |
+
+## Verification — B
+
+- `npm run typecheck` — exit 0.
+- `npm test` — exit 0; 44 files, 1,115 passed, 25 todo.
+- Runtime harness: N/A; this unit is pure core extraction with mocked OAuth wrapper characterization and no authorized live-account operation.
+- PR boundary: feature-branch-chain child B, dependent on committed A; no commit, push, PR, publish, or C–H implementation.
+- Rollback boundary: core primitives/tests plus the root constants, OAuth, auth, and token wrapper seams and their tests; leave unit A and unrelated dirty `.atl/*`, `.gitignore`, and `.pi/*` intact.
+- Workload at initial B completion: implementation/test/package changes were 326 additions and 68 deletions (394 total); the former `430` figure included mandatory SDD persistence and is superseded by the authorized B compatibility-correction arithmetic above. This cohesive extraction cannot shrink without omitting required contract coverage or evidence.
+
+## Remaining implementation tasks
+
+- [ ] Add Pi-local, abort-aware OAuth exchange/refresh and per-access-token project resolution that validate responses, redact diagnostics, and return neutral/Pi credential data without accessing OpenCode account state. <!-- sdd-owner: implementation -->
+- [ ] Implement a single-attempt callback receiver that binds `127.0.0.1:51121`, validates one complete callback URL and state, offers safe manual fallback conditions, and closes every owned resource on all terminal paths. <!-- sdd-owner: implementation -->
+- [ ] Compose browser/loopback and manual callback-URL login, token/project completion, refresh, cancellation, single-attempt coordination, and Pi credential mapping through Pi’s OAuth lifecycle only. <!-- sdd-owner: implementation -->
+- [ ] Implement immutable text-only context serialization with explicit unsupported-content errors and a bounded incremental UTF-8 SSE framer that preserves records across arbitrary byte boundaries. <!-- sdd-owner: implementation -->
+- [ ] Implement the fixed-origin Antigravity HTTP/SSE consumer that validates response/usage semantics and emits ordered Pi partial text events with exactly one success, error, or aborted terminal outcome. <!-- sdd-owner: implementation -->
+- [ ] Register exactly `antigravity-guard` with one public model `antigravity-gemini-3.8-flash`, wire it to `gemini-3.8-flash`, connect the completed OAuth and stream behaviors, prove package discovery from a packed consumer, and document the text-only operating limits. <!-- sdd-owner: implementation -->

@@ -1,9 +1,45 @@
 import { describe, it, expect } from "vitest"
+
 import {
+  ANTIGRAVITY_OAUTH_CLIENT,
+  GEMINI_CLI_HEADERS as CORE_GEMINI_CLI_HEADERS,
+} from "@benjamolina/antigravity-guard-core"
+import {
+  ANTIGRAVITY_SCOPES,
   GEMINI_CLI_HEADERS,
+  getAntigravityHeaders,
   getRandomizedHeaders,
   type HeaderSet,
 } from "./constants.ts"
+
+describe("root compatibility wrappers", () => {
+  it("keeps root OAuth scopes and Gemini CLI headers mutable", () => {
+    const scope = "temporary-root-scope"
+    const userAgent = GEMINI_CLI_HEADERS["User-Agent"]
+
+    ANTIGRAVITY_SCOPES.push(scope)
+    GEMINI_CLI_HEADERS["User-Agent"] = "temporary-root-agent"
+
+    expect(ANTIGRAVITY_SCOPES.at(-1)).toBe(scope)
+    expect(GEMINI_CLI_HEADERS["User-Agent"]).toBe("temporary-root-agent")
+    expect(ANTIGRAVITY_OAUTH_CLIENT.scopes).not.toContain(scope)
+    expect(CORE_GEMINI_CLI_HEADERS["User-Agent"]).toBe(userAgent)
+
+    ANTIGRAVITY_SCOPES.pop()
+    GEMINI_CLI_HEADERS["User-Agent"] = userAgent
+  })
+
+  it("returns independent mutable header objects", () => {
+    const first = getAntigravityHeaders()
+    const second = getAntigravityHeaders()
+
+    first["User-Agent"] = "temporary-root-agent"
+
+    expect(first["User-Agent"]).toBe("temporary-root-agent")
+    expect(second["User-Agent"]).toContain("Antigravity/1.19.4")
+    expect(second).not.toBe(first)
+  })
+})
 
 describe("GEMINI_CLI_HEADERS", () => {
   it("matches Code Assist headers from opencode-gemini-auth", () => {
@@ -12,6 +48,18 @@ describe("GEMINI_CLI_HEADERS", () => {
       "X-Goog-Api-Client": "gl-node/22.17.0",
       "Client-Metadata": "ideType=IDE_UNSPECIFIED,platform=PLATFORM_UNSPECIFIED,pluginType=GEMINI",
     })
+  })
+})
+
+describe("getAntigravityHeaders", () => {
+  it("preserves the deterministic legacy header values", () => {
+    const headers = getAntigravityHeaders()
+
+    expect(headers["User-Agent"]).toContain("Antigravity/1.19.4")
+    expect(headers["X-Goog-Api-Client"]).toBe("google-cloud-sdk vscode_cloudshelleditor/0.1")
+    expect(headers["Client-Metadata"]).toBe(
+      `{"ideType":"ANTIGRAVITY","platform":"${process.platform === "win32" ? "WINDOWS" : "MACOS"}","pluginType":"GEMINI"}`,
+    )
   })
 })
 

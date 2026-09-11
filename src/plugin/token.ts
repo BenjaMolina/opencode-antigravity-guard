@@ -1,4 +1,8 @@
-import { ANTIGRAVITY_CLIENT_ID, ANTIGRAVITY_CLIENT_SECRET } from "../constants";
+import {
+  ANTIGRAVITY_OAUTH_CLIENT,
+  buildRefreshForm,
+} from "@benjamolina/antigravity-guard-core";
+
 import { formatRefreshParts, parseRefreshParts, calculateTokenExpiry } from "./auth";
 import { clearCachedAuth, storeCachedAuth } from "./cache";
 import { createLogger } from "./logger";
@@ -99,12 +103,7 @@ export async function refreshAccessToken(
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
       },
-      body: new URLSearchParams({
-        grant_type: "refresh_token",
-        refresh_token: parts.refreshToken,
-        client_id: ANTIGRAVITY_CLIENT_ID,
-        client_secret: ANTIGRAVITY_CLIENT_SECRET,
-      }),
+      body: buildRefreshForm(ANTIGRAVITY_OAUTH_CLIENT, parts.refreshToken),
     });
 
     if (!response.ok) {

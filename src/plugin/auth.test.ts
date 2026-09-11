@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { isOAuthAuth, parseRefreshParts, formatRefreshParts, accessTokenExpired } from "./auth";
+import {
+  accessTokenExpired,
+  calculateTokenExpiry,
+  formatRefreshParts,
+  isOAuthAuth,
+  parseRefreshParts,
+} from "./auth";
 import type { OAuthAuthDetails, ApiKeyAuthDetails } from "./types";
 
 describe("isOAuthAuth", () => {
@@ -122,6 +128,13 @@ describe("formatRefreshParts", () => {
     const formatted = formatRefreshParts(original);
     const parsed = parseRefreshParts(formatted);
     expect(parsed).toEqual(original);
+  });
+});
+
+describe("calculateTokenExpiry", () => {
+  it("reexports the established absolute-expiry calculation", () => {
+    expect(calculateTokenExpiry(1_000, 3_600)).toBe(3_601_000);
+    expect(calculateTokenExpiry(5_000, "invalid")).toBe(3_605_000);
   });
 });
 

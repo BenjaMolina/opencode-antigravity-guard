@@ -78,6 +78,7 @@
         "zod-to-json-schema": "^3.25.1"
     },
     "dependencies": {
+        "@benjamolina/antigravity-guard-core": "0.1.0",
         "@openauthjs/openauth": "^0.4.3",
         "@opencode-ai/plugin": "^1.2.10",
         "proper-lockfile": "^4.1.2",

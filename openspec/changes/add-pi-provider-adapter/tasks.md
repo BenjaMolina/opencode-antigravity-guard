@@ -54,7 +54,7 @@ Allowed edit surfaces: root `package.json`, `package-lock.json`, `tsconfig*.json
 
 Depends on A. Allowed edit surfaces: `packages/core/src/{oauth.ts,constants.ts,headers.ts,expiry.ts,index.ts}` and colocated `*.test.ts`; `src/constants.ts`, `src/antigravity/oauth.ts`, `src/plugin/auth.ts`, `src/plugin/token.ts`, plus new/colocated characterization tests for those exact seams. Do not alter OpenCode request transformation, persistence, cache, logging, raw-response handling, or model behavior.
 
-- [ ] Characterize existing OpenCode OAuth URL/form, refresh-form, deterministic header, and expiry behavior, then move only the neutral contracts into core while retaining equivalent root reexports/wrappers and all host-owned side effects. <!-- sdd-owner: implementation -->
+- [x] Characterize existing OpenCode OAuth URL/form, refresh-form, deterministic header, and expiry behavior, then move only the neutral contracts into core while retaining equivalent root reexports/wrappers and all host-owned side effects. <!-- sdd-owner: implementation -->
 
   - **RED:** first add failing exported-core contract tests for `OAuthClientConfig`, authorization URL, code/refresh forms, immutable endpoints/headers, and expiry calculation; preserve baseline observations for existing wrapper cache/error behavior.
   - **GREEN:** implement core `buildAuthorizationUrl`, `buildCodeExchangeForm`, `buildRefreshForm`, `calculateTokenExpiry`, endpoint values, and deterministic header construction; replace only the designated assembly sites in `src/antigravity/oauth.ts` and `src/plugin/token.ts`, retaining same wire values and root wrapper semantics.

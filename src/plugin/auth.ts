@@ -1,3 +1,5 @@
+import { calculateTokenExpiry as calculateCoreTokenExpiry } from "@benjamolina/antigravity-guard-core";
+
 import type { AuthDetails, OAuthAuthDetails, RefreshParts } from "./types";
 
 const ACCESS_TOKEN_EXPIRY_BUFFER_MS = 60 * 1000;
@@ -42,11 +44,4 @@ export function accessTokenExpired(auth: OAuthAuthDetails): boolean {
  * @param requestTimeMs The local time when the request was initiated
  * @param expiresInSeconds The duration returned by the server
  */
-export function calculateTokenExpiry(requestTimeMs: number, expiresInSeconds: unknown): number {
-  const seconds = typeof expiresInSeconds === "number" ? expiresInSeconds : 3600;
-  // Safety check for bad data - if it's not a positive number, treat as immediately expired
-  if (isNaN(seconds) || seconds <= 0) {
-    return requestTimeMs;
-  }
-  return requestTimeMs + seconds * 1000;
-}
+export const calculateTokenExpiry = calculateCoreTokenExpiry;
