@@ -1,4 +1,5 @@
-import type { Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai"
+import { calculateCost, createAssistantMessageEventStream } from "@earendil-works/pi-ai"
+import type { AssistantMessage, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai"
 import {
   ANTIGRAVITY_ENDPOINTS,
   ANTIGRAVITY_VERSION_FALLBACK,
@@ -41,6 +42,82 @@ export interface StreamTransportInput {
   requestId: string
   signal?: AbortSignal
   timeoutMs?: number
+}
+
+export interface PiStreamLifecycleInput {
+  model: Model<string>
+  now: () => number
+  signal?: AbortSignal
+  runTransport: (input: { onSemantic: (semantic: ResponseSemantic) => void, signal: AbortSignal }) => Promise<void>
+}
+
+export function createPiLifecycleStream(input: PiStreamLifecycleInput) {
+  const stream = createAssistantMessageEventStream()
+  const controller = new AbortController()
+  const signal = input.signal ? AbortSignal.any([input.signal, controller.signal]) : controller.signal
+  const output: AssistantMessage = {
+    role: "assistant",
+    content: [],
+    api: input.model.api,
+    provider: input.model.provider,
+    model: input.model.id,
+    usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+    stopReason: "pending",
+    timestamp: input.now(),
+  }
+  let complete = false
+  let textStarted = false
+  let removeAbort: () => void = () => {}
+
+  const finalize = (reason: "stop" | "length" | "error" | "aborted", errorMessage?: string) => {
+    if (complete) return
+    complete = true
+    removeAbort()
+    controller.abort()
+    output.stopReason = reason
+    if (reason === "stop" || reason === "length") {
+      if (textStarted) stream.push({ type: "text_end", contentIndex: 0, content: output.content[0]?.type === "text" ? output.content[0].text : "", partial: output })
+      stream.push({ type: "done", reason, message: output })
+    } else {
+      output.errorMessage = errorMessage ?? "Antigravity generation failed."
+      stream.push({ type: "error", reason, error: output })
+    }
+    stream.end(output)
+  }
+
+  const onSemantic = (semantic: ResponseSemantic) => {
+    if (complete) return
+    if (semantic.type === "text" && semantic.text) {
+      if (!textStarted) {
+        textStarted = true
+        output.content.push({ type: "text", text: "" })
+        stream.push({ type: "text_start", contentIndex: 0, partial: output })
+      }
+      const text = output.content[0]
+      if (text?.type === "text") text.text += semantic.text
+      stream.push({ type: "text_delta", contentIndex: 0, delta: semantic.text, partial: output })
+    } else if (semantic.type === "usage") {
+      output.usage.input = semantic.input
+      output.usage.output = semantic.output
+      output.usage.cacheRead = semantic.cacheRead
+      output.usage.cacheWrite = semantic.cacheWrite
+      output.usage.totalTokens = semantic.input + semantic.output + semantic.cacheRead + semantic.cacheWrite
+      output.usage.cost = calculateCost(input.model, output.usage)
+    } else if (semantic.type === "finish") finalize(semantic.reason)
+  }
+
+  stream.push({ type: "start", partial: output })
+  if (input.signal) {
+    const abort = () => finalize("aborted")
+    input.signal.addEventListener("abort", abort, { once: true })
+    removeAbort = () => input.signal?.removeEventListener("abort", abort)
+    if (input.signal.aborted) abort()
+  }
+  if (!complete) void Promise.resolve().then(() => input.runTransport({ onSemantic, signal })).then(
+    () => { if (!complete) finalize(signal.aborted ? "aborted" : "error") },
+    () => finalize(signal.aborted || input.signal?.aborted ? "aborted" : "error"),
+  )
+  return stream
 }
 
 export async function executeStreamTransport(input: StreamTransportInput): Promise<void> {

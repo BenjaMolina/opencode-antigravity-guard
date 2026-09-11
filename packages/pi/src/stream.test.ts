@@ -1,7 +1,7 @@
 import type { Context, Model } from "@earendil-works/pi-ai"
 import { describe, expect, it, vi } from "vitest"
 
-import { executeStreamTransport, StreamTransportError } from "./stream.ts"
+import { createPiLifecycleStream, executeStreamTransport, StreamTransportError } from "./stream.ts"
 
 const endpoint = "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:streamGenerateContent?alt=sse"
 const encoder = new TextEncoder()
@@ -11,7 +11,7 @@ function context(): Context {
 }
 
 function model(): Model<string> {
-  return { id: "antigravity-gemini-3.8-flash", api: "antigravity-guard-sse" } as Model<string>
+  return { id: "antigravity-gemini-3.8-flash", api: "antigravity-guard-sse", cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } } as Model<string>
 }
 
 describe("fixed Antigravity SSE transport", () => {
@@ -206,4 +206,95 @@ describe("fixed Antigravity SSE transport", () => {
     expect(result).toBeUndefined()
     expect(semantics).toEqual([{ type: "text", text: "Hi" }, { type: "finish", reason: "stop" }])
   })
+})
+
+
+describe("Pi-native stream lifecycle", () => {
+  it("returns a stream that emits start then error when transport setup throws synchronously", async () => {
+    const lifecycle = createPiLifecycleStream({
+      model: model(),
+      now: () => 1_000,
+      runTransport: () => { throw new Error("CANARY-synchronous-setup") },
+    })
+
+    const events = []
+    for await (const event of lifecycle) events.push(event)
+
+    expect(events.map((event) => event.type)).toEqual(["start", "error"])
+    expect(await lifecycle.result()).toMatchObject({ stopReason: "error", errorMessage: "Antigravity generation failed." })
+  })
+
+  it("adapts G2a callbacks into ordered mutable partials with cumulative zero-cost usage", async () => {
+    const lifecycle = createPiLifecycleStream({
+      model: model(),
+      now: () => 1_000,
+      runTransport: async ({ onSemantic }) => {
+        onSemantic({ type: "text", text: "Hi" })
+        onSemantic({ type: "usage", input: 3, output: 2, cacheRead: 1, cacheWrite: 0, total: 5 })
+        onSemantic({ type: "text", text: "!" })
+        onSemantic({ type: "finish", reason: "stop" })
+      },
+    })
+
+    const events = []
+    for await (const event of lifecycle) events.push(event)
+    const output = await lifecycle.result()
+
+    expect(events.map((event) => event.type)).toEqual(["start", "text_start", "text_delta", "text_delta", "text_end", "done"])
+    const partials = events.filter((event) => "partial" in event)
+    expect(partials[0]?.partial).toBe(partials[2]?.partial)
+    expect(events[2]).toMatchObject({ type: "text_delta", delta: "Hi", partial: { content: [{ type: "text", text: "Hi!" }] } })
+    expect(events[4]).toMatchObject({ type: "text_end", content: "Hi!" })
+    expect(output).toMatchObject({ stopReason: "stop", content: [{ type: "text", text: "Hi!" }], usage: { input: 3, output: 2, cacheRead: 1, totalTokens: 6, cost: { total: 0 } } })
+  })
+})
+
+
+it("settles a caller-supplied abort once and propagates cleanup to the in-flight transport", async () => {
+  const controller = new AbortController()
+  let release!: () => void
+  let transportSignal!: AbortSignal
+  let transportStarted!: () => void
+  const started = new Promise<void>((resolve) => { transportStarted = resolve })
+  const blocked = new Promise<void>((resolve) => { release = resolve })
+  const aborted = createPiLifecycleStream({
+    model: model(),
+    now: () => 1_000,
+    signal: controller.signal,
+    runTransport: async ({ onSemantic, signal }) => {
+      transportSignal = signal
+      onSemantic({ type: "text", text: "kept" })
+      transportStarted()
+      await blocked
+    },
+  })
+  const successful = createPiLifecycleStream({ model: model(), now: () => 2_000, runTransport: async ({ onSemantic }) => { onSemantic({ type: "text", text: "other" }); onSemantic({ type: "finish", reason: "length" }) } })
+
+  await started
+  controller.abort()
+  const [abortedEvents, successfulEvents] = await Promise.all([
+    (async () => { const events = []; for await (const event of aborted) events.push(event); return events })(),
+    (async () => { const events = []; for await (const event of successful) events.push(event); return events })(),
+  ])
+  release()
+
+  expect(transportSignal.aborted).toBe(true)
+  expect(abortedEvents.map((event) => event.type)).toEqual(["start", "text_start", "text_delta", "error"])
+  expect(await aborted.result()).toMatchObject({ stopReason: "aborted", content: [{ type: "text", text: "kept" }] })
+  expect(successfulEvents.map((event) => event.type)).toEqual(["start", "text_start", "text_delta", "text_end", "done"])
+  expect(await successful.result()).toMatchObject({ stopReason: "length", content: [{ type: "text", text: "other" }] })
+})
+
+
+it("emits one safe error before finish and ignores a late transport rejection", async () => {
+  const failed = createPiLifecycleStream({ model: model(), now: () => 1_000, runTransport: async () => { throw new Error("CANARY-setup") } })
+  const finished = createPiLifecycleStream({ model: model(), now: () => 1_000, runTransport: async ({ onSemantic }) => { onSemantic({ type: "text", text: "done" }); onSemantic({ type: "finish", reason: "stop" }); throw new Error("CANARY-late") } })
+
+  const read = async <T,>(stream: AsyncIterable<T>) => { const events: T[] = []; for await (const event of stream) events.push(event); return events }
+  const [failedEvents, finishedEvents] = await Promise.all([read(failed), read(finished)])
+
+  expect(failedEvents.map((event: { type: string }) => event.type)).toEqual(["start", "error"])
+  expect(await failed.result()).toMatchObject({ stopReason: "error", errorMessage: "Antigravity generation failed." })
+  expect(finishedEvents.map((event: { type: string }) => event.type)).toEqual(["start", "text_start", "text_delta", "text_end", "done"])
+  expect(await finished.result()).toMatchObject({ stopReason: "stop", content: [{ type: "text", text: "done" }] })
 })

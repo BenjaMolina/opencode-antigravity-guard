@@ -664,3 +664,54 @@ The Pi workspace is intentionally a metadata/distribution skeleton in this unit:
 - Passing evidence remediates `sha256:54757c7b4fda7ca0ac3c677d72bc58f86726ba02a7ef38aa4054f13be8677e4d`.
 - Exact conservative cumulative ledger: 473 baseline + 117 final-correction changed lines = **590/590 changed lines**; no task artifact changed because G2a was already persisted `[x]` and this is correction-only evidence.
 - Rollback: revert only local-error provenance/inactivity injection, the final transport regressions, and this appendix; retain prior G2a behavior and all unrelated worktree changes.
+
+## Work unit G2b ï¿½ Pi-native stream lifecycle
+
+- Authority/status: parent-selected `add-pi-provider-adapter` G2b at 9/11, hybrid repo-local with `C:/Github/Ordico/opencode-antigravity-guard` as the sole edit root and no action-context warnings. Runtime `G2b-pi-stream-lifecycle` was `proceed`; its token remains with the parent. No status, acquire, or settle action occurred.
+- Completed and persisted: G2b is visibly `[x]` in `tasks.md`; H is the only unchecked implementation-owned row.
+- Files: `packages/pi/src/stream.ts`, `packages/pi/src/stream.test.ts`, `tasks.md`, and this cumulative progress artifact.
+- Behavior: G2b adapts injected G2a semantic callbacks into a real Pi `AssistantMessageEventStream`; it synchronously emits `start`, then ordered text events over one mutable assistant snapshot, replaces cumulative usage and recalculates zero/unpriced cost, maps stop/length, and guards terminal settlement, `stream.end`, cleanup, and post-terminal mutation. Caller abort settles an in-flight ignored transport once as `aborted`; concurrent streams retain independent output. G2a HTTP/project/framing/semantic behavior is unchanged.
+
+### TDD Cycle Evidence ï¿½ G2b
+
+| Stage | Command | Exit | Evidence |
+|---|---|---:|---|
+| Safety net | `npx vitest run packages/pi/src/stream.test.ts` | 0 | Existing G2a transport suite passed: 1 file / 10 tests. |
+| RED | same focused command | 1 | The new real Pi event-stream lifecycle test failed because `createPiLifecycleStream` did not exist. |
+| GREEN | focused test; raw Pi `tsc --noEmit` | 0 | Minimal G2a callback adaptation passed 11 tests with ordered start/text/done, a shared partial, cumulative usage, and zero cost. |
+| TRIANGULATE | focused test | 1 then 0 | An aborted hanging transport timed out before settlement; the external-abort finalizer then passed 12 tests, including isolated concurrent length completion. A distinct setup-error/late-rejection terminal test raised final coverage to 13. |
+| REFACTOR | focused test; raw Pi `tsc --noEmit` | 0 | The centralized guarded finalizer retained all 13 focused tests; no further structural refactor was justified. |
+
+## G2b verification, workload, and rollback
+
+- Passed: core workspace build, focused stream suite (1 file / 13 tests), raw Pi typecheck, and `npm test` (52 files / 1,212 passed / 25 todo). Existing invalid-aspect-ratio diagnostics were non-failing.
+- `git diff --check` passed for the G2b source/test/type surfaces before artifact persistence and is rerun with the final artifact diff below.
+- Runtime harness: real Pi `AssistantMessageEventStream` iteration/result settlement over injected G2a semantic callbacks; external Antigravity transport is intentionally N/A because live access is unauthorized.
+- Workload / PR boundary: feature-branch-chain G2b only, 145 source/test changed lines before task/progress persistence; 173 changed lines including the persisted checkbox and this evidence. No code was compressed to meet the 400-line cap.
+- Rollback boundary: remove only the G2b lifecycle adapter/tests and this checkbox/progress evidence; retain G2a transport, G1/F/C2, and unrelated worktree dirt.
+- Remaining implementation-owned row: `- [ ] Register exactly \`antigravity-guard\` with one public model \`antigravity-gemini-3.8-flash\`, wire it to \`gemini-3.8-flash\`, connect the completed OAuth and G2b stream behaviors, prove package discovery from a packed consumer, and document the text-only operating limits. <!-- sdd-owner: implementation -->`
+
+
+## G2b correction — synchronous setup containment and host-supported cancellation
+
+- Authority/status consumed: the parent expressly selected `add-pi-provider-adapter` / G2b at `10/11`, apply-ready, repo-local only at `C:/Github/Ordico/opencode-antigravity-guard`, with no action-context warnings. Per instruction, no status, acquire, or settle action occurred.
+- `createPiLifecycleStream()` now invokes `runTransport` from a promise microtask, so a synchronous setup throw cannot escape the factory: it returns the Pi stream immediately, which emits `start`, then one safe error terminal and settles its result.
+- Pi 0.85.1's `AssistantMessageEventStream` exposes only `push`, `end`, async iteration, and `result`; its iterator has no provider-observable consumer-abandonment/cancellation callback. The G2b task wording and test name therefore now accurately cover the nearest host-supported contract: the caller-provided `SimpleStreamOptions.signal` aborts the owned transport signal and settles exactly once. External-abort cleanup remains covered and is not weakened.
+
+### TDD Cycle Evidence — G2b correction
+
+| Stage | Command | Exit | Evidence |
+|---|---|---:|---|
+| Safety net | `npx vitest run packages/pi/src/stream.test.ts` | 0 | 13 focused tests passed before correction. |
+| RED | same focused command | 1 | New synchronous-throw fixture caused `createPiLifecycleStream()` to throw `CANARY-synchronous-setup` instead of returning a stream. |
+| GREEN | same focused command | 0 | Deferring `runTransport` invocation through `Promise.resolve().then(...)` yielded 14/14, with ordered `start` then safe `error` and settled result. |
+| TRIANGULATE | same focused command | 0 | The renamed external-abort fixture waits for transport start, proves the supplied transport signal becomes aborted, and preserves the independent concurrent completion. |
+| REFACTOR | same focused command | 0 | The one-line promise boundary retained 14/14; no further refactor was warranted. |
+
+## G2b correction verification, workload, and rollback
+
+- Passed: focused stream tests (1 file / 14 tests), raw Pi `tsc --noEmit`, core workspace build, `npm test` (52 files / 1,213 passed / 25 todo), and scoped `git diff --check`.
+- G2b's supplied cumulative ledger was 173 changed lines. This correction adds 27 source/test changed lines, for 200/400; the narrow task/evidence wording remains within the assigned G2b work-unit boundary.
+- Persisted checkbox evidence: reread `tasks.md`; G2b remains visibly `[x]`, while H is the sole unchecked implementation-owned row.
+- Rollback boundary: revert only the deferred transport invocation, synchronous-throw regression, caller-supplied-abort test wording/assertion, the narrow task terminology correction, and this appendix; retain G2a transport, the completed G2b lifecycle behavior, and unrelated worktree dirt.
+- Remaining implementation-owned row: `- [ ] Register exactly \`antigravity-guard\` with one public model \`antigravity-gemini-3.8-flash\`, wire it to \`gemini-3.8-flash\`, connect the completed OAuth and G2b stream behaviors, prove package discovery from a packed consumer, and document the text-only operating limits. <!-- sdd-owner: implementation -->`
