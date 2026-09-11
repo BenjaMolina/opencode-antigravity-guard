@@ -110,7 +110,7 @@ Depends on C1, C2, and D1. Allowed edit surfaces: `packages/pi/src/{oauth.ts,oau
 
 Depends on A. Allowed edit surfaces: `packages/pi/src/{context.ts,context.test.ts,sse.ts,sse.test.ts,types.ts}` and Pi-local byte/fixture helpers. No Pi registration, HTTP execution, or reuse/import of `src/plugin/core/streaming/*`.
 
-- [ ] Implement immutable text-only context serialization with explicit unsupported-content errors and a bounded incremental UTF-8 SSE framer that preserves records across arbitrary byte boundaries. <!-- sdd-owner: implementation -->
+- [x] Implement immutable text-only context serialization with explicit unsupported-content errors and a bounded incremental UTF-8 SSE framer that preserves records across arbitrary byte boundaries. <!-- sdd-owner: implementation -->
 
   - **RED:** add supported system/user/assistant serialization fixtures plus pre-fetch rejection tests for tools/tool history, image, thinking, unknown blocks/roles, deferred requests, reasoning options, empty conversation, invalid generation options, and caller-context mutation; add byte-split SSE failures for malformed UTF-8, unterminated records, and records above 1 MiB.
   - **GREEN:** serialize the exact `systemInstruction`, ordered `contents`, public-to-wire model mapping, fixed request envelope/generation defaults, and text-only guards; frame BOM, LF/CRLF/bare-CR, comments, id/retry, optional data space, and multiline data using fatal incremental UTF-8 decoding.

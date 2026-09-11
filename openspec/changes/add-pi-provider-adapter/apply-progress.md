@@ -429,3 +429,56 @@ The Pi workspace is intentionally a metadata/distribution skeleton in this unit:
 | TRIANGULATE | raw Pi `tsc`; `npm audit --omit=dev` | 0 | SDK 1.30.0 compiles and production audit has zero vulnerabilities. |
 | REFACTOR | `npm test`; `npm pack --dry-run --json` | 0 | 48 files/1,173 tests pass; pack has no bundled dependencies. |
 - E is **495/500** authored lines: prior 466 + 18 source/test + 11 evidence. Generated lockfile delta is **+1,165/-12** total (**+18/-4** this correction); rollback restores error provenance, SDK pin/lock wiring, and this evidence only.
+
+## Work unit F — text context and SSE framing
+
+- Authority/status: parent-selected `add-pi-provider-adapter` at 6/9, repo-local sole edit root, and `F-text-context-sse-framing` runtime acquire `proceed`; parent retains its token. Feature-branch-chain F only; no commit, push, PR, publish, live request, or G–H work.
+- Completed/persisted: F's implementation-owned task is visibly `[x]` in `tasks.md`.
+- Files: `packages/pi/src/context.ts`, `context.test.ts`, `sse.ts`, `sse.test.ts`, plus this progress artifact and F checkbox.
+- Behavior: immutable system/user/assistant text serialization maps the sole public model to `gemini-3.8-flash`, preserves whitespace/repeated text, validates fixed defaults, and rejects unsupported context/options before HTTP. The framer incrementally decodes fatal UTF-8 and preserves records across BOM, newline, and arbitrary byte boundaries under 1-MiB record and 8-MiB text bounds.
+
+### TDD Cycle Evidence — F
+
+| Stage | Command | Exit | Evidence |
+|---|---|---:|---|
+| RED | `npx vitest run packages/pi/src/context.test.ts packages/pi/src/sse.test.ts` | 1 | Both suites failed to load their absent production modules. |
+| GREEN | same focused command | 0 | 15 tests passed after the serializer and framer were added. |
+| TRIANGULATE | focused command; raw Pi `tsc` | 0; 2 then 0 | 17 tests cover tool-call/unknown blocks and every split of the Unicode fixture; a readonly fixture cast failed typecheck, then the explicit runtime cast passed. |
+| REFACTOR | focused command; raw Pi `tsc` | 0 | Shared UTF-8 encoder extraction retained 17/17 tests and type safety. |
+
+## F verification, workload, and rollback
+
+- `npx vitest run packages/pi/src/context.test.ts packages/pi/src/sse.test.ts` — exit 0; 2 files / 17 tests.
+- `npx tsc -p packages/pi/tsconfig.json --noEmit` — exit 0.
+- `npm test` — exit 0; 50 files / 1,190 passed / 25 todo. Existing invalid-aspect-ratio diagnostics appeared on stderr without failures.
+- F is the feature-branch-chain child after E. Rollback removes only F serializer/framer and tests plus its checkbox/progress evidence; retain A–E and unrelated dirt.
+- Remaining implementation rows: G response/native stream and H registration/docs.
+
+## F correction — hostile context and raw SSE limits
+
+- Status consumed: parent-selected `add-pi-provider-adapter`, apply ready at 7/9; repo-local sole edit root with no warnings. Parent retains the existing F token; no acquire, settle, commit, push, PR, publish, live request, or G/H work occurred.
+- Scope: only the four F files and this artifact changed; pre-existing unrelated `.atl/*`, `.gitignore`, and `.pi/*` dirt was preserved. The F checkbox was already `[x]` and remains unchanged.
+- Context now reads only own data descriptors from plain records, requires dense nonempty text arrays, rejects malformed options and numeric values, and converts hostile getter/prototype failures to fixed `ContextSerializationError` values without canary text.
+- SSE now counts raw bytes before retaining each decoded segment, including split LF/CRLF/bare-CR delimiters, and stores decoded line chunks rather than repeatedly concatenating an unbounded line.
+
+### TDD Cycle Evidence — F correction
+
+| Stage | Command | Exit | Evidence |
+|---|---|---:|---|
+| Safety net | `npx vitest run packages/pi/src/context.test.ts packages/pi/src/sse.test.ts` | 1 | Existing F regression exposed empty context text; this was the pre-change failing correction state. |
+| RED | same focused command | 1 | New empty-part, malformed/prototype/getter, multibyte, exact CRLF, and unterminated-line cases failed before the guards. |
+| GREEN | same focused command; raw Pi `tsc` | 0 | 20 focused tests and the Pi typecheck passed after minimum descriptor and byte-framing guards. |
+| TRIANGULATE | same focused command; raw Pi `tsc` | 0 | Sparse/non-array/accessor context, NaN/fractional options, 8-MiB multibyte text, CRLF split, and LF/bare-CR framing pass. |
+| REFACTOR | same focused command; raw Pi `tsc` | 0 | Removed the obsolete encoder while retaining 20 focused tests and type safety. |
+
+## F correction verification and rollback
+
+- Focused Vitest: exit 0, 2 files / 20 tests.
+- Raw Pi typecheck: `npx tsc -p packages/pi/tsconfig.json --noEmit` exit 0.
+- Full suite: `npm test` exit 0, 50 files / 1,193 passed / 25 todo; expected invalid-aspect-ratio diagnostics remained non-failing.
+- `git diff --check` on the four F files exit 0.
+- Workload: 89 F source/test lines plus 29 evidence lines were added to the stated 278-line candidate: **118 incremental, 396/400 cumulative**, leaving 4 lines; no exception is required.
+- Rollback boundary: revert only the descriptor-validation/text guards, incremental raw-byte framer, their F regressions, and this correction appendix; retain A–E and unrelated dirt.
+- Remaining unchecked implementation rows:
+  - [ ] Implement the fixed-origin Antigravity HTTP/SSE consumer that validates response/usage semantics and emits ordered Pi partial text events with exactly one success, error, or aborted terminal outcome. <!-- sdd-owner: implementation -->
+  - [ ] Register exactly `antigravity-guard` with one public model `antigravity-gemini-3.8-flash`, wire it to `gemini-3.8-flash`, connect the completed OAuth and stream behaviors, prove package discovery from a packed consumer, and document the text-only operating limits. <!-- sdd-owner: implementation -->
