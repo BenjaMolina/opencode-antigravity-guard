@@ -77,7 +77,7 @@ Depends on A. Allowed edit surfaces: `packages/pi/src/{auth-http.ts,auth-http.te
 
 Depends on A. Allowed edit surfaces: `packages/pi/src/{project.ts,project.test.ts,types.ts}` and Pi-local HTTP test helpers under `packages/pi/src/test/`. Use only core endpoint/header primitives and injected fetch/clock; do not import `src/plugin/*`, invoke C1, read files, cache project results, or add credential persistence.
 
-- [ ] Add Pi-local, abort-aware `loadCodeAssist` project resolution that sends exact Antigravity metadata and headers for each access token, accepts only supported project shapes, and redacts failures. <!-- sdd-owner: implementation -->
+- [x] Add Pi-local, abort-aware `loadCodeAssist` project resolution that sends exact Antigravity metadata and headers for each access token, accepts only supported project shapes, and redacts failures. <!-- sdd-owner: implementation -->
 
   - **RED:** use mocked fetch/clock tests for accepted nonempty `cloudaicompanionProject` string and `.id` shapes, missing/empty/invalid projects, per-access-token isolation with no cache reuse, bounded error bodies with canary secrets, and abort before/during fetch or body read.
   - **GREEN:** implement ten-second/remaining-attempt bounded `POST https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist` calls with fixed Antigravity metadata, deterministic Gemini CLI/Antigravity headers, redirect-error handling, safe allowlisted error kinds/status messages, and no persisted project data.

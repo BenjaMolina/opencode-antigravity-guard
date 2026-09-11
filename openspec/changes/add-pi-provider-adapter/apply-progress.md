@@ -246,3 +246,50 @@ The Pi workspace is intentionally a metadata/distribution skeleton in this unit:
 - `npx tsc -p packages/pi/tsconfig.json --noEmit` -- exit 0.
 - C1 inclusive count: 451 + 17 test lines + 20 evidence lines = 488, within the authorized inclusive cap of 500; correction is 37/60 lines.
 - Rollback boundary: remove only the positive-deadline pending-fetch regression and this evidence appendix.
+
+## Work unit C2 — Pi project-resolution HTTP
+
+- Runtime authority: `C2-pi-project-resolution` acquired `proceed`; parent retains its token. Fresh parent status selected `add-pi-provider-adapter`, apply ready at 3/9, repo-local root `C:\Github\Ordico\opencode-antigravity-guard`, with no action-context warnings.
+- Completed and persisted: C2's implementation-owned checkbox is `[x]` in `tasks.md`; completion is now 4/9. No C1 invocation, OpenCode import, project cache, filesystem access, credential persistence, retry, fallback, live request, commit, push, PR, publish, or D1–H work occurred.
+- Files changed: `packages/pi/src/project.ts`, `packages/pi/src/project.test.ts`, `tasks.md`, and this cumulative progress artifact. `types.ts` was not needed.
+- The resolver uses injected fetch/clock, core production endpoint/header primitives, a fresh request per access token, ten-second/deadline-bounded signals across fetch/body reads, redirect rejection, 64-KiB bodies, strict unknown JSON, and opaque actionable errors. It accepts only nonblank project strings or object IDs.
+
+### TDD Cycle Evidence — C2
+
+| Stage | Command | Exit | Evidence |
+|---|---|---:|---|
+| RED | `npx vitest run packages/pi/src/project.test.ts` | 1 | The new test could not import absent `project.ts`. |
+| GREEN | same focused command | 0 | The minimum exact Windows request and string-project behavior passed: 1 test. |
+| TRIANGULATE | same focused command | 1 then 0 | Object-ID/macOS, invalid payload, token isolation, canary-redaction, redirect/status, and fetch/body abort/deadline cases initially produced 9 failures; generalized handling passed 12 tests. |
+| REFACTOR | core build, focused test, Pi typecheck, and `npm test` | 0 each | Extracted pure metadata mapping; focused suite remained 12/12. |
+
+## C2 verification, workload, and rollback
+
+- `npm run build --workspace=@benjamolina/antigravity-guard-core`, `npx vitest run packages/pi/src/project.test.ts`, and `npx tsc -p packages/pi/tsconfig.json --noEmit` — exit 0.
+- `npm test` — exit 0; 46 files / 1,152 passed / 25 todo. Existing invalid-aspect-ratio diagnostics appeared on stderr without failures.
+- Final focused verification passed 13 tests after adding a transport regression that passed immediately; it is verification coverage, not claimed as a new TDD RED cycle.
+- C2 is the feature-branch-chain child of C1. It adds 291 source/test lines plus 2 task-checkbox lines and 25 progress-evidence lines (318 total), below the 400-line limit.
+- Rollback boundary: remove only C2's resolver/tests and its checkbox/progress evidence; retain A, B, C1, and unrelated dirty files.
+- Remaining implementation rows: D1 callback receiver, E OAuth lifecycle, F context/SSE framing, G response/native stream, and H registration/docs.
+
+## C2 remediation — dependency-error normalization
+
+- Authority: active `C2-pi-project-resolution` remediation proceeded under the same repo-local root and allowed surfaces; the persisted C2 checkbox remains `[x]`.
+- Fetch rejections, reader rejections, and synchronous `getReader()` failures now normalize to the fixed transport error unless the composed signal is aborted. Exported forged `ProjectHttpError` instances cannot carry dependency messages/statuses through the boundary.
+- The resolver retains its internally generated oversized-response error only after trusted local processing completes; no dependency callback can select that path.
+
+### TDD Cycle Evidence — C2 remediation
+
+| Stage | Command | Exit | Evidence |
+|---|---|---:|---|
+| Safety net | `npx vitest run packages/pi/src/project.test.ts` | 0 | 13 tests passed before remediation. |
+| RED | same focused command | 1 | New regressions covered forged fetch/body errors and synchronous `getReader()`; the first forged-fetch case confirmed unsafe rethrow. |
+| GREEN | same focused command | 0 | 14 tests passed after normalizing callback errors and moving reader acquisition inside the protected boundary. |
+| TRIANGULATE | same focused command | 0 | A 64-KiB overflow fixture proved the trusted local response-limit error remains a safe `response` result; 15 tests passed. |
+| REFACTOR | focused test, Pi typecheck, and `npm test` | 0 each | Removed unused caught values; final focused suite remained 15/15. |
+
+## C2 remediation verification and rollback
+
+- `npx vitest run packages/pi/src/project.test.ts`, `npx tsc -p packages/pi/tsconfig.json --noEmit`, and `npm test` — exit 0; full suite: 46 files / 1,154 passed / 25 todo.
+- C2 now totals 320 source/test lines, 2 checkbox lines, and 47 progress-evidence lines: 369 changed lines, leaving 31 below the 400-line ceiling.
+- Rollback boundary: revert only the dependency-normalization/reader-guard changes and their remediation tests/evidence; retain the original C2 resolver behavior and prior A/B/C1 work.
