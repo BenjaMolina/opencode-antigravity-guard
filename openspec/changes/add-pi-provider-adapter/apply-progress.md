@@ -482,3 +482,68 @@ The Pi workspace is intentionally a metadata/distribution skeleton in this unit:
 - Remaining unchecked implementation rows:
   - [ ] Implement the fixed-origin Antigravity HTTP/SSE consumer that validates response/usage semantics and emits ordered Pi partial text events with exactly one success, error, or aborted terminal outcome. <!-- sdd-owner: implementation -->
   - [ ] Register exactly `antigravity-guard` with one public model `antigravity-gemini-3.8-flash`, wire it to `gemini-3.8-flash`, connect the completed OAuth and stream behaviors, prove package discovery from a packed consumer, and document the text-only operating limits. <!-- sdd-owner: implementation -->
+
+## Work unit G — blocked by review-budget gate
+
+## Maintainer-approved G split and revised work-unit boundary
+
+- The maintainer explicitly selected a chained split, not a `size:exception`, after the settled failed original G attempt. Delivery remains `ask-on-risk` with `feature-branch-chain`; no source or tests were created by the failed attempt.
+- Former G is replaced by sequential G1 then G2. G1 owns only pure Antigravity SSE response/event semantic validation: candidate/text/finish/usage mapping and its colocated tests. It has no fetch, project resolution, or Pi stream lifecycle responsibility.
+- G2 depends on C2, F, and G1. It owns fixed-origin HTTP/SSE execution and exactly-once Pi-native stream lifecycle, consuming G1 and F with its colocated tests. H now depends on G2.
+- The preserved combined G contract remains fixed-origin validation, safe HTTP guidance, framed SSE consumption, semantic candidate/text/finish/usage handling, ordered mutable Pi partials, and exactly one success, error, or aborted terminal with settled `stream.result`.
+- Revised task progress is 7/10 complete: A, B, C1, C2, D1, E, and F are complete; G1, G2, and H remain unchecked. Each G work unit is forecast at or below 400 authored changed lines, with independent focused verification and rollback boundaries.
+
+- Status consumed: parent-selected `add-pi-provider-adapter`, hybrid/apply-ready at `7/9`, repo-local sole edit root with no warnings; runtime attempt `G-response-native-stream` is `proceed` and remains owned by the parent. No acquire or settle occurred.
+- No G production or test file was created, so the G checkbox remains unchecked. Existing response/stream files are absent; `git diff --check` over all allowed G surfaces exited 0 before this evidence update.
+- Strict TDD status: no RED was written because the mandatory workload gate stopped the cohesive unit before any source edit; GREEN, TRIANGULATE, and REFACTOR are N/A.
+- One honest slicing pass estimates at least 660 changed lines: response-schema/usage validation (~140), fixed-origin HTTP/SSE Pi event lifecycle (~190), real-stream focused RED/TRIANGULATE tests (~300), and required task/progress persistence (~30). Compressing or separating the tests from their behavior would violate the strict-TDD and work-unit contracts.
+- Decision needed: explicit `size:exception` for at least 660 lines, or a new approved split that keeps each response/stream behavior and its tests cohesive. No tests, typecheck, full suite, runtime harness, live request, commit, push, PR, publish, or H work ran.
+- Rollback boundary: only this truthful blocking evidence; no implementation rollback is needed. The remaining G row is exactly: `- [ ] Implement the fixed-origin Antigravity HTTP/SSE consumer that validates response/usage semantics and emits ordered Pi partial text events with exactly one success, error, or aborted terminal outcome. <!-- sdd-owner: implementation -->`
+
+## Work unit G1 — Antigravity SSE response semantics
+
+- Authority: parent-selected `G1-response-semantics` proceeded under the supplied hybrid repo-local status; `C:\Github\Ordico\opencode-antigravity-guard` is the sole allowed root, with no warnings. The parent retains the runtime token; this worker neither acquired nor settled it.
+- Completed and persisted: G1's implementation-owned checkbox is visibly `[x]` in `tasks.md`. G2 and H remain untouched and unchecked.
+- Files: `packages/pi/src/response.ts`, `packages/pi/src/response.test.ts`, `tasks.md`, and this cumulative progress artifact. No fetch, project resolution, Pi event emission, stream finalization, types change, or live call occurred.
+- Behavior: pure semantic mapping parses each framed record once; accepts one candidate with text deltas, maps STOP/MAX_TOKENS, normalizes cumulative usage snapshots, validates metadata, rejects errors/prompt blocks/unsupported parts/malformed usage, and requires nonempty text plus a finish before success.
+
+### TDD Cycle Evidence — G1
+
+| Stage | Command | Exit | Evidence |
+|---|---|---:|---|
+| RED | `npx vitest run packages/pi/src/response.test.ts` | 1 | The new pure-response contract could not import absent `response.ts`. |
+| GREEN | same focused command | 0 | The minimal candidate text and usage mapping passed 1 test. |
+| TRIANGULATE | same focused command | 1 then 0 | Metadata validation and then cumulative-usage omission tests failed before implementation; final focused suite passed 4 tests for repeated/whitespace deltas, MAX_TOKENS, `[DONE]`, errors, forbidden parts, invalid usage, and terminal ordering. |
+| REFACTOR | focused test and raw Pi typecheck | 0 | Stateful cumulative usage normalization retained 4/4 behavior tests; no broader refactor was needed. |
+
+## G1 verification, workload, and rollback
+
+- `npm run build --workspace=@benjamolina/antigravity-guard-core`, `npx vitest run packages/pi/src/response.test.ts`, and `npx tsc -p packages/pi/tsconfig.json --noEmit` — exit 0.
+- `npm test` — exit 0; 51 files / 1,197 passed / 25 todo. Existing invalid-aspect-ratio diagnostics were non-failing.
+- Runtime harness: N/A; G1 is deterministic pure parsing/mapping over framed fixtures and makes no external requests.
+- Workload arithmetic: pre-existing G-split planning is 17 progress additions plus tasks 25 additions/13 deletions = 55 changed lines. G1 adds 119 source + 58 test + 25 progress = 202 changed lines, for 257 cumulative changed lines, below 400; the persisted checkbox is already part of the pre-existing modified revised-G row and adds no further net diff line. No code was compressed to reach the cap.
+- Rollback boundary: remove only G1 response semantics/tests and this G1 checkbox/progress evidence; retain F, the approved split history, and all unrelated dirty files.
+- Remaining implementation-owned rows: G2 fixed-origin stream lifecycle and H registration/docs.
+
+## G1 correction — reject present empty candidate lists
+
+- Authority/status consumed: the parent-supplied `gentle-ai.sdd-status@2` selects `add-pi-provider-adapter`, hybrid artifacts, apply ready at 8/10, repo-local sole edit root `C:/Github/Ordico/opencode-antigravity-guard`, and no action-context warnings. The parent reacquired `proceed` for `G1-response-semantics`; this correction neither acquired nor settled an attempt.
+- Scope: only `packages/pi/src/response.ts`, `packages/pi/src/response.test.ts`, and this append were changed. G2/H, task checkboxes, network calls, commits, pushes, PRs, publishing, and live calls remain untouched.
+- Correction: candidate absence still permits metadata-only records, while a present `candidates` field must now contain exactly one candidate. Empty and multiple candidate arrays are rejected.
+
+### TDD Cycle Evidence — G1 correction
+
+| Stage | Command | Exit | Evidence |
+|---|---|---:|---|
+| Safety net | `npx vitest run packages/pi/src/response.test.ts` | 0 | Pre-change focused suite: 4 tests passed. |
+| RED | same focused command | 1 | The new metadata-only/empty-list regression failed because `candidates: []` was accepted; 4 passed, 1 failed. |
+| GREEN | same focused command | 0 | The minimum `value.length !== 1` guard passed all 5 tests. |
+| TRIANGULATE / REFACTOR | same focused command | 0 | A distinct multiple-candidate regression passed with 6 tests; no further refactor was warranted. |
+
+## G1 correction verification, workload, and rollback
+
+- `npx vitest run packages/pi/src/response.test.ts` — exit 0; 1 file / 6 tests. `npx tsc -p packages/pi/tsconfig.json --noEmit` — exit 0.
+- `npm test` — exit 0; 51 files / 1,199 passed / 25 todo. The pre-existing invalid-aspect-ratio diagnostics remained non-failing.
+- `git diff --check -- packages/pi/src/response.ts packages/pi/src/response.test.ts openspec/changes/add-pi-provider-adapter/apply-progress.md` — exit 0.
+- Exact correction source/test diff from the prior G1 snapshot is +14/-1 (15 changed lines): +13 test lines and one production-line replacement. This 22-line evidence appendix raises the G1 review unit from 257 to 294/400 changed lines; no exception is needed.
+- Rollback boundary: revert only the exact-one candidate guard, the empty/multiple candidate regressions, and this correction appendix; retain prior G1, F, and unrelated dirty files.
