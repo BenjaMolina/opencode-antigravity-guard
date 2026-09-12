@@ -28,6 +28,7 @@ interface Manifest {
   name?: unknown
   version?: unknown
   dependencies?: unknown
+  repository?: unknown
 }
 
 interface Lockfile {
@@ -42,6 +43,7 @@ export interface ReleaseManifests {
 }
 
 const STABLE_SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/
+const REPOSITORY_URL = "git+https://github.com/BenjaMolina/opencode-antigravity-guard.git"
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) {
@@ -54,9 +56,21 @@ function assertStableVersion(value: unknown, label: string, expected: string): v
   assert(value === expected, `${label} must be ${expected}, received ${value}`)
 }
 
-function assertManifest(manifest: Manifest, expected: ReleasePackage): void {
-  assert(manifest.name === expected.name, `${expected.workspace ?? "root"} name must be ${expected.name}`)
-  assertStableVersion(manifest.version, `${expected.workspace ?? "root"} version`, expected.version)
+function assertManifest(manifest: Manifest, expected: ReleasePackage, requireRepository = false): void {
+  const label = expected.workspace ?? "root"
+  assert(manifest.name === expected.name, `${label} name must be ${expected.name}`)
+  assertStableVersion(manifest.version, `${label} version`, expected.version)
+  if (requireRepository) {
+    assertRepository(manifest.repository, label, expected.workspace)
+  }
+}
+
+function assertRepository(repository: unknown, label: string, directory: string | undefined): void {
+  assert(typeof repository === "object" && repository !== null, `${label} repository is missing`)
+  const metadata = repository as Record<string, unknown>
+  assert(metadata.type === "git", `${label} repository type must be git`)
+  assert(metadata.url === REPOSITORY_URL, `${label} repository URL must be ${REPOSITORY_URL}`)
+  assert(metadata.directory === directory, `${label} repository directory must be ${directory ?? "absent"}`)
 }
 
 function assertCoreDependency(manifest: Manifest, label: string): void {
@@ -80,9 +94,9 @@ function lockPackage(lockfile: Lockfile, path: string): Manifest {
 export function createReleasePlan(manifests: ReleaseManifests): ReleasePackage[] {
   const plan = [CORE, PI, ROOT]
 
-  assertManifest(manifests.root, ROOT)
-  assertManifest(manifests.core, CORE)
-  assertManifest(manifests.pi, PI)
+  assertManifest(manifests.root, ROOT, true)
+  assertManifest(manifests.core, CORE, true)
+  assertManifest(manifests.pi, PI, true)
   assertCoreDependency(manifests.root, "root manifest")
   assertCoreDependency(manifests.pi, "Pi manifest")
 

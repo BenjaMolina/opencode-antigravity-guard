@@ -7,6 +7,15 @@ import { createReleasePlan } from "./release-manifest-check.ts"
 const coreName = "@benjamolina/antigravity-guard-core"
 const piName = "@benjamolina/pi-antigravity-guard"
 const rootName = "@benjamolina/opencode-antigravity-guard"
+const repositoryUrl = "git+https://github.com/BenjaMolina/opencode-antigravity-guard.git"
+
+function repository(directory?: string) {
+  return {
+    type: "git",
+    url: repositoryUrl,
+    ...(directory === undefined ? {} : { directory }),
+  }
+}
 
 function validManifests() {
   return {
@@ -14,15 +23,18 @@ function validManifests() {
       name: rootName,
       version: "1.1.11",
       dependencies: { [coreName]: "0.1.0" },
+      repository: repository(),
     },
     core: {
       name: coreName,
       version: "0.1.0",
+      repository: repository("packages/core"),
     },
     pi: {
       name: piName,
       version: "0.1.0",
       dependencies: { [coreName]: "0.1.0" },
+      repository: repository("packages/pi"),
     },
     lockfile: {
       packages: {
@@ -85,5 +97,26 @@ describe("createReleasePlan", () => {
     manifests.pi.version = "0.1.0-rc.1"
 
     expect(() => createReleasePlan(manifests)).toThrow()
+  })
+
+  it("rejects an empty Core repository URL", () => {
+    const manifests = validManifests()
+    manifests.core.repository.url = ""
+
+    expect(() => createReleasePlan(manifests)).toThrow("packages/core repository URL")
+  })
+
+  it("rejects a mismatched root repository URL", () => {
+    const manifests = validManifests()
+    manifests.root.repository.url = "git+https://github.com/example/fork.git"
+
+    expect(() => createReleasePlan(manifests)).toThrow("root repository URL")
+  })
+
+  it("rejects a mismatched Pi repository directory", () => {
+    const manifests = validManifests()
+    manifests.pi.repository.directory = "packages/core"
+
+    expect(() => createReleasePlan(manifests)).toThrow("packages/pi repository directory")
   })
 })

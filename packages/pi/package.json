@@ -4,6 +4,11 @@
   "description": "Pi adapter for Antigravity Guard",
   "type": "module",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/BenjaMolina/opencode-antigravity-guard.git",
+    "directory": "packages/pi"
+  },
   "keywords": [
     "pi-package",
     "pi",
