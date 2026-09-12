@@ -1,10 +1,12 @@
 import { generatePKCE } from "@openauthjs/openauth/pkce";
 
 import {
-  ANTIGRAVITY_CLIENT_ID,
-  ANTIGRAVITY_CLIENT_SECRET,
-  ANTIGRAVITY_REDIRECT_URI,
-  ANTIGRAVITY_SCOPES,
+  ANTIGRAVITY_OAUTH_CLIENT,
+  buildAuthorizationUrl,
+  buildCodeExchangeForm,
+} from "@benjamolina/antigravity-guard-core";
+
+import {
   ANTIGRAVITY_ENDPOINT_FALLBACKS,
   ANTIGRAVITY_LOAD_ENDPOINTS,
   getAntigravityHeaders,
@@ -92,22 +94,13 @@ function decodeState(state: string): AntigravityAuthState {
 export async function authorizeAntigravity(projectId = ""): Promise<AntigravityAuthorization> {
   const pkce = (await generatePKCE()) as PkcePair;
 
-  const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
-  url.searchParams.set("client_id", ANTIGRAVITY_CLIENT_ID);
-  url.searchParams.set("response_type", "code");
-  url.searchParams.set("redirect_uri", ANTIGRAVITY_REDIRECT_URI);
-  url.searchParams.set("scope", ANTIGRAVITY_SCOPES.join(" "));
-  url.searchParams.set("code_challenge", pkce.challenge);
-  url.searchParams.set("code_challenge_method", "S256");
-  url.searchParams.set(
-    "state",
-    encodeState({ verifier: pkce.verifier, projectId: projectId || "" }),
-  );
-  url.searchParams.set("access_type", "offline");
-  url.searchParams.set("prompt", "consent");
+  const url = buildAuthorizationUrl(ANTIGRAVITY_OAUTH_CLIENT, {
+    challenge: pkce.challenge,
+    state: encodeState({ verifier: pkce.verifier, projectId: projectId || "" }),
+  });
 
   return {
-    url: url.toString(),
+    url,
     verifier: pkce.verifier,
     projectId: projectId || "",
   };
@@ -214,14 +207,7 @@ export async function exchangeAntigravity(
         "Accept-Encoding": "gzip, deflate, br",
         "User-Agent": GEMINI_CLI_HEADERS["User-Agent"],
       },
-      body: new URLSearchParams({
-        client_id: ANTIGRAVITY_CLIENT_ID,
-        client_secret: ANTIGRAVITY_CLIENT_SECRET,
-        code,
-        grant_type: "authorization_code",
-        redirect_uri: ANTIGRAVITY_REDIRECT_URI,
-        code_verifier: verifier,
-      }),
+      body: buildCodeExchangeForm(ANTIGRAVITY_OAUTH_CLIENT, { code, verifier }),
     });
 
     if (!tokenResponse.ok) {

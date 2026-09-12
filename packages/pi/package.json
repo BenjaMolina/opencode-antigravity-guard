@@ -1,0 +1,39 @@
+{
+  "name": "@benjamolina/pi-antigravity-guard",
+  "version": "0.1.0",
+  "description": "Pi adapter for Antigravity Guard",
+  "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "pi-package",
+    "pi",
+    "antigravity"
+  ],
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "files": [
+    "dist",
+    "!dist/**/*.test.*",
+    "LICENSE",
+    "README.md"
+  ],
+  "pi": {
+    "extensions": ["./dist/extension.js"]
+  },
+  "dependencies": {
+    "@benjamolina/antigravity-guard-core": "0.1.0"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prepack": "npm run build"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0"
+  }
+}
