@@ -79,6 +79,12 @@ describe("ResponseSemantics", () => {
     expect(() => semantics.push(record({ candidates: [{}, {}] }))).toThrow(ResponseSemanticError)
   })
 
+  it("rejects Gemini 3.5-shaped HTTP-200 content without terminal metadata", () => {
+    const semantics = new ResponseSemantics()
+    expect(semantics.push(record({ candidates: [{ content: { parts: [{ text: "unverified" }] } }] }))).toEqual([{ type: "text", text: "unverified" }])
+    expect(() => semantics.finish()).toThrow(ResponseSemanticError)
+  })
+
   it("rejects malformed records, unsupported output, invalid usage, and incomplete completion", () => {
     const invalid = [
       "{", JSON.stringify({ error: { message: "nope" } }), record({ promptFeedback: {} }),

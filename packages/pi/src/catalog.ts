@@ -40,6 +40,53 @@ const CATALOG = freeze(defineCatalog([{
   },
   replay: { kind: "same-public-model" },
   response: { kind: "gemini-envelope", family: "gemini" },
+}, {
+  publicId: "antigravity-gemini-3.7-flash",
+  descriptor: {
+    name: "Gemini 3.7 Flash (Antigravity, text only)",
+    thinkingLevelMap: { minimal: null, low: "low", medium: "medium", high: "high" },
+    contextWindow: 1_048_576,
+    maxTokens: 65_536,
+  },
+  routes: {
+    off: { wireModel: "gemini-3.7-flash-low", thinking: { kind: "budget", budget: 0, includeThoughts: false } },
+    low: { wireModel: "gemini-3.7-flash-low", thinking: { kind: "budget", budget: 1000, includeThoughts: true } },
+    medium: { wireModel: "gemini-3.7-flash-medium", thinking: { kind: "budget", budget: 4000, includeThoughts: true } },
+    high: { wireModel: "gemini-3.7-flash-high", thinking: { kind: "budget", budget: -1, includeThoughts: true } },
+  },
+  replay: { kind: "strip" },
+  response: { kind: "gemini-envelope", family: "gemini" },
+}, {
+  publicId: "antigravity-gemini-3.6-flash",
+  descriptor: {
+    name: "Gemini 3.6 Flash (Antigravity, text only)",
+    thinkingLevelMap: { minimal: null, low: "low", medium: "medium", high: "high" },
+    contextWindow: 1_048_576,
+    maxTokens: 65_536,
+  },
+  routes: {
+    off: { wireModel: "gemini-3.6-flash-low", thinking: { kind: "omit" } },
+    low: { wireModel: "gemini-3.6-flash-low", thinking: { kind: "budget", budget: 1000, includeThoughts: true } },
+    medium: { wireModel: "gemini-3.6-flash-medium", thinking: { kind: "budget", budget: 4000, includeThoughts: true } },
+    high: { wireModel: "gemini-3.6-flash-high", thinking: { kind: "budget", budget: -1, includeThoughts: true } },
+  },
+  replay: { kind: "strip" },
+  response: { kind: "gemini-envelope", family: "gemini" },
+}, {
+  publicId: "antigravity-gemini-3.1-pro",
+  descriptor: {
+    name: "Gemini 3.1 Pro (Antigravity, text only)",
+    thinkingLevelMap: { minimal: null, low: "low", medium: null, high: "high" },
+    contextWindow: 1_048_576,
+    maxTokens: 65_535,
+  },
+  routes: {
+    off: { wireModel: "gemini-3.1-pro-low", thinking: { kind: "omit" } },
+    low: { wireModel: "gemini-3.1-pro-low", thinking: { kind: "budget", budget: 1001, includeThoughts: true } },
+    high: { wireModel: "gemini-pro-agent", thinking: { kind: "budget", budget: 10001, includeThoughts: true } },
+  },
+  replay: { kind: "strip" },
+  response: { kind: "gemini-envelope", family: "gemini" },
 }] as const satisfies readonly CatalogEntry[]))
 
 type Catalog = typeof CATALOG
