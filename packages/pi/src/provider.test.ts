@@ -23,7 +23,8 @@ describe("Antigravity Guard provider registration", () => {
       models: [{
         id: "antigravity-gemini-3.8-flash",
         name: "Gemini 3.8 Flash (Antigravity, text only)",
-        reasoning: false,
+        reasoning: true,
+        thinkingLevelMap: { minimal: null, low: "low", medium: "medium", high: "high" },
         input: ["text"],
         contextWindow: 1_048_576,
         maxTokens: 65_536,
@@ -32,6 +33,7 @@ describe("Antigravity Guard provider registration", () => {
     })
     expect(config.models).toHaveLength(1)
     expect(config.models[0]?.id).toBe("antigravity-gemini-3.8-flash")
+    expect(config.models[0]?.thinkingLevelMap).toEqual({ minimal: null, low: "low", medium: "medium", high: "high" })
     expect(config.oauth).toMatchObject({ name: "Antigravity Guard", isSubscription: true })
     expect(typeof config.oauth.login).toBe("function")
     expect(typeof config.oauth.refreshToken).toBe("function")

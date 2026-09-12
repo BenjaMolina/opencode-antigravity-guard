@@ -1,8 +1,15 @@
-export type ResponseSemantic = TextSemantic | FinishSemantic | UsageSemantic
+export type ResponseSemantic = TextSemantic | ThinkingSemantic | FinishSemantic | UsageSemantic
 
 export interface TextSemantic {
   type: "text"
   text: string
+  signature?: string
+}
+
+export interface ThinkingSemantic {
+  type: "thinking"
+  thinking: string
+  signature?: string
 }
 
 export interface FinishSemantic {
@@ -16,6 +23,7 @@ export interface UsageSemantic {
   output: number
   cacheRead: number
   cacheWrite: 0
+  reasoning: number
   total: number
 }
 
@@ -23,9 +31,9 @@ export class ResponseSemanticError extends Error {}
 
 export class ResponseSemantics {
   private finished = false
-  private text = false
+  private content = false
   private done = false
-  private usage = { prompt: 0, cacheRead: 0, output: 0 }
+  private usage = { prompt: 0, cacheRead: 0, output: 0, reasoning: 0 }
 
   push(record: string): ResponseSemantic[] {
     if (this.done) throw new ResponseSemanticError("Response data arrived after [DONE].")
@@ -50,20 +58,22 @@ export class ResponseSemantics {
 
   finish(): void {
     if (!this.finished) throw new ResponseSemanticError("Response ended without a finish reason.")
-    if (!this.text) throw new ResponseSemanticError("Response ended without text.")
+    if (!this.content) throw new ResponseSemanticError("Response ended without content.")
   }
 
-  addText(text: string): void { this.text = this.text || text.length > 0 }
+  addContent(text: string): void { this.content = this.content || text.length > 0 }
   addFinish(): void { this.finished = true }
 
   private updateUsage(value: unknown): UsageSemantic {
     const prompt = count(value, "promptTokenCount", this.usage.prompt)
     const cacheRead = count(value, "cachedContentTokenCount", this.usage.cacheRead)
-    const output = count(value, "candidatesTokenCount", this.usage.output) + count(value, "thoughtsTokenCount", 0)
+    const candidates = count(value, "candidatesTokenCount", this.usage.output - this.usage.reasoning)
+    const reasoning = count(value, "thoughtsTokenCount", this.usage.reasoning)
+    const output = candidates + reasoning
     const reported = field(value, "totalTokenCount")
     if (cacheRead > prompt || (reported !== undefined && reported !== prompt + output)) throw new ResponseSemanticError("Antigravity returned invalid usage.")
-    this.usage = { prompt, cacheRead, output }
-    return { type: "usage", input: prompt - cacheRead, output, cacheRead, cacheWrite: 0, total: prompt + output }
+    this.usage = { prompt, cacheRead, output, reasoning }
+    return { type: "usage", input: prompt - cacheRead, output, cacheRead, cacheWrite: 0, reasoning, total: prompt + output }
   }
 }
 
@@ -79,9 +89,12 @@ function candidate(value: unknown, events: ResponseSemantic[], semantics: Respon
     if (!Array.isArray(parts)) throw new ResponseSemanticError("Antigravity returned invalid content.")
     for (const part of parts) {
       const text = field(part, "text")
-      if (typeof text !== "string" || Object.keys(part).some((name) => name !== "text" && name !== "thoughtSignature")) throw new ResponseSemanticError("Antigravity returned unsupported content.")
-      semantics.addText(text)
-      events.push({ type: "text", text })
+      const thought = field(part, "thought")
+      if (typeof text !== "string" || (thought !== undefined && typeof thought !== "boolean") || Object.keys(part).some((name) => name !== "text" && name !== "thought" && name !== "thoughtSignature")) throw new ResponseSemanticError("Antigravity returned unsupported content.")
+      const signature = validThoughtSignature(field(part, "thoughtSignature"))
+      semantics.addContent(text)
+      if (thought === true) events.push({ type: "thinking", thinking: text, ...(signature ? { signature } : {}) })
+      else events.push({ type: "text", text, ...(signature ? { signature } : {}) })
     }
   }
   const finishReason = field(candidate, "finishReason")
@@ -90,6 +103,11 @@ function candidate(value: unknown, events: ResponseSemantic[], semantics: Respon
     semantics.addFinish()
     events.push({ type: "finish", reason: finishReason === "STOP" ? "stop" : "length" })
   }
+}
+
+function validThoughtSignature(value: unknown): string | undefined {
+  if (typeof value !== "string" || !value || value.length % 4 !== 0) return undefined
+  return /^[A-Za-z0-9+/]+={0,2}$/.test(value) ? value : undefined
 }
 
 function validateMetadata(value: unknown): void {

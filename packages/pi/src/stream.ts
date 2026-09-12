@@ -63,6 +63,14 @@ export function createPiLifecycleStream(input: PiStreamLifecycleInput) {
   }
   let complete = false
   let textStarted = false
+      let currentBlock: { type: "text", text: string, textSignature?: string } | { type: "thinking", thinking: string, thinkingSignature?: string } | undefined
+  const closeBlock = () => {
+    if (!currentBlock) return
+    const contentIndex = output.content.length - 1
+    if (currentBlock.type === "text") stream.push({ type: "text_end", contentIndex, content: currentBlock.text, partial: output })
+    else stream.push({ type: "thinking_end", contentIndex, content: currentBlock.thinking, partial: output })
+    currentBlock = undefined
+  }
   let removeAbort: () => void = () => {}
 
   const finalize = (reason: "stop" | "length" | "error" | "aborted", errorMessage?: string) => {
@@ -72,7 +80,7 @@ export function createPiLifecycleStream(input: PiStreamLifecycleInput) {
     if (reason === "error" || reason === "aborted") controller.abort()
     output.stopReason = reason
     if (reason === "stop" || reason === "length") {
-      if (textStarted) stream.push({ type: "text_end", contentIndex: 0, content: output.content[0]?.type === "text" ? output.content[0].text : "", partial: output })
+      closeBlock()
       stream.push({ type: "done", reason, message: output })
     } else {
       output.errorMessage = errorMessage ?? "Antigravity generation failed."
@@ -83,7 +91,32 @@ export function createPiLifecycleStream(input: PiStreamLifecycleInput) {
 
   const onSemantic = (semantic: ResponseSemantic) => {
     if (complete) return
-    if (semantic.type === "text" && semantic.text) {
+    if (isContentSemantic(semantic)) {
+          if (!currentBlock || currentBlock.type !== semantic.type) {
+            closeBlock()
+            if (semantic.type === "text") {
+              currentBlock = { type: "text", text: "" }
+              output.content.push(currentBlock)
+              stream.push({ type: "text_start", contentIndex: output.content.length - 1, partial: output })
+            } else {
+              currentBlock = { type: "thinking", thinking: "" }
+              output.content.push(currentBlock)
+              stream.push({ type: "thinking_start", contentIndex: output.content.length - 1, partial: output })
+            }
+          }
+          const contentIndex = output.content.length - 1
+          if (semantic.type === "text" && currentBlock.type === "text") {
+            currentBlock.text += semantic.text
+            if (semantic.signature) currentBlock.textSignature = semantic.signature
+            stream.push({ type: "text_delta", contentIndex, delta: semantic.text, partial: output })
+          } else if (semantic.type === "thinking" && currentBlock.type === "thinking") {
+            currentBlock.thinking += semantic.thinking
+            if (semantic.signature) currentBlock.thinkingSignature = semantic.signature
+            stream.push({ type: "thinking_delta", contentIndex, delta: semantic.thinking, partial: output })
+          }
+          return
+        }
+        if (semantic.type === "text" && semantic.text) {
       if (!textStarted) {
         textStarted = true
         output.content.push({ type: "text", text: "" })
@@ -97,6 +130,7 @@ export function createPiLifecycleStream(input: PiStreamLifecycleInput) {
       output.usage.output = semantic.output
       output.usage.cacheRead = semantic.cacheRead
       output.usage.cacheWrite = semantic.cacheWrite
+          output.usage.reasoning = semantic.reasoning
       output.usage.totalTokens = semantic.input + semantic.output + semantic.cacheRead + semantic.cacheWrite
       output.usage.cost = calculateCost(input.model, output.usage)
     } else if (semantic.type === "finish") finalize(semantic.reason)
@@ -114,6 +148,10 @@ export function createPiLifecycleStream(input: PiStreamLifecycleInput) {
     (error) => finalize(signal.aborted || input.signal?.aborted ? "aborted" : "error", isLocalStreamError(error) ? error.message : undefined),
   )
   return stream
+}
+
+function isContentSemantic(semantic: ResponseSemantic): boolean {
+  return semantic.type === "text" || semantic.type === "thinking"
 }
 
 export async function executeStreamTransport(input: StreamTransportInput): Promise<void> {

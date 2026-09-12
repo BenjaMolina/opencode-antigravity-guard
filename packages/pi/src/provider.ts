@@ -20,7 +20,8 @@ export function registerAntigravityProvider(pi: Pick<ExtensionAPI, "registerProv
     models: [{
       id: MODEL,
       name: "Gemini 3.8 Flash (Antigravity, text only)",
-      reasoning: false,
+      reasoning: true,
+      thinkingLevelMap: { minimal: null, low: "low", medium: "medium", high: "high" },
       input: ["text"],
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
       contextWindow: 1_048_576,
