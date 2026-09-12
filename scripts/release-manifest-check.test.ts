@@ -67,6 +67,60 @@ describe("release workflow", () => {
   })
 })
 
+function publishScript(workflow: string): string {
+  const match = workflow.match(
+    /- name: Publish missing packages in dependency order[\s\S]*?run: \|\n(?<script>[\s\S]*?)\n\s+- name: Create matching tag and release/,
+  )
+  expect(match?.groups?.script).toBeDefined()
+  return match?.groups?.script ?? ""
+}
+
+function expectBoundedRegistrySettle(workflow: string): void {
+  const script = publishScript(workflow)
+  const settleFunction = script.match(
+    /wait_for_registry\(\) \{(?<body>[\s\S]*?)\n\s+\}\n\n\s+publish_if_missing\(\)/,
+  )?.groups?.body
+
+  expect(settleFunction).toBeDefined()
+  expect(settleFunction).toMatch(/local timeout_seconds=900/)
+  expect(settleFunction).toMatch(/local interval_seconds=30/)
+  expect(settleFunction).toMatch(/query_exact_version "\$name" "\$version" "\$requires_core"/)
+  expect(settleFunction).toMatch(/sleep "\$interval_seconds"/)
+  expect(settleFunction).toMatch(/Timed out waiting for .* to appear in the npm registry/)
+  expect(settleFunction).not.toMatch(/npm publish/)
+  expect(script).toMatch(
+    /npm publish[\s\S]*?\n\n\s+if ! wait_for_registry "\$name" "\$version" "\$requires_core"; then/,
+  )
+}
+
+function expectRepositoryLocalTagIdentity(workflow: string): void {
+  const tagScript = workflow.match(
+    /- name: Create matching tag and release[\s\S]*?run: \|\n(?<script>[\s\S]*)/,
+  )?.groups?.script
+
+  expect(tagScript).toBeDefined()
+  expect(tagScript).toMatch(
+    /git config --local user\.name "github-actions\[bot\]"\n\s+git config --local user\.email "41898282\+github-actions\[bot\]@users\.noreply\.github\.com"\n\s+git tag -a "\$TAG"/,
+  )
+  expect(tagScript).not.toMatch(/git config --global/)
+}
+
+describe("release workflow", () => {
+  it("waits up to 15 minutes for a successful publish to settle through exact registry readback", () => {
+    const workflow = readFileSync(new URL("../.github/workflows/release.yml", import.meta.url), "utf8")
+
+    expectBoundedRegistrySettle(workflow)
+    expect(() => expectBoundedRegistrySettle(workflow.replace("local timeout_seconds=900", "local timeout_seconds=600"))).toThrow()
+  })
+
+  it("sets repository-local GitHub Actions identity immediately before creating an annotated tag", () => {
+    const workflow = readFileSync(new URL("../.github/workflows/release.yml", import.meta.url), "utf8")
+
+    expectRepositoryLocalTagIdentity(workflow)
+    expect(() => expectRepositoryLocalTagIdentity(workflow.replaceAll("--local", "--global"))).toThrow()
+  })
+})
+
 describe("createReleasePlan", () => {
   it("returns the serial core, Pi, root publication order", () => {
     const plan = createReleasePlan(validManifests())

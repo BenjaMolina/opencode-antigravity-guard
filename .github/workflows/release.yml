@@ -101,6 +101,36 @@ jobs:
             return 2
           }
 
+          wait_for_registry() {
+            local name="$1"
+            local version="$2"
+            local requires_core="$3"
+            local timeout_seconds=900
+            local interval_seconds=30
+            local elapsed_seconds=0
+            local query_status
+
+            while true; do
+              if query_exact_version "$name" "$version" "$requires_core"; then
+                return 0
+              else
+                query_status=$?
+              fi
+
+              if [ "$query_status" -ne 1 ]; then
+                return "$query_status"
+              fi
+
+              if [ "$elapsed_seconds" -ge "$timeout_seconds" ]; then
+                echo "Timed out waiting for ${name}@${version} to appear in the npm registry after ${timeout_seconds}s" >&2
+                return 1
+              fi
+
+              sleep "$interval_seconds"
+              elapsed_seconds=$((elapsed_seconds + interval_seconds))
+            done
+          }
+
           publish_if_missing() {
             local name="$1"
             local version="$2"
@@ -126,7 +156,7 @@ jobs:
               npm publish --access public --tag latest --provenance
             fi
 
-            if ! query_exact_version "$name" "$version" "$requires_core"; then
+            if ! wait_for_registry "$name" "$version" "$requires_core"; then
               echo "Published ${name}@${version} but it could not be verified" >&2
               exit 1
             fi
@@ -152,6 +182,8 @@ jobs:
             fi
             echo "Verified existing ${TAG} at ${GITHUB_SHA}"
           else
+            git config --local user.name "github-actions[bot]"
+            git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git tag -a "$TAG" "$GITHUB_SHA" -m "Release ${TAG}"
             git push origin "refs/tags/${TAG}"
           fi
