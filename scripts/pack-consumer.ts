@@ -23,13 +23,13 @@ function run(command: string, args: string[], cwd = ROOT): string {
   if (isNpm && !npmCli) {
     throw new Error("npm_execpath is required to run npm from the pack harness")
   }
-  const executable = isNpm ? process.execPath : process.platform === "win32" ? `${command}.cmd` : command
+  const executable = isNpm || command === "node" ? process.execPath : process.platform === "win32" ? `${command}.cmd` : command
   const commandArgs = isNpm ? [npmCli!, ...args] : args
 
   return execFileSync(executable, commandArgs, {
     cwd,
     encoding: "utf8",
-    shell: !isNpm && process.platform === "win32",
+    shell: !isNpm && command !== "node" && process.platform === "win32",
     stdio: ["ignore", "pipe", "inherit"],
   })
 }
@@ -97,9 +97,13 @@ function main(): void {
     assertPackagedFile(pi, "LICENSE")
     assertPackagedFile(pi, "package.json")
     assertPackagedFile(pi, "README.md")
+    assertPackagedFile(pi, "dist/extension.js")
+    assertPackagedFile(pi, "dist/provider.js")
     assert(!pi.files.some((file) => file.path.startsWith("src/")), "Pi archive contains source files")
+    assert(!pi.files.some((file) => /\.test\.(?:js|d\.ts|d\.ts\.map)$/.test(file.path)), "Pi archive contains compiled test artifacts")
 
     assertNoRepositoryImportsInEmittedFiles(join(ROOT, "packages", "core", "dist"))
+    assertNoRepositoryImportsInEmittedFiles(join(ROOT, "packages", "pi", "dist"))
     assertNoRepositoryImportsInEmittedFiles(join(ROOT, "dist"))
 
     const rootConsumer = join(temp, "root-consumer")
@@ -133,6 +137,27 @@ function main(): void {
     run("npm", ["install", "--ignore-scripts", "--omit=dev", "--legacy-peer-deps", archivePath(temp, pi)], piConsumer)
 
     assert(existsSync(join(piConsumer, "node_modules", "@benjamolina", "pi-antigravity-guard")), "Pi archive did not install")
+    run("node", ["--input-type=module", "--eval", `
+      import { createRequire } from "node:module"
+      import { existsSync } from "node:fs"
+      import { dirname, join } from "node:path"
+      import { pathToFileURL } from "node:url"
+      const require = createRequire(import.meta.url)
+      const manifest = require.resolve("@benjamolina/pi-antigravity-guard/package.json")
+      const packageDirectory = dirname(manifest)
+      for (const peer of ["@earendil-works/pi-ai", "@earendil-works/pi-coding-agent"]) {
+        const peerPath = join(process.cwd(), "node_modules", ...peer.split("/"))
+        if (!existsSync(join(peerPath, "package.json"))) throw new Error("Clean Pi consumer is missing peer " + peer)
+        if (existsSync(join(packageDirectory, "node_modules", ...peer.split("/"), "package.json"))) {
+          throw new Error("Packed Pi archive duplicated peer " + peer)
+        }
+      }
+      const extension = manifest.replace(/package\\.json$/, "dist/extension.js")
+      const loader = pathToFileURL(join(dirname(manifest), "..", "..", "@earendil-works", "pi-coding-agent", "dist", "core", "extensions", "loader.js")).href
+      const { loadExtensions } = await import(loader)
+      const loaded = await loadExtensions([extension], process.cwd())
+      if (loaded.extensions.length !== 1) throw new Error("Packed Pi extension did not load: " + JSON.stringify(loaded.errors))
+    `], piConsumer)
     console.log("Packed root/core Node 20 and Pi Node 22 consumer checks passed")
   } finally {
     rmSync(temp, { recursive: true, force: true })

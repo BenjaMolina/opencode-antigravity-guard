@@ -692,13 +692,13 @@ The Pi workspace is intentionally a metadata/distribution skeleton in this unit:
 - Remaining implementation-owned row: `- [ ] Register exactly \`antigravity-guard\` with one public model \`antigravity-gemini-3.8-flash\`, wire it to \`gemini-3.8-flash\`, connect the completed OAuth and G2b stream behaviors, prove package discovery from a packed consumer, and document the text-only operating limits. <!-- sdd-owner: implementation -->`
 
 
-## G2b correction � synchronous setup containment and host-supported cancellation
+## G2b correction � synchronous setup containment and host-supported cancellation
 
 - Authority/status consumed: the parent expressly selected `add-pi-provider-adapter` / G2b at `10/11`, apply-ready, repo-local only at `C:/Github/Ordico/opencode-antigravity-guard`, with no action-context warnings. Per instruction, no status, acquire, or settle action occurred.
 - `createPiLifecycleStream()` now invokes `runTransport` from a promise microtask, so a synchronous setup throw cannot escape the factory: it returns the Pi stream immediately, which emits `start`, then one safe error terminal and settles its result.
 - Pi 0.85.1's `AssistantMessageEventStream` exposes only `push`, `end`, async iteration, and `result`; its iterator has no provider-observable consumer-abandonment/cancellation callback. The G2b task wording and test name therefore now accurately cover the nearest host-supported contract: the caller-provided `SimpleStreamOptions.signal` aborts the owned transport signal and settles exactly once. External-abort cleanup remains covered and is not weakened.
 
-### TDD Cycle Evidence � G2b correction
+### TDD Cycle Evidence � G2b correction
 
 | Stage | Command | Exit | Evidence |
 |---|---|---:|---|
@@ -715,3 +715,50 @@ The Pi workspace is intentionally a metadata/distribution skeleton in this unit:
 - Persisted checkbox evidence: reread `tasks.md`; G2b remains visibly `[x]`, while H is the sole unchecked implementation-owned row.
 - Rollback boundary: revert only the deferred transport invocation, synchronous-throw regression, caller-supplied-abort test wording/assertion, the narrow task terminology correction, and this appendix; retain G2a transport, the completed G2b lifecycle behavior, and unrelated worktree dirt.
 - Remaining implementation-owned row: `- [ ] Register exactly \`antigravity-guard\` with one public model \`antigravity-gemini-3.8-flash\`, wire it to \`gemini-3.8-flash\`, connect the completed OAuth and G2b stream behaviors, prove package discovery from a packed consumer, and document the text-only operating limits. <!-- sdd-owner: implementation -->`
+
+## Work unit H � provider registration and documentation
+
+- Authority: parent selected `H-provider-registration-docs`, sole unchecked task, repo-local root only; no status, acquire, or settle action occurred.
+- Completed and persisted: H is visibly `[x]` in `tasks.md`; all 11 implementation-owned tasks are complete.
+- Files: `packages/pi/src/{provider,provider.test,extension,extension.test}.ts`, Pi package/docs, root README link, pack-consumer harness, tasks, and this progress artifact.
+- Behavior: the synchronous `extension.ts` factory registers only `antigravity-guard`, with the exact public text-only descriptor and zero costs. It composes E's OAuth lifecycle and G2b's immediate Pi stream lifecycle; G2a retains the public-to-wire `gemini-3.8-flash` request serialization.
+
+### TDD Cycle Evidence � H
+
+| Stage | Command | Exit | Evidence |
+|---|---|---:|---|
+| RED | `npm test -- --run packages/pi/src/provider.test.ts packages/pi/src/extension.test.ts` | 1 | Both tests failed to import absent `provider.ts` and `extension.ts`. |
+| GREEN | same command | 0 | 2 files / 2 tests passed after synchronous exact registration and factory wiring. |
+| TRIANGULATE | `npm run test:pack` | 0 | Clean Node 22 Pi consumer installed packed artifacts and loaded the resource through the host extension loader; root/core Node 20 import checks also passed. |
+| REFACTOR | `npx tsc -p packages/pi/tsconfig.json --noEmit`; focused tests | 0 | The offline project-to-wire-stream fixture raised focused coverage to 3 tests. |
+
+## H verification, workload, and rollback
+
+- Passed: `npm run build`, `npm run typecheck`, `npm test` (54 files / 1,216 passed / 25 todo), `npm run build:all`, `npm run typecheck:all`, `npm run test:coverage`, `npm run test:pack`, Pi `npm pack --dry-run --json`, `npm audit --omit=dev`, and `git diff --check`.
+- Runtime evidence is offline only: existing E fixtures cover mocked login/refresh/project resolution and G2b fixtures cover streamed text; H additionally proves packed host resource loading. Live OAuth, entitlement, and exact-model generation remain unexecuted and unverified by authorization.
+- Workload / PR boundary: feature-branch-chain H only, 198 authored source/test/docs/package/harness lines before SDD persistence, below 400. No dependency installation, commit, push, PR, publication, or live call occurred.
+- Rollback: remove H registration/factory/tests, Pi manifest resource declaration, H docs, packed-loader assertion, and H task/progress evidence; retain E/G2b and unrelated `.atl/*`, `.gitignore`, and `.pi/*` changes.
+
+## H final correction — independent vertical fixture and packed-consumer safeguards
+
+- Authority/status: the user selected the exact active `add-pi-provider-adapter` H attempt at 11/11, apply-ready, repo-local with the repository root as the only allowed edit root. Per instruction, no status, acquire, or settle action occurred; the H checkbox remains unchanged and visibly `[x]`.
+- Added one registered-provider-boundary offline fixture for manual login, refresh with retained refresh token, per-generation project resolution, and streamed text. It uses only mocked `fetch`; no live OAuth or generation call was made.
+- The pack harness now scans Pi `dist` JavaScript, declarations, and declaration maps for repository-relative imports, verifies the clean legacy-peer consumer has no nested Pi peer copies, and rejects compiled `*.test.*` archive artifacts. The Pi files allowlist excludes those test artifacts without removing runtime modules or resources.
+- Build output reported rewrites beneath `node_modules`; this is recorded as an environment note only. No dependency-tree or `node_modules` file was edited.
+
+### TDD Cycle Evidence — H final correction
+
+| Stage | Command | Exit | Evidence |
+|---|---|---:|---|
+| Safety net | `npx vitest run packages/pi/src/provider.test.ts packages/pi/src/extension.test.ts` | 0 | 2 files / 3 existing tests passed before the correction. |
+| RED | `npm run test:pack` | 1 | The newly asserted archive contract failed because compiled Pi test artifacts shipped. |
+| GREEN | `npm run test:pack` | 0 | The allowlist excludes test artifacts; Pi dist isolation and non-duplication assertions pass in the clean consumer. |
+| TRIANGULATE | `npx vitest run packages/pi/src/provider.test.ts` | 0 | The new offline login → refresh → project → stream fixture passed through registered OAuth and stream boundaries; the already-correct provider needed no production edit. |
+| REFACTOR | focused tests; `npm run test:pack` | 0 | Consolidated package-boundary checks remain green with no production-provider change. |
+
+## H final correction verification, workload, and rollback
+
+- Passed: focused provider/extension tests (2 files / 4 tests), `npm run test:pack`, `npm run build`, `npm run typecheck`, `npm test` (54 files / 1,217 passed / 25 todo), `npm run build:all`, `npm run typecheck:all`, `npm run test:coverage`, Pi `npm pack --dry-run --json`, `npm audit --omit=dev`, and scoped `git diff --check`.
+- The dry-run archive contains 25 files and no compiled `*.test.js`, `*.test.d.ts`, or test declaration-map artifact; required runtime `dist` resources remain present.
+- Workload / PR boundary: feature-branch-chain H correction only. The supplied raw H baseline was 218/400; this correction adds 62 raw source/test/package/harness lines, for 280/400. Mandatory progress evidence is tracked separately. No size exception is needed.
+- Rollback: remove only the provider vertical fixture, Pi test-artifact exclusion, pack harness Pi-dist/peer/archive checks, and this correction evidence; retain H registration, E/G2b, and unrelated dirt.

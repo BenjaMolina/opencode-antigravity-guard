@@ -727,7 +727,7 @@ See the full [Troubleshooting Guide](docs/TROUBLESHOOTING.md) for solutions to c
 - [Troubleshooting](docs/TROUBLESHOOTING.md) — Common issues and fixes
 - [Architecture](docs/ARCHITECTURE.md) — How the plugin works
 - [API Spec](docs/ANTIGRAVITY_API_SPEC.md) — Antigravity API reference
-- [Pi package](packages/pi/README.md) — workspace distribution boundary for the future text-only Pi adapter
+- [Pi package](packages/pi/README.md) — install and safety limits for the text-only `antigravity-guard` Pi provider
 
 ---
 
