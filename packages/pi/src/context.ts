@@ -1,10 +1,9 @@
 import type { Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai"
 
+import { getCatalogEntry, resolveGenerationRoute } from "./catalog.ts"
+
 const MAX_TEXT_BYTES = 8 * 1024 * 1024
-const MAX_OUTPUT_TOKENS = 65_536
 const PROVIDER = "antigravity-guard"
-const PUBLIC_MODEL = "antigravity-gemini-3.8-flash"
-const WIRE_MODEL = "gemini-3.8-flash-tiered"
 const RESERVED_HEADERS = new Set(["authorization", "host", "content-type", "content-length"])
 const THINKING_LEVELS = ["low", "medium", "high"] as const
 
@@ -21,21 +20,16 @@ interface Content {
   parts: Part[]
 }
 
-interface ThinkingConfig {
-  thinkingLevel: ThinkingLevel
-  includeThoughts: boolean
-}
-
 export interface GenerationRequest {
   project: string
-  model: typeof WIRE_MODEL
+  model: string
   request: {
     contents: Content[]
     systemInstruction?: { parts: Part[] }
     generationConfig: {
       temperature: number
       maxOutputTokens: number
-      thinkingConfig: ThinkingConfig
+      thinkingConfig: { thinkingLevel: "low" | "medium" | "high", includeThoughts: boolean }
     }
   }
   requestType: "agent"
@@ -61,7 +55,9 @@ export function serializeTextContext(input: SerializeTextContextInput): Generati
     const options = field(input, "options")
     const project = field(input, "project", true)
     const requestId = field(input, "requestId", true)
-    if (!isRecord(context) || !isRecord(model) || field(model, "id", true) !== PUBLIC_MODEL || typeof project !== "string" || typeof requestId !== "string") fail("Invalid text context.")
+    const entry = isRecord(model) ? getCatalogEntry(field(model, "id", true)) : undefined
+    if (!isRecord(context) || !entry || typeof project !== "string" || typeof requestId !== "string") fail("Invalid text context.")
+    const route = resolveGenerationRoute(entry, option(options, "reasoning"))
     const systemPrompt = field(context, "systemPrompt")
     const tools = field(context, "tools")
     if (systemPrompt !== undefined && typeof systemPrompt !== "string") fail("Text-only context is required.")
@@ -75,7 +71,7 @@ export function serializeTextContext(input: SerializeTextContextInput): Generati
       if (role === "toolResult") fail("Tool history is not supported by this text-only provider.")
       if (role !== "user" && role !== "assistant") fail("Unsupported context role for this text-only provider.")
       const assistant = role === "assistant"
-      const parts = messageParts(field(message, "content", true), assistant, assistant && isSameProviderAndModel(message))
+      const parts = messageParts(field(message, "content", true), assistant, assistant && isSameProviderAndModel(message, entry.publicId))
       textBytes += parts.reduce((total, part) => total + byteLength(part.text), 0)
       if (textBytes > MAX_TEXT_BYTES) fail("Text context is too large.")
       contents.push({ role: role === "assistant" ? "model" : "user", parts })
@@ -84,10 +80,10 @@ export function serializeTextContext(input: SerializeTextContextInput): Generati
     const systemInstruction = systemPrompt === undefined ? undefined : { parts: [{ text: systemPrompt }] }
     const temperature = option(options, "temperature")
     const maxTokens = option(options, "maxTokens")
-    return { project, model: WIRE_MODEL, request: { contents, ...(systemInstruction ? { systemInstruction } : {}), generationConfig: {
+    return { project, model: route.wireModel, request: { contents, ...(systemInstruction ? { systemInstruction } : {}), generationConfig: {
       temperature: typeof temperature === "number" ? temperature : 1,
       maxOutputTokens: typeof maxTokens === "number" ? maxTokens : 4096,
-      thinkingConfig: resolveThinkingConfig(options),
+      thinkingConfig: serializeThinkingConfig(route.thinking),
     } }, requestType: "agent", userAgent: "antigravity", requestId }
   } catch (error) {
     if (error instanceof ContextSerializationError) throw error
@@ -125,8 +121,13 @@ function messageParts(content: unknown, assistant: boolean, sameProviderAndModel
   })
 }
 
-function isSameProviderAndModel(message: Record<string, unknown>): boolean {
-  return field(message, "provider") === PROVIDER && field(message, "model") === PUBLIC_MODEL
+function isSameProviderAndModel(message: Record<string, unknown>, publicId: string): boolean {
+  return field(message, "provider") === PROVIDER && field(message, "model") === publicId
+}
+
+function serializeThinkingConfig(thinking: ReturnType<typeof resolveGenerationRoute>["thinking"]): { thinkingLevel: "low" | "medium" | "high", includeThoughts: boolean } {
+  if (thinking.kind !== "native-level") fail("Unsupported reasoning policy.")
+  return { thinkingLevel: thinking.thinkingLevel, includeThoughts: thinking.includeThoughts }
 }
 
 function validThoughtSignature(value: unknown): string | undefined {
@@ -134,23 +135,17 @@ function validThoughtSignature(value: unknown): string | undefined {
   return /^[A-Za-z0-9+/]+={0,2}$/.test(value) ? value : undefined
 }
 
-function resolveThinkingConfig(options: unknown): ThinkingConfig {
-  const reasoning = option(options, "reasoning")
-  if (isThinkingLevel(reasoning)) return { thinkingLevel: reasoning, includeThoughts: true }
-  return { thinkingLevel: "low", includeThoughts: false }
-}
-
 function validateOptions(options: unknown): void {
   if (options === undefined) return
   if (!isRecord(options)) fail("Invalid generation options.")
   const reasoning = option(options, "reasoning"), budgets = option(options, "thinkingBudgets"), deferred = option(options, "deferred"), toolChoice = option(options, "toolChoice"), sampling = option(options, "samplingParams"), temperature = option(options, "temperature"), maxTokens = option(options, "maxTokens"), headers = option(options, "headers")
-  if (reasoning !== undefined && reasoning !== "off" && !isThinkingLevel(reasoning)) fail("Unsupported reasoning level.")
+  if (reasoning !== undefined && reasoning !== "off" && !isThinkingLevel(reasoning) && reasoning !== "minimal") fail("Unsupported reasoning level.")
   if (budgets !== undefined) fail("Thinking budgets are not supported.")
   if (deferred) fail("Deferred requests are not supported.")
   if (toolChoice !== undefined && toolChoice !== "none") fail("Tools are not supported by this text-only provider.")
   if (sampling !== undefined) fail("Custom generation options are not supported.")
   if (temperature !== undefined && (typeof temperature !== "number" || !Number.isFinite(temperature) || temperature < 0 || temperature > 2)) fail("Temperature must be finite and between 0 and 2.")
-  if (maxTokens !== undefined && (typeof maxTokens !== "number" || !Number.isInteger(maxTokens) || maxTokens <= 0 || maxTokens > MAX_OUTPUT_TOKENS)) fail("maxTokens must be a positive integer no greater than 65536.")
+  if (maxTokens !== undefined && (typeof maxTokens !== "number" || !Number.isInteger(maxTokens) || maxTokens <= 0 || maxTokens > 65_536)) fail("maxTokens must be a positive integer no greater than 65536.")
   if (headers !== undefined && !isRecord(headers)) fail("Invalid generation options.")
   for (const name of headers ? Object.keys(headers) : []) if (RESERVED_HEADERS.has(name.toLowerCase())) fail("Custom headers cannot replace protected request headers.")
 }

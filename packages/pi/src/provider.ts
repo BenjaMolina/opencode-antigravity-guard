@@ -2,12 +2,12 @@ import type { Api, Context, Model, SimpleStreamOptions } from "@earendil-works/p
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
 import { ANTIGRAVITY_ENDPOINTS } from "@benjamolina/antigravity-guard-core"
 
+import { listCatalogEntries, toPiModelDescriptor } from "./catalog.ts"
 import { createPiOAuthLifecycle } from "./oauth.ts"
 import { createPiLifecycleStream, executeStreamTransport } from "./stream.ts"
 
 const PROVIDER = "antigravity-guard"
 const API = "antigravity-guard-sse"
-const MODEL = "antigravity-gemini-3.8-flash"
 const INVALID_CREDENTIALS = "Antigravity credentials are invalid. Run /login antigravity-guard."
 
 export function registerAntigravityProvider(pi: Pick<ExtensionAPI, "registerProvider">): void {
@@ -17,16 +17,7 @@ export function registerAntigravityProvider(pi: Pick<ExtensionAPI, "registerProv
     name: "Antigravity Guard",
     baseUrl: ANTIGRAVITY_ENDPOINTS.daily,
     api: API,
-    models: [{
-      id: MODEL,
-      name: "Gemini 3.8 Flash (Antigravity, text only)",
-      reasoning: true,
-      thinkingLevelMap: { minimal: null, low: "low", medium: "medium", high: "high" },
-      input: ["text"],
-      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-      contextWindow: 1_048_576,
-      maxTokens: 65_536,
-    }],
+    models: listCatalogEntries().map(toPiModelDescriptor),
     oauth: {
       name: "Antigravity Guard",
       isSubscription: true,
