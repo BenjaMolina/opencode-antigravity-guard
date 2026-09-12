@@ -1,6 +1,6 @@
 {
   "name": "@benjamolina/pi-antigravity-guard",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Pi adapter for Antigravity Guard",
   "type": "module",
   "license": "MIT",

@@ -14,7 +14,7 @@ Choose browser login, or choose manual login and paste the complete callback URL
 
 Start a fresh text-only session with `--no-builtin-tools` and disable any active extension-provided tools. That flag does not disable extension tools by itself. Tools, tool history, and images are unsupported and rejected rather than silently changed.
 
-Gemini 3.8 Flash supports Pi reasoning levels `low`, `medium`, and `high`. An authorized live matrix against `gemini-3.8-flash-tiered` confirmed all three levels; `minimal` was rejected twice with zero usage and is not exposed. Each supported level is sent as the matching native `thinkingLevel` with visible thoughts enabled. When reasoning is off or omitted, the request uses native `low` thinking without returning visible thoughts. Custom `thinkingBudgets` are unsupported and rejected.
+`@benjamolina/pi-antigravity-guard@0.2.0` supports Pi reasoning levels `low`, `medium`, and `high`. An authorized live matrix against `gemini-3.8-flash-tiered` confirmed all three levels; `minimal` was rejected twice with zero usage and is not exposed. Each supported level is sent as the matching native `thinkingLevel` with visible thoughts enabled. When reasoning is off or omitted, the request uses native `low` thinking without returning visible thoughts. Custom `thinkingBudgets` are unsupported and rejected.
 
 ## Limits and safety
 
