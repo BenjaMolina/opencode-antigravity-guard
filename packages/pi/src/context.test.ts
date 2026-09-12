@@ -17,7 +17,7 @@ describe("Pi text context serialization", () => {
     ], timestamp: 0 }, assistant([{ type: "text", text: "answer" }])] } as Context
     const before = structuredClone(context)
     expect(request(context, { temperature: 0.5, maxTokens: 12 })).toEqual({
-      project: "project", model: "gemini-3.8-flash", requestType: "agent", userAgent: "antigravity", requestId: "agent-id",
+      project: "project", model: "gemini-3.8-flash-tiered", requestType: "agent", userAgent: "antigravity", requestId: "agent-id",
       request: { systemInstruction: { parts: [{ text: " system " }] }, contents: [
         { role: "user", parts: [{ text: "first" }, { text: "  " }] }, { role: "model", parts: [{ text: "answer" }] },
       ], generationConfig: { temperature: 0.5, maxOutputTokens: 12, thinkingConfig: { thinkingLevel: "low", includeThoughts: false } } },
@@ -64,7 +64,7 @@ describe("Pi text context serialization", () => {
 
   it("uses defaults, accepts repeated text, and bounds serialized text", () => {
     expect(request({ messages: [{ role: "user", content: "same", timestamp: 0 }, { role: "user", content: "same", timestamp: 0 }] })).toMatchObject({
-      model: "gemini-3.8-flash", request: { generationConfig: { temperature: 1, maxOutputTokens: 4096 } },
+      model: "gemini-3.8-flash-tiered", request: { generationConfig: { temperature: 1, maxOutputTokens: 4096 } },
     })
     expect(request({ messages: [{ role: "user", content: "é".repeat(4 * 1024 * 1024), timestamp: 0 }] }).request.contents[0]?.parts).toEqual([{ text: "é".repeat(4 * 1024 * 1024) }])
     expect(() => request({ messages: [{ role: "user", content: "é".repeat(4 * 1024 * 1024 + 1), timestamp: 0 }] })).toThrow(ContextSerializationError)

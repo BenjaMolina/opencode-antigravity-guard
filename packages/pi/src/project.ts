@@ -1,27 +1,16 @@
-import {
-  ANTIGRAVITY_ENDPOINTS,
-  ANTIGRAVITY_VERSION_FALLBACK,
-  GEMINI_CLI_HEADERS,
-  buildAntigravityHeaders,
-} from "@benjamolina/antigravity-guard-core"
+import { createHash } from "node:crypto"
 
+const USER_INFO_ENDPOINT = "https://www.googleapis.com/oauth2/v1/userinfo?alt=json"
+const PROJECT_ENDPOINTS = [
+  "https://daily-cloudcode-pa.googleapis.com",
+  "https://daily-cloudcode-pa.sandbox.googleapis.com",
+  "https://cloudcode-pa.googleapis.com",
+]
 const MAX_BODY_BYTES = 64 * 1024
 const REQUEST_TIMEOUT_MS = 10_000
+const ANTIGRAVITY_USER_AGENT = "antigravity/cli/1.1.23 (aidev_client; os_type=linux; arch=amd64; cl=974125021; auth_method=consumer)"
 
-type ProjectErrorKind = "aborted" | "access" | "response" | "transport"
-
-export class ProjectHttpError extends Error {
-  readonly kind: ProjectErrorKind
-  readonly status?: number
-
-  constructor(kind: ProjectErrorKind, message: string, status?: number) {
-    super(message)
-    this.kind = kind
-    this.status = status
-  }
-}
-
-export interface LoadCodeAssistProjectOptions {
+export interface LoginProjectOptions {
   accessToken: string
   fetch: typeof globalThis.fetch
   now: () => number
@@ -30,128 +19,140 @@ export interface LoadCodeAssistProjectOptions {
   deadlineMs?: number
 }
 
-export async function loadCodeAssistProject(options: LoadCodeAssistProjectOptions): Promise<string> {
-  const signal = requestSignal(options)
-  const headers = buildAntigravityHeaders({ version: ANTIGRAVITY_VERSION_FALLBACK, platform: options.platform })
-  const metadata = metadataFor(options.platform)
-  let response: Response
-  try {
-    response = await abortable(options.fetch(`${ANTIGRAVITY_ENDPOINTS.production}/v1internal:loadCodeAssist`, {
-      method: "POST",
-      redirect: "error",
-      headers: {
-        Authorization: `Bearer ${options.accessToken}`,
-        "Content-Type": "application/json",
-        "User-Agent": GEMINI_CLI_HEADERS["User-Agent"],
-        "X-Goog-Api-Client": headers["X-Goog-Api-Client"],
-        "Client-Metadata": headers["Client-Metadata"],
-      },
-      body: JSON.stringify({ metadata }),
-      signal,
-    }), signal)
-  } catch {
-    if (signal.aborted) throw safeAbortError(signal)
-    throw new ProjectHttpError("transport", "Project resolution request failed.")
-  }
-
-  const body = await readBoundedBody(response, signal)
-  if (!response.ok) throw responseError(response.status)
-  return projectFrom(parseJson(body))
+export interface LoginProject {
+  email?: string
+  projectId?: string
 }
 
-function metadataFor(platform: string): { ideType: string, platform: string, pluginType: string } {
-  return {
-    ideType: "ANTIGRAVITY",
-    platform: platform === "win32" ? "WINDOWS" : "MACOS",
-    pluginType: "GEMINI",
-  }
+export async function resolveLoginProject(options: LoginProjectOptions): Promise<LoginProject> {
+  const email = await userEmail(options)
+  const projectId = await discoveredProject(options)
+  return { ...(email ? { email } : {}), ...(projectId ? { projectId } : {}) }
 }
 
-function requestSignal(options: LoadCodeAssistProjectOptions): AbortSignal {
-  const remaining = options.deadlineMs === undefined
+export function defaultProjectId(seed: string): string {
+  const bytes = createHash("sha1").update(`antigravity:${seed}`).digest().subarray(0, 16)
+  bytes[6] = (bytes[6] & 0x0f) | 0x50
+  bytes[8] = (bytes[8] & 0x3f) | 0x80
+  const hex = [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("")
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
+async function userEmail(options: LoginProjectOptions): Promise<string | undefined> {
+  const { payload } = await bestEffort(options, USER_INFO_ENDPOINT, {
+    method: "GET",
+    redirect: "error",
+    headers: { Authorization: `Bearer ${options.accessToken}` },
+  })
+  return isRecord(payload) && nonempty(payload.email) ? payload.email : undefined
+}
+
+async function discoveredProject(options: LoginProjectOptions): Promise<string | undefined> {
+  const request: RequestInit = {
+    method: "POST",
+    redirect: "error",
+    headers: {
+      Authorization: `Bearer ${options.accessToken}`,
+      "Content-Type": "application/json",
+      "User-Agent": ANTIGRAVITY_USER_AGENT,
+    },
+    body: JSON.stringify({ metadata: { ideType: "ANTIGRAVITY" } }),
+  }
+  for (const origin of PROJECT_ENDPOINTS) {
+    const response = await bestEffort(options, `${origin}/v1internal:loadCodeAssist`, request)
+    if (!response.ok) continue
+    const projectId = projectFrom(response.payload)
+    return projectId ?? listProject(options, request)
+  }
+  return undefined
+}
+
+async function listProject(options: LoginProjectOptions, request: RequestInit): Promise<string | undefined> {
+  const listRequest = { ...request, body: "{}" }
+  for (const origin of PROJECT_ENDPOINTS) {
+    const { payload } = await bestEffort(options, `${origin}/v1internal:listCloudAICompanionProjects`, listRequest)
+    const projectId = projectFrom(payload)
+    if (projectId) return projectId
+  }
+  return undefined
+}
+
+async function bestEffort(options: LoginProjectOptions, endpoint: string, request: RequestInit): Promise<{ ok: boolean, payload?: unknown }> {
+  const timeout = options.deadlineMs === undefined
     ? REQUEST_TIMEOUT_MS
     : Math.min(REQUEST_TIMEOUT_MS, options.deadlineMs - options.now())
-  if (remaining <= 0 || options.signal?.aborted) throw safeAbortError(options.signal)
-  return options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(remaining)]) : AbortSignal.timeout(remaining)
+  if (timeout <= 0 || options.signal?.aborted) return { ok: false }
+  const signal = options.signal ? AbortSignal.any([options.signal, AbortSignal.timeout(timeout)]) : AbortSignal.timeout(timeout)
+  let response: Response | undefined
+  try {
+    response = await options.fetch(endpoint, { ...request, signal })
+  } catch {
+    return { ok: false }
+  }
+  if (!response?.ok) return { ok: false }
+  try {
+    const body = await boundedBody(response.body, signal)
+    return body === undefined ? { ok: true } : { ok: true, payload: JSON.parse(body) as unknown }
+  } catch {
+    return { ok: true }
+  }
 }
 
-async function readBoundedBody(response: Response, signal: AbortSignal): Promise<string> {
-  if (!response.body) return ""
-  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined
+async function boundedBody(body: ReadableStream<Uint8Array> | null, signal: AbortSignal): Promise<string | undefined> {
+  if (!body) return undefined
+  const reader = body.getReader()
   const chunks: Uint8Array[] = []
   let size = 0
-  let tooLarge = false
+  let complete = false
   try {
-    reader = response.body.getReader()
     while (true) {
       const next = await abortable(reader.read(), signal)
-      if (next.done) break
-      size += next.value.byteLength
-      if (size > MAX_BODY_BYTES) {
-        tooLarge = true
-        break
+      if (next.done) {
+        complete = true
+        const output = new Uint8Array(size)
+        let offset = 0
+        for (const chunk of chunks) {
+          output.set(chunk, offset)
+          offset += chunk.byteLength
+        }
+        return new TextDecoder().decode(output)
       }
+      size += next.value.byteLength
+      if (size > MAX_BODY_BYTES) return undefined
       chunks.push(next.value)
     }
-  } catch {
-    void reader?.cancel().catch(() => undefined)
-    if (signal.aborted) throw safeAbortError(signal)
-    throw new ProjectHttpError("transport", "Project resolution request failed.")
   } finally {
-    if (tooLarge) void reader?.cancel().catch(() => undefined)
-    reader?.releaseLock()
+    if (!complete) await reader.cancel().catch(() => undefined)
+    reader.releaseLock()
   }
-  if (tooLarge) throw new ProjectHttpError("response", "Project resolution response was too large.")
-  return new TextDecoder().decode(concat(chunks, size))
 }
 
 function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
-  if (signal.aborted) return Promise.reject(safeAbortError(signal))
+  if (signal.aborted) return Promise.reject(new Error("aborted"))
   return new Promise((resolve, reject) => {
-    const abort = () => reject(safeAbortError(signal))
+    const abort = () => reject(new Error("aborted"))
     signal.addEventListener("abort", abort, { once: true })
     promise.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort))
   })
 }
 
-function concat(chunks: Uint8Array[], size: number): Uint8Array {
-  const output = new Uint8Array(size)
-  let offset = 0
-  for (const chunk of chunks) {
-    output.set(chunk, offset)
-    offset += chunk.byteLength
+function projectFrom(value: unknown): string | undefined {
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      const projectId = projectFrom(entry)
+      if (projectId) return projectId
+    }
+    return undefined
   }
-  return output
-}
-
-function parseJson(body: string): unknown {
-  try {
-    return JSON.parse(body) as unknown
-  } catch {
-    throw new ProjectHttpError("response", "Antigravity did not return a usable project. Check your Antigravity setup and access.")
-  }
-}
-
-function projectFrom(value: unknown): string {
-  if (!isRecord(value)) throw invalidProject()
+  if (!isRecord(value)) return undefined
   const project = value.cloudaicompanionProject
   if (nonempty(project)) return project
   if (isRecord(project) && nonempty(project.id)) return project.id
-  throw invalidProject()
-}
-
-function responseError(status: number): ProjectHttpError {
-  if (status === 401) return new ProjectHttpError("access", "Authentication expired. Run /login antigravity-guard.", status)
-  if (status === 403) return new ProjectHttpError("access", "Project access was denied. Check your Antigravity access.", status)
-  return new ProjectHttpError("response", "Project resolution request was rejected.", status)
-}
-
-function safeAbortError(signal: AbortSignal | undefined): ProjectHttpError {
-  return new ProjectHttpError("aborted", signal?.aborted ? "Project resolution was cancelled." : "Project resolution failed.")
-}
-
-function invalidProject(): ProjectHttpError {
-  return new ProjectHttpError("response", "Antigravity did not return a usable project. Check your Antigravity setup and access.")
+  for (const entry of Object.values(value)) {
+    const projectId = projectFrom(entry)
+    if (projectId) return projectId
+  }
+  return undefined
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

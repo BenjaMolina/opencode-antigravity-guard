@@ -5,12 +5,19 @@ import type { OAuthCredentials, OAuthLoginCallbacks } from "@earendil-works/pi-a
 
 import { exchangeAuthorizationCode, refreshCredentials } from "./auth-http.ts"
 import { openLoopbackReceiver, validateLoopbackCallback } from "./loopback.ts"
-import type { LoopbackOutcome, LoopbackReceiver } from "./loopback.ts"
-import { loadCodeAssistProject } from "./project.ts"
+import type { LoopbackReceiver } from "./loopback.ts"
+import { defaultProjectId, resolveLoginProject } from "./project.ts"
+import type { LoginProject } from "./project.ts"
 import type { PiCredentials } from "./types.ts"
 
 const ATTEMPT_TIMEOUT_MS = 5 * 60_000
+const PI_OAUTH_CLIENT = {
+  ...ANTIGRAVITY_OAUTH_CLIENT,
+  scopes: [...ANTIGRAVITY_OAUTH_CLIENT.scopes, "https://www.googleapis.com/auth/aicode"],
+}
 const trustedErrors = new WeakSet<OAuthLifecycleError>()
+
+type PiOAuthCredentials = OAuthCredentials & Pick<PiCredentials, "projectId" | "email">
 
 export interface PiOAuthDependencies {
   fetch: typeof globalThis.fetch
@@ -18,7 +25,7 @@ export interface PiOAuthDependencies {
   randomBytes?: (size: number) => Uint8Array
   exchange?: typeof exchangeAuthorizationCode
   refresh?: typeof refreshCredentials
-  project?: typeof loadCodeAssistProject
+  project?: (options: Parameters<typeof resolveLoginProject>[0]) => Promise<LoginProject>
   openLoopback?: (options: Parameters<typeof openLoopbackReceiver>[0]) => LoopbackReceiver
 }
 
@@ -32,7 +39,7 @@ export function createPiOAuthLifecycle(dependencies: PiOAuthDependencies): PiOAu
   const bytes = dependencies.randomBytes ?? randomBytes
   const exchange = dependencies.exchange ?? exchangeAuthorizationCode
   const refresh = dependencies.refresh ?? refreshCredentials
-  const project = dependencies.project ?? loadCodeAssistProject
+  const project = dependencies.project ?? resolveLoginProject
   const openLoopback = dependencies.openLoopback ?? openLoopbackReceiver
   let active = false
 
@@ -48,7 +55,7 @@ export function createPiOAuthLifecycle(dependencies: PiOAuthDependencies): PiOAu
         const state = base64Url(bytes(32))
         const verifier = base64Url(bytes(32))
         const challenge = base64Url(createHash("sha256").update(verifier).digest())
-        const authorizationUrl = buildAuthorizationUrl(ANTIGRAVITY_OAUTH_CLIENT, { challenge, state })
+        const authorizationUrl = buildAuthorizationUrl(PI_OAUTH_CLIENT, { challenge, state })
         const method = await abortable(() => callbacks.onSelect({
           message: "Choose how to complete Antigravity login.",
           options: [
@@ -68,11 +75,12 @@ export function createPiOAuthLifecycle(dependencies: PiOAuthDependencies): PiOAu
         const code = receiver ? await codeFromLoopback(receiver, callbacks, signal, state) : await codeFromPrompt(callbacks, signal, state)
         const credentials = await abortable(() => untrusted(() => exchange({
           code, verifier, fetch: dependencies.fetch, now: dependencies.now, signal, deadlineMs: deadline,
-        }), "Antigravity login failed."), signal)
-        await abortable(() => untrusted(() => project({
-          accessToken: credentials.access, fetch: dependencies.fetch, now: dependencies.now, platform: process.platform, signal, deadlineMs: deadline,
-        }), "Antigravity login failed."), signal)
-        return piCredentials(credentials)
+        }), "Antigravity token exchange failed after authorization."), signal)
+        const discovery = await abortable(
+          () => Promise.resolve(project({ accessToken: credentials.access, fetch: dependencies.fetch, now: dependencies.now, platform: process.platform, signal, deadlineMs: deadline })).catch(() => ({})),
+          signal,
+        )
+        return piCredentials(credentials, discovery)
       } catch (error) {
         if (trusted(error)) throw error
         if (signal?.aborted) throw cancelled()
@@ -84,10 +92,11 @@ export function createPiOAuthLifecycle(dependencies: PiOAuthDependencies): PiOAu
     },
     async refreshToken(credentials, signal) {
       try {
-        return piCredentials(await abortable(() => untrusted(
-          () => refresh({ credentials, fetch: dependencies.fetch, now: dependencies.now, signal }),
+        const refreshed = await abortable(() => untrusted(
+          () => refresh({ credentials: credentialsFrom(credentials), fetch: dependencies.fetch, now: dependencies.now, signal }),
           "Antigravity credential refresh failed.",
-        ), signal))
+        ), signal)
+        return piCredentials(refreshed, credentialProject(credentials))
       } catch (error) {
         if (trusted(error)) throw error
         if (signal.aborted) throw cancelled()
@@ -95,7 +104,8 @@ export function createPiOAuthLifecycle(dependencies: PiOAuthDependencies): PiOAu
       }
     },
     getApiKey(credentials) {
-      return credentials.access
+      const project = credentialProject(credentials)
+      return JSON.stringify({ token: credentials.access, projectId: project.projectId ?? defaultProjectId(project.email ?? "antigravity-default") })
     },
   }
 }
@@ -133,6 +143,24 @@ function codeFromManualCallback(input: string, state: string): string {
   throw new OAuthLifecycleError("Paste the full callback URL from Antigravity login.")
 }
 
+function credentialsFrom(credentials: OAuthCredentials): PiCredentials {
+  return credentials as PiCredentials
+}
+
+function credentialProject(credentials: OAuthCredentials): Pick<PiCredentials, "projectId" | "email"> {
+  const values = credentials as Record<string, unknown>
+  return {
+    ...(nonempty(values.projectId) ? { projectId: values.projectId } : {}),
+    ...(nonempty(values.email) ? { email: values.email } : {}),
+  }
+}
+
+function piCredentials(credentials: PiCredentials, discovered: LoginProject = {}): PiOAuthCredentials {
+  const email = nonempty(discovered.email) ? discovered.email : undefined
+  const projectId = nonempty(discovered.projectId) ? discovered.projectId : defaultProjectId(email ?? "antigravity-default")
+  return { refresh: credentials.refresh, access: credentials.access, expires: credentials.expires, projectId, ...(email ? { email } : {}) }
+}
+
 function untrusted<T>(operation: () => T | Promise<T>, message: string): Promise<T> {
   return Promise.resolve().then(operation).catch(() => { throw new OAuthLifecycleError(message) })
 }
@@ -150,12 +178,12 @@ function abortable<T>(operation: () => Promise<T>, signal: AbortSignal): Promise
   })
 }
 
-function piCredentials(credentials: PiCredentials): OAuthCredentials {
-  return { refresh: credentials.refresh, access: credentials.access, expires: credentials.expires }
-}
-
 function base64Url(value: Uint8Array): string {
   return Buffer.from(value).toString("base64url")
+}
+
+function nonempty(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0
 }
 
 function cancelled(): OAuthLifecycleError {
