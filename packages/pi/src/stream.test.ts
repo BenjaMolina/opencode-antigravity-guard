@@ -256,7 +256,7 @@ describe("Pi-native stream lifecycle", () => {
       now: () => 1_000,
       runTransport: async ({ onSemantic }) => {
         onSemantic({ type: "text", text: "Hi" })
-        onSemantic({ type: "usage", input: 3, output: 2, cacheRead: 1, cacheWrite: 0, total: 5 })
+        onSemantic({ type: "usage", input: 3, output: 2, cacheRead: 1, cacheWrite: 0, reasoning: 0, total: 5 })
         onSemantic({ type: "text", text: "!" })
         onSemantic({ type: "finish", reason: "stop" })
       },
@@ -274,7 +274,52 @@ describe("Pi-native stream lifecycle", () => {
     expect(output).toMatchObject({ stopReason: "stop", content: [{ type: "text", text: "Hi!" }], usage: { input: 3, output: 2, cacheRead: 1, totalTokens: 6, cost: { total: 0 } } })
   })
 
-  it.each([
+  it("emits ordered indexed thought and text lifecycle blocks, including thought-only completion", async () => {
+        const lifecycle = createPiLifecycleStream({
+          model: model(),
+          now: () => 1_000,
+          runTransport: async ({ onSemantic }) => {
+            onSemantic({ type: "thinking", thinking: "plan", signature: "c2ln" })
+            onSemantic({ type: "text", text: "answer", signature: "dGV4dA==" })
+            onSemantic({ type: "thinking", thinking: "check", signature: "Y2hlY2s=" })
+            onSemantic({ type: "usage", input: 3, output: 5, cacheRead: 1, cacheWrite: 0, reasoning: 2, total: 9 })
+            onSemantic({ type: "finish", reason: "stop" })
+          },
+        })
+        const events = []
+        for await (const event of lifecycle) events.push(event)
+
+        expect(events.map((event) => event.type)).toEqual([
+          "start", "thinking_start", "thinking_delta", "thinking_end", "text_start", "text_delta", "text_end", "thinking_start", "thinking_delta", "thinking_end", "done",
+        ])
+        expect(events.filter((event) => event.type.endsWith("start") || event.type.endsWith("delta") || event.type.endsWith("end")).map((event) => "contentIndex" in event ? event.contentIndex : undefined)).toEqual([
+          undefined, 0, 0, 0, 1, 1, 1, 2, 2, 2,
+        ])
+        expect(await lifecycle.result()).toMatchObject({
+          stopReason: "stop",
+          content: [
+            { type: "thinking", thinking: "plan", thinkingSignature: "c2ln" },
+            { type: "text", text: "answer", textSignature: "dGV4dA==" },
+            { type: "thinking", thinking: "check", thinkingSignature: "Y2hlY2s=" },
+          ],
+          usage: { input: 3, output: 5, cacheRead: 1, reasoning: 2, totalTokens: 9 },
+        })
+
+        const thoughtOnly = createPiLifecycleStream({
+          model: model(),
+          now: () => 1_000,
+          runTransport: async ({ onSemantic }) => {
+            onSemantic({ type: "thinking", thinking: "only" })
+            onSemantic({ type: "finish", reason: "stop" })
+          },
+        })
+        const thoughtOnlyEvents = []
+        for await (const event of thoughtOnly) thoughtOnlyEvents.push(event)
+        expect(thoughtOnlyEvents.map((event) => event.type)).toEqual(["start", "thinking_start", "thinking_delta", "thinking_end", "done"])
+        expect(await thoughtOnly.result()).toMatchObject({ stopReason: "stop", content: [{ type: "thinking", thinking: "only" }] })
+      })
+
+      it.each([
     ["STOP", "stop"],
     ["MAX_TOKENS", "length"],
   ] as const)("settles a %s response without aborting the transport after %s", async (finishReason, expectedReason) => {

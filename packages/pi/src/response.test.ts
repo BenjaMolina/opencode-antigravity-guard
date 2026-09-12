@@ -15,11 +15,36 @@ describe("ResponseSemantics", () => {
       usageMetadata: { promptTokenCount: 7, cachedContentTokenCount: 2, candidatesTokenCount: 3 },
     }))).toEqual([
       { type: "text", text: "Hello" },
-      { type: "usage", input: 5, output: 3, cacheRead: 2, cacheWrite: 0, total: 10 },
+      { type: "usage", input: 5, output: 3, cacheRead: 2, cacheWrite: 0, reasoning: 0, total: 10 },
     ])
   })
 
-  it("preserves repeated and whitespace deltas, maps MAX_TOKENS, and permits [DONE] after it", () => {
+  it("emits visible thought and text semantics with their valid source signatures and reasoning usage", () => {
+      const semantics = new ResponseSemantics()
+
+      expect(semantics.push(record({
+        candidates: [{ content: { parts: [
+          { thought: true, text: "plan", thoughtSignature: "c2ln" },
+          { text: "answer", thoughtSignature: "dGV4dA==" },
+        ] } }],
+        usageMetadata: { promptTokenCount: 7, cachedContentTokenCount: 2, candidatesTokenCount: 3, thoughtsTokenCount: 4, totalTokenCount: 14 },
+      }))).toEqual([
+        { type: "thinking", thinking: "plan", signature: "c2ln" },
+        { type: "text", text: "answer", signature: "dGV4dA==" },
+        { type: "usage", input: 5, output: 7, cacheRead: 2, cacheWrite: 0, reasoning: 4, total: 14 },
+      ])
+    })
+
+    it("permits a thought-only successful completion and strips malformed signatures", () => {
+      const semantics = new ResponseSemantics()
+      expect(semantics.push(record({ candidates: [{ content: { parts: [{ thought: true, text: "plan", thoughtSignature: "not base64" }] } }] }))).toEqual([
+        { type: "thinking", thinking: "plan" },
+      ])
+      expect(semantics.push(record({ candidates: [{ finishReason: "STOP" }] }))).toEqual([{ type: "finish", reason: "stop" }])
+      expect(() => semantics.finish()).not.toThrow()
+    })
+
+    it("preserves repeated and whitespace deltas, maps MAX_TOKENS, and permits [DONE] after it", () => {
     const semantics = new ResponseSemantics()
     expect(semantics.push(record({ candidates: [{ content: { parts: [{ text: " " }, { text: "same" }] } }] }))).toEqual([
       { type: "text", text: " " },
@@ -37,7 +62,7 @@ describe("ResponseSemantics", () => {
     const semantics = new ResponseSemantics()
     semantics.push(record({ usageMetadata: { promptTokenCount: 7, cachedContentTokenCount: 2, candidatesTokenCount: 3 } }))
     expect(semantics.push(record({ usageMetadata: { candidatesTokenCount: 4 } }))).toEqual([
-      { type: "usage", input: 5, output: 4, cacheRead: 2, cacheWrite: 0, total: 11 },
+      { type: "usage", input: 5, output: 4, cacheRead: 2, cacheWrite: 0, reasoning: 0, total: 11 },
     ])
   })
 
@@ -57,7 +82,7 @@ describe("ResponseSemantics", () => {
   it("rejects malformed records, unsupported output, invalid usage, and incomplete completion", () => {
     const invalid = [
       "{", JSON.stringify({ error: { message: "nope" } }), record({ promptFeedback: {} }),
-      record({ candidates: [{ index: 1 }] }), record({ candidates: [{ finishReason: "STOP" }], error: {} }), record({ candidates: [{ content: { parts: [{ thought: true, text: "no" }] } }] }),
+      record({ candidates: [{ index: 1 }] }), record({ candidates: [{ finishReason: "STOP" }], error: {} }), record({ candidates: [{ content: { parts: [{ thought: "true", text: "no" }] } }] }),
       record({ candidates: [{ content: { parts: [{ functionCall: {} }] } }] }), record({ candidates: [{ finishReason: "OTHER" }] }),
       record({ usageMetadata: { promptTokenCount: 1, cachedContentTokenCount: 2 } }), record({ usageMetadata: { promptTokenCount: 1, totalTokenCount: 2 } }), record({ responseId: 1 }),
     ]

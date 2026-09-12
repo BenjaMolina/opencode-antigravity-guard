@@ -8,6 +8,8 @@ const coreName = "@benjamolina/antigravity-guard-core"
 const piName = "@benjamolina/pi-antigravity-guard"
 const rootName = "@benjamolina/opencode-antigravity-guard"
 const repositoryUrl = "git+https://github.com/BenjaMolina/opencode-antigravity-guard.git"
+const piVersion = "0.2.0"
+const rootVersion = "1.1.12"
 
 function repository(directory?: string) {
   return {
@@ -21,7 +23,7 @@ function validManifests() {
   return {
     root: {
       name: rootName,
-      version: "1.1.11",
+      version: rootVersion,
       dependencies: { [coreName]: "0.1.0" },
       repository: repository(),
     },
@@ -32,7 +34,7 @@ function validManifests() {
     },
     pi: {
       name: piName,
-      version: "0.1.0",
+      version: piVersion,
       dependencies: { [coreName]: "0.1.0" },
       repository: repository("packages/pi"),
     },
@@ -40,7 +42,7 @@ function validManifests() {
       packages: {
         "": {
           name: rootName,
-          version: "1.1.11",
+          version: rootVersion,
           dependencies: { [coreName]: "0.1.0" },
         },
         "packages/core": {
@@ -49,7 +51,7 @@ function validManifests() {
         },
         "packages/pi": {
           name: piName,
-          version: "0.1.0",
+          version: piVersion,
           dependencies: { [coreName]: "0.1.0" },
         },
       },
@@ -105,7 +107,35 @@ function expectRepositoryLocalTagIdentity(workflow: string): void {
   expect(tagScript).not.toMatch(/git config --global/)
 }
 
+function expectPlannedStaticVersions(workflow: string): void {
+  expect(workflow).toContain(
+    'publish_if_missing "@benjamolina/antigravity-guard-core" "0.1.0" "@benjamolina/antigravity-guard-core" false',
+  )
+  expect(workflow).toContain(
+    `publish_if_missing "@benjamolina/pi-antigravity-guard" "${piVersion}" "@benjamolina/pi-antigravity-guard" true`,
+  )
+  expect(workflow).toContain(
+    `publish_if_missing "@benjamolina/opencode-antigravity-guard" "${rootVersion}" "" true`,
+  )
+  expect(workflow).toContain(`TAG="v${rootVersion}"`)
+  expect(workflow).toContain(`@benjamolina/pi-antigravity-guard@${piVersion}`)
+  expect(workflow).toContain(`@benjamolina/opencode-antigravity-guard@${rootVersion}`)
+}
+
 describe("release workflow", () => {
+  it("uses the planned static versions for publication, tag, and release notes", () => {
+    const workflow = readFileSync(new URL("../.github/workflows/release.yml", import.meta.url), "utf8")
+
+    expectPlannedStaticVersions(workflow)
+  })
+
+  it("rejects stale Pi and root workflow versions", () => {
+    const workflow = readFileSync(new URL("../.github/workflows/release.yml", import.meta.url), "utf8")
+
+    expect(() => expectPlannedStaticVersions(workflow.replace(`"${piVersion}"`, '"0.1.0"'))).toThrow()
+    expect(() => expectPlannedStaticVersions(workflow.replace(`"${rootVersion}"`, '"1.1.11"'))).toThrow()
+  })
+
   it("waits up to 15 minutes for a successful publish to settle through exact registry readback", () => {
     const workflow = readFileSync(new URL("../.github/workflows/release.yml", import.meta.url), "utf8")
 
@@ -127,8 +157,8 @@ describe("createReleasePlan", () => {
 
     expect(plan).toEqual([
       { name: coreName, version: "0.1.0", workspace: "packages/core" },
-      { name: piName, version: "0.1.0", workspace: "packages/pi" },
-      { name: rootName, version: "1.1.11", workspace: undefined },
+      { name: piName, version: piVersion, workspace: "packages/pi" },
+      { name: rootName, version: rootVersion, workspace: undefined },
     ])
   })
 

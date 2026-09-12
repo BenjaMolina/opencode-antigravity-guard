@@ -29,12 +29,12 @@ describe("Pi text context serialization", () => {
     [{ tools: [{}], messages: [{ role: "user", content: "x", timestamp: 0 }] }, undefined],
     [{ messages: [{ role: "toolResult", content: [], timestamp: 0 }] }, undefined],
     [{ messages: [{ role: "user", content: [{ type: "image" }], timestamp: 0 }] }, undefined],
-    [{ messages: [assistant([{ type: "thinking", thinking: "x" }])] }, undefined],
+    [{ messages: [{ role: "user", content: [{ type: "thinking", thinking: "x" }], timestamp: 0 }] }, undefined],
     [{ messages: [assistant([{ type: "toolCall", id: "call", name: "tool", arguments: {} }])] }, undefined],
     [{ messages: [{ role: "user", content: [{ type: "unknown", value: "x" }], timestamp: 0 }] }, undefined],
     [{ messages: [{ role: "developer", content: "x", timestamp: 0 }] }, undefined],
     [{ messages: [] }, undefined],
-    [{ messages: [{ role: "user", content: "x", timestamp: 0 }] }, { reasoning: "low" }],
+    [{ messages: [{ role: "user", content: "x", timestamp: 0 }] }, { reasoning: "xhigh" as never }],
     [{ messages: [{ role: "user", content: "x", timestamp: 0 }] }, { deferred: true }],
     [{ messages: [{ role: "user", content: "x", timestamp: 0 }] }, { temperature: 3 }],
     [{ messages: [{ role: "user", content: "x", timestamp: 0 }] }, { maxTokens: 0 }],
@@ -62,7 +62,56 @@ describe("Pi text context serialization", () => {
     }
   })
 
-  it("uses defaults, accepts repeated text, and bounds serialized text", () => {
+  it.each(["low", "medium", "high"] as const)("maps %s reasoning to the matching visible native thinking level", (reasoning) => {
+        expect(request({ messages: [{ role: "user", content: "x", timestamp: 0 }] }, { reasoning }).request.generationConfig.thinkingConfig).toEqual({
+          thinkingLevel: reasoning,
+          includeThoughts: true,
+        })
+      })
+
+      it("uses invisible low thinking by default and for Pi's runtime off encoding", () => {
+        const context = { messages: [{ role: "user", content: "x", timestamp: 0 }] } as Context
+        expect(request(context).request.generationConfig.thinkingConfig).toEqual({ thinkingLevel: "low", includeThoughts: false })
+        expect(request(context, { reasoning: "off" as never }).request.generationConfig.thinkingConfig).toEqual({ thinkingLevel: "low", includeThoughts: false })
+      })
+
+      it("fails closed for a direct minimal reasoning request", () => {
+        const context = { messages: [{ role: "user", content: "x", timestamp: 0 }] } as Context
+        expect(() => request(context, { reasoning: "minimal" as never })).toThrow(ContextSerializationError)
+      })
+
+      it("rejects thinking budgets while preserving signed same-model thought and text parts", () => {
+        const context = { messages: [
+          { role: "user", content: "x", timestamp: 0 },
+          { role: "assistant", content: [
+            { type: "thinking", thinking: "plan", thinkingSignature: "c2ln" },
+            { type: "text", text: "answer", textSignature: "c2ln" },
+          ], provider: "antigravity-guard", model: "antigravity-gemini-3.8-flash", api: "antigravity-guard-sse", usage: {}, stopReason: "stop", timestamp: 0 },
+        ] } as Context
+        expect(() => request(context, { thinkingBudgets: { low: 32 } })).toThrow(ContextSerializationError)
+        expect(request(context).request.contents[1]?.parts).toEqual([
+          { thought: true, text: "plan", thoughtSignature: "c2ln" },
+          { text: "answer", thoughtSignature: "c2ln" },
+        ])
+      })
+
+      it("strips malformed or cross-model signatures without moving content between source parts", () => {
+        const context = { messages: [
+          { role: "user", content: "x", timestamp: 0 },
+          { role: "assistant", content: [
+            { type: "thinking", thinking: "cross thought", thinkingSignature: "c2ln" },
+            { type: "text", text: "cross text", textSignature: "c2ln" },
+          ], provider: "antigravity-guard", model: "other-model", api: "antigravity-guard-sse", usage: {}, stopReason: "stop", timestamp: 0 },
+          { role: "assistant", content: [{ type: "text", text: "invalid", textSignature: "not base64" }], provider: "antigravity-guard", model: "antigravity-gemini-3.8-flash", api: "antigravity-guard-sse", usage: {}, stopReason: "stop", timestamp: 0 },
+        ] } as Context
+
+        expect(request(context).request.contents.slice(1)).toEqual([
+          { role: "model", parts: [{ text: "cross thought" }, { text: "cross text" }] },
+          { role: "model", parts: [{ text: "invalid" }] },
+        ])
+      })
+
+      it("uses defaults, accepts repeated text, and bounds serialized text", () => {
     expect(request({ messages: [{ role: "user", content: "same", timestamp: 0 }, { role: "user", content: "same", timestamp: 0 }] })).toMatchObject({
       model: "gemini-3.8-flash-tiered", request: { generationConfig: { temperature: 1, maxOutputTokens: 4096 } },
     })
