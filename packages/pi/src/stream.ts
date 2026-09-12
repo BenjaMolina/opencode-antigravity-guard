@@ -1,11 +1,6 @@
 import { calculateCost, createAssistantMessageEventStream } from "@earendil-works/pi-ai"
 import type { AssistantMessage, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai"
-import {
-  ANTIGRAVITY_ENDPOINTS,
-  ANTIGRAVITY_VERSION_FALLBACK,
-  GEMINI_CLI_HEADERS,
-  buildAntigravityHeaders,
-} from "@benjamolina/antigravity-guard-core"
+import { ANTIGRAVITY_ENDPOINTS } from "@benjamolina/antigravity-guard-core"
 
 import { serializeTextContext } from "./context.ts"
 import type { ResponseSemantic } from "./response.ts"
@@ -15,6 +10,7 @@ import { SseFrameError, SseFramer } from "./sse.ts"
 const TOTAL_TIMEOUT_MS = 120_000
 const INACTIVITY_TIMEOUT_MS = 30_000
 const MAX_ERROR_BYTES = 64 * 1024
+const ANTIGRAVITY_USER_AGENT = "antigravity/cli/1.1.23 (aidev_client; os_type=linux; arch=amd64; cl=974125021; auth_method=consumer)"
 const ENDPOINT = `${ANTIGRAVITY_ENDPOINTS.daily}/v1internal:streamGenerateContent?alt=sse`
 const API = "antigravity-guard-sse"
 const MODEL = "antigravity-gemini-3.8-flash"
@@ -34,8 +30,8 @@ export interface StreamTransportInput {
   generationOptions?: SimpleStreamOptions
   headers?: Record<string, string>
   inactivityTimeoutMs?: number
-  loadProject: (input: { accessToken: string, fetch: typeof globalThis.fetch, now: () => number, platform: string, signal: AbortSignal, deadlineMs: number }) => Promise<string>
   model: Model<string>
+  projectId: string
   now: () => number
   onSemantic: (semantic: ResponseSemantic) => void | Promise<void>
   platform: string
@@ -73,7 +69,7 @@ export function createPiLifecycleStream(input: PiStreamLifecycleInput) {
     if (complete) return
     complete = true
     removeAbort()
-    controller.abort()
+    if (reason === "error" || reason === "aborted") controller.abort()
     output.stopReason = reason
     if (reason === "stop" || reason === "length") {
       if (textStarted) stream.push({ type: "text_end", contentIndex: 0, content: output.content[0]?.type === "text" ? output.content[0].text : "", partial: output })
@@ -115,7 +111,7 @@ export function createPiLifecycleStream(input: PiStreamLifecycleInput) {
   }
   if (!complete) void Promise.resolve().then(() => input.runTransport({ onSemantic, signal })).then(
     () => { if (!complete) finalize(signal.aborted ? "aborted" : "error") },
-    () => finalize(signal.aborted || input.signal?.aborted ? "aborted" : "error"),
+    (error) => finalize(signal.aborted || input.signal?.aborted ? "aborted" : "error", isLocalStreamError(error) ? error.message : undefined),
   )
   return stream
 }
@@ -126,8 +122,7 @@ export async function executeStreamTransport(input: StreamTransportInput): Promi
   const headers = requestHeaders(input)
   let responseBody: ReadableStream<Uint8Array> | null = null
   try {
-    const project = await abortable(input.loadProject({ accessToken: input.accessToken, fetch: input.fetch, now: input.now, platform: input.platform, signal, deadlineMs: input.now() + remaining(input, TOTAL_TIMEOUT_MS) }), signal)
-    const original = serializeTextContext({ context: input.context, model: input.model, options: input.generationOptions, project, requestId: input.requestId })
+    const original = serializeTextContext({ context: input.context, model: input.model, options: input.generationOptions, project: input.projectId, requestId: input.requestId })
     const payload = await payloadHook(input, original, signal)
     const response = await abortable(input.fetch(ENDPOINT, { method: "POST", redirect: "error", headers, body: JSON.stringify(payload), signal }), signal)
     await responseHook(input, response, signal)
@@ -171,15 +166,12 @@ async function responseHook(input: StreamTransportInput, response: Response, sig
 
 function requestHeaders(input: StreamTransportInput): Record<string, string> {
   for (const name of Object.keys(input.headers ?? {})) if (PROTECTED_HEADERS.has(name.toLowerCase())) throw streamError("response", "Custom headers cannot replace protected request headers.")
-  const antigravity = buildAntigravityHeaders({ version: ANTIGRAVITY_VERSION_FALLBACK, platform: input.platform })
   return {
     ...input.headers,
     Authorization: `Bearer ${input.accessToken}`,
     Accept: "text/event-stream",
     "Content-Type": "application/json",
-    "User-Agent": GEMINI_CLI_HEADERS["User-Agent"],
-    "X-Goog-Api-Client": antigravity["X-Goog-Api-Client"],
-    "Client-Metadata": antigravity["Client-Metadata"],
+    "User-Agent": ANTIGRAVITY_USER_AGENT,
   }
 }
 

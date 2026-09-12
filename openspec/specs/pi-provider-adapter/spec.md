@@ -34,7 +34,7 @@ The Pi workspace MUST produce a package named `@benjamolina/pi-antigravity-guard
 
 ### Requirement: Exactly one intended Antigravity model is registered
 
-The Pi provider MUST register exactly one selectable model for this slice: Gemini 3.8 Flash. Its Pi selectable/public model identifier MUST be `antigravity-gemini-3.8-flash`, matching the repository-local Antigravity model definition. For requests for that selected model, its intended Antigravity wire model identifier MUST be `gemini-3.8-flash`. This mapping MUST be treated as namespace translation, not fallback or model substitution. Its user-facing name MUST identify Gemini 3.8 Flash. The provider MUST support text input and streamed text output for that model only. The package MUST NOT claim that either identifier's model is live, entitled, or available without separately authorized smoke evidence.
+The Pi provider MUST register exactly one selectable model for this slice: Gemini 3.8 Flash. Its Pi selectable/public model identifier MUST be `antigravity-gemini-3.8-flash`, matching the repository-local Antigravity model definition. For requests for that selected model, its intended Antigravity wire model identifier MUST be `gemini-3.8-flash-tiered`. This mapping MUST be treated as namespace translation, not fallback or model substitution: the provider MUST NOT expose a second tiered public model or substitute a model. Its user-facing name MUST identify Gemini 3.8 Flash. The provider MUST support text input and streamed text output for that model only. The package MUST NOT claim that either identifier's model is live, entitled, or available without separately authorized smoke evidence.
 
 #### Scenario: Provider exposes the selected model only
 
@@ -46,7 +46,7 @@ The Pi provider MUST register exactly one selectable model for this slice: Gemin
 
 - GIVEN Pi invokes the selectable/public model `antigravity-gemini-3.8-flash`
 - WHEN the provider creates its Antigravity request
-- THEN the request uses intended wire model identifier `gemini-3.8-flash` as namespace translation and does not use fallback or model substitution
+- THEN the request uses intended wire model identifier `gemini-3.8-flash-tiered` as namespace translation, without exposing a second public model or using fallback or model substitution
 
 #### Scenario: Live availability remains an evidence gate
 
@@ -56,7 +56,7 @@ The Pi provider MUST register exactly one selectable model for this slice: Gemin
 
 ### Requirement: Pi authentication supports safe automatic and manual completion
 
-The Pi provider MUST initiate Antigravity OAuth using PKCE and a state value bound to the login attempt. It MUST offer automatic completion through a bounded loopback callback listener for local-browser login and a manual callback-URL fallback for SSH, headless, unavailable-listener, or user-selected manual flows. The listener MUST bind only to loopback and MUST be cleaned up after successful completion, denial, timeout, cancellation, listener failure, or invalid callback handling. Both completion paths MUST validate state before exchanging authorization data and MUST return actionable, redacted authentication failures.
+The Pi provider MUST initiate Antigravity OAuth using PKCE and a state value bound to the login attempt. It MUST offer automatic completion through a bounded loopback callback listener for local-browser login and a manual callback-URL fallback for SSH, headless, unavailable-listener, or user-selected manual flows. The listener MUST bind only to loopback and MUST be cleaned up after successful completion, denial, timeout, cancellation, listener failure, or invalid callback handling. Both completion paths MUST validate state before exchanging authorization data and MUST return actionable, redacted authentication failures. Pi authorization adds `https://www.googleapis.com/auth/aicode` through a Pi-local OAuth configuration only; shared OpenCode scopes and token forms remain unchanged. After a successful token exchange, Pi MAY best-effort read the user email and discover a project through fixed `loadCodeAssist` origins in this order: `https://daily-cloudcode-pa.googleapis.com`, `https://daily-cloudcode-pa.sandbox.googleapis.com`, then `https://cloudcode-pa.googleapis.com`. Discovery requests use only Authorization, JSON Content-Type, and `antigravity/cli/1.1.23 (aidev_client; os_type=linux; arch=amd64; cl=974125021; auth_method=consumer)` User-Agent headers, with load body `{metadata:{ideType:"ANTIGRAVITY"}}`. On the first successful load response, Pi recursively extracts a supported direct, nested, or list project shape; when absent, it best-effort posts `{}` to fixed `listCloudAICompanionProjects` endpoints in the same order and returns the first extracted project. Non-OK and transport failures continue without exposing status, response bodies, or tokens. These failures never block login and are redacted. Pi stores the discovered project when present; otherwise it deterministically derives a version-five project ID from the email or the fixed `antigravity-default` seed. Refresh preserves this credential project without discovery. Generation receives that stored credential project directly at the fixed daily stream endpoint using the same Antigravity Authorization, JSON Content-Type, and User-Agent headers (plus its required SSE Accept header), and MUST NOT call `loadCodeAssist`, onboard, cache, persist elsewhere, invent a tier, or use arbitrary origins.
 
 #### Scenario: Local loopback login completes
 
@@ -76,9 +76,15 @@ The Pi provider MUST initiate Antigravity OAuth using PKCE and a state value bou
 - WHEN the provider processes the login attempt
 - THEN it does not exchange invalid authorization data, cleans up any listener, and reports an actionable error without exposing tokens or authorization secrets
 
+#### Scenario: Login stores a narrow credential project
+
+- GIVEN token exchange succeeds
+- WHEN user-info or each fixed project discovery request fails or returns no project
+- THEN login still succeeds with the deterministic fallback project, and later generation uses the credential project without discovery or provisioning
+
 ### Requirement: Pi exclusively owns Pi credentials
 
-The provider MUST return credentials through Pi's OAuth lifecycle so that Pi persists and refreshes them. Token refresh MUST honor cancellation and MUST surface actionable, redacted authentication errors. The Pi adapter MUST NOT read, modify, migrate, synchronize, or delete OpenCode account or credential files. Pi package removal MUST NOT silently delete Pi-managed credentials or revoke tokens.
+The provider MUST return credentials through Pi's OAuth lifecycle so that Pi persists and refreshes them. Pi credentials include the access token, refresh token, expiry, and optional email/project metadata; `getApiKey` serializes exactly `{token,projectId}`. At the provider boundary, malformed, missing, empty, or extra credential JSON fields MUST be rejected before any network request. Token refresh MUST preserve the credential project, honor cancellation, and surface actionable, redacted authentication errors. The Pi adapter MUST NOT read, modify, migrate, synchronize, or delete OpenCode account or credential files. Pi package removal MUST NOT silently delete Pi-managed credentials or revoke tokens.
 
 #### Scenario: Pi credentials remain separate from OpenCode accounts
 

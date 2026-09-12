@@ -5,6 +5,7 @@ import { createPiOAuthLifecycle } from "./oauth.ts"
 import type { LoopbackOutcome } from "./loopback.ts"
 
 const credentials = { refresh: "refresh", access: "access", expires: 42 }
+const fallbackProjectId = "5cbbac7c-3afc-5af4-bd2d-c3fc22ff9d54"
 
 function receiver(result: LoopbackOutcome) {
   return { ready: Promise.resolve(), result: Promise.resolve(result), cancel: vi.fn() }
@@ -16,10 +17,20 @@ function deferred<T>() {
   return { promise, resolve }
 }
 
+function callbacks(): OAuthLoginCallbacks {
+  let authorizationUrl = ""
+  return {
+    onSelect: async () => "manual",
+    onAuth: ({ url }) => { authorizationUrl = url },
+    onPrompt: async () => `http://localhost:51121/oauth-callback?code=code&state=${new URL(authorizationUrl).searchParams.get("state")}`,
+    onDeviceCode: () => undefined,
+  }
+}
+
 describe("Pi OAuth lifecycle", () => {
-  it("completes a manual full callback URL through token and project resolution", async () => {
-    const exchange = vi.fn().mockResolvedValue({ refresh: "refresh", access: "access", expires: 42 })
-    const project = vi.fn().mockResolvedValue("project")
+  it("completes a manual full callback URL through token and best-effort project discovery", async () => {
+    const exchange = vi.fn().mockResolvedValue(credentials)
+    const project = vi.fn().mockResolvedValue({ projectId: "project" })
     const openLoopback = vi.fn()
     let authUrl = ""
     const oauth = createPiOAuthLifecycle({
@@ -39,7 +50,7 @@ describe("Pi OAuth lifecycle", () => {
         return `http://localhost:51121/oauth-callback?code=code&state=${state}`
       },
       onDeviceCode: () => undefined,
-    })).resolves.toEqual({ refresh: "refresh", access: "access", expires: 42 })
+    })).resolves.toEqual({ ...credentials, projectId: "project" })
 
     expect(openLoopback).not.toHaveBeenCalled()
     expect(exchange).toHaveBeenCalledWith(expect.objectContaining({ code: "code" }))
@@ -55,7 +66,7 @@ describe("Pi OAuth lifecycle", () => {
       .mockReturnValueOnce(new Uint8Array(32).fill(2))
       .mockReturnValueOnce(new Uint8Array(32).fill(3))
     let authUrl = ""
-    const oauth = createPiOAuthLifecycle({ fetch: vi.fn(), now: () => 0, randomBytes, exchange, project: vi.fn().mockResolvedValue("project"), openLoopback })
+    const oauth = createPiOAuthLifecycle({ fetch: vi.fn(), now: () => 0, randomBytes, exchange, project: vi.fn().mockResolvedValue({}), openLoopback })
 
     await oauth.login({
       onSelect: async () => "browser",
@@ -71,17 +82,40 @@ describe("Pi OAuth lifecycle", () => {
     expect(randomBytes).toHaveBeenCalledTimes(2)
   })
 
-  it("redacts a project-resolution failure after the token exchange", async () => {
-    let authUrl = ""
+  it("adds aicode only to the Pi authorization URL", async () => {
     const oauth = createPiOAuthLifecycle({
       fetch: vi.fn(), now: () => 0, exchange: vi.fn().mockResolvedValue(credentials),
-      project: vi.fn().mockRejectedValue(new Error("CANARY-project-token")),
+      project: vi.fn().mockResolvedValue({}),
     })
-    await expect(oauth.login({
-      onSelect: async () => "manual", onAuth: ({ url }) => { authUrl = url },
-      onPrompt: async () => `http://localhost:51121/oauth-callback?code=code&state=${new URL(authUrl).searchParams.get("state")}`,
-      onDeviceCode: () => undefined,
-    })).rejects.not.toThrow("CANARY-project-token")
+    let url = ""
+    const login = callbacks()
+    const onAuth = login.onAuth
+    login.onAuth = (info) => { url = info.url; onAuth(info) }
+
+    await oauth.login(login)
+
+    expect(new URL(url).searchParams.get("scope")?.split(" ")).toContain("https://www.googleapis.com/auth/aicode")
+  })
+
+  it("falls back deterministically when user info and discovery fail without blocking login", async () => {
+    const project = vi.fn().mockRejectedValue(new Error("CANARY-discovery"))
+    const oauth = createPiOAuthLifecycle({ fetch: vi.fn(), now: () => 0, exchange: vi.fn().mockResolvedValue(credentials), project })
+
+    await expect(oauth.login(callbacks())).resolves.toMatchObject({ ...credentials, projectId: fallbackProjectId })
+    expect(project).toHaveBeenCalledOnce()
+  })
+
+  it("persists a discovered project and email in Pi credentials", async () => {
+    const oauth = createPiOAuthLifecycle({
+      fetch: vi.fn(), now: () => 0, exchange: vi.fn().mockResolvedValue(credentials),
+      project: vi.fn().mockResolvedValue({ projectId: "discovered-project", email: "alice@example.com" }),
+    })
+
+    await expect(oauth.login(callbacks())).resolves.toEqual({
+      ...credentials,
+      projectId: "discovered-project",
+      email: "alice@example.com",
+    })
   })
 
   it("returns fixed denial and cancellation errors for manual callbacks without exchanging secrets", async () => {
@@ -105,23 +139,20 @@ describe("Pi OAuth lifecycle", () => {
     expect(exchange).not.toHaveBeenCalled()
   })
 
-  it("normalizes replayed lifecycle errors from callbacks and dependencies", async () => {
+  it("normalizes replayed lifecycle errors from callbacks and token dependencies", async () => {
     const cancelledError = await createPiOAuthLifecycle({ fetch: vi.fn(), now: () => 0 }).login({ onSelect: async () => undefined, onAuth: () => undefined, onPrompt: async () => "", onDeviceCode: () => undefined }).catch((error: unknown) => error instanceof Error ? error : new Error())
     cancelledError.message = "CANARY-replay"
     await expect(createPiOAuthLifecycle({ fetch: vi.fn(), now: () => 0 }).login({ onSelect: () => { throw cancelledError }, onAuth: () => undefined, onPrompt: async () => "", onDeviceCode: () => undefined })).rejects.toThrow("Antigravity login failed.")
-    for (const dependency of ["exchange", "project"] as const) {
-      let authUrl = ""
-      const oauth = createPiOAuthLifecycle({
-        fetch: vi.fn(), now: () => 0,
-        exchange: dependency === "exchange" ? vi.fn().mockRejectedValue(cancelledError) : vi.fn().mockResolvedValue(credentials),
-        project: dependency === "project" ? vi.fn().mockRejectedValue(cancelledError) : vi.fn().mockResolvedValue("project"),
-      })
-      await expect(oauth.login({
-        onSelect: async () => "manual", onAuth: ({ url }) => { authUrl = url },
-        onPrompt: async () => `http://localhost:51121/oauth-callback?code=code&state=${new URL(authUrl).searchParams.get("state")}`,
-        onDeviceCode: () => undefined,
-      })).rejects.toThrow("Antigravity login failed.")
-    }
+    let authUrl = ""
+    const oauth = createPiOAuthLifecycle({
+      fetch: vi.fn(), now: () => 0,
+      exchange: vi.fn().mockRejectedValue(cancelledError),
+    })
+    await expect(oauth.login({
+      onSelect: async () => "manual", onAuth: ({ url }) => { authUrl = url },
+      onPrompt: async () => `http://localhost:51121/oauth-callback?code=code&state=${new URL(authUrl).searchParams.get("state")}`,
+      onDeviceCode: () => undefined,
+    })).rejects.toThrow("Antigravity token exchange failed after authorization.")
     await expect(createPiOAuthLifecycle({ fetch: vi.fn(), now: () => 0, refresh: vi.fn().mockRejectedValue(cancelledError) })
       .refreshToken(credentials, new AbortController().signal)).rejects.toThrow("Antigravity credential refresh failed.")
   })
@@ -142,7 +173,7 @@ describe("Pi OAuth lifecycle", () => {
     const waiting = deferred<{ kind: "callback"; code: string }>()
     const active = { ready: Promise.resolve(), result: waiting.promise, cancel: vi.fn() }
     const exchange = vi.fn()
-    const callbacks: OAuthLoginCallbacks = {
+    const activeCallbacks: OAuthLoginCallbacks = {
       signal: controller.signal,
       onSelect: async () => "browser",
       onAuth: () => undefined,
@@ -150,7 +181,7 @@ describe("Pi OAuth lifecycle", () => {
       onDeviceCode: () => undefined,
     }
     const oauth = createPiOAuthLifecycle({ fetch: vi.fn(), now: () => 0, exchange, project: vi.fn(), openLoopback: vi.fn(() => active) })
-    const login = oauth.login(callbacks)
+    const login = oauth.login(activeCallbacks)
     await Promise.resolve()
     controller.abort()
 
@@ -159,7 +190,7 @@ describe("Pi OAuth lifecycle", () => {
     expect(exchange).not.toHaveBeenCalled()
   })
 
-  it("cancels before selection and during prompt, token, or project work", async () => {
+  it("cancels before selection and during prompt, token, or discovery work", async () => {
     const before = new AbortController()
     before.abort()
     const select = vi.fn()
@@ -170,7 +201,7 @@ describe("Pi OAuth lifecycle", () => {
     for (const phase of ["prompt", "exchange", "project"] as const) {
       const controller = new AbortController()
       const exchange = vi.fn(() => phase === "exchange" ? new Promise<typeof credentials>(() => {}) : Promise.resolve(credentials))
-      const project = vi.fn(() => phase === "project" ? new Promise<string>(() => {}) : Promise.resolve("project"))
+      const project = vi.fn(() => phase === "project" ? new Promise<{ projectId: string }>(() => {}) : Promise.resolve({ projectId: "project" }))
       let authUrl = ""
       const pending = createPiOAuthLifecycle({ fetch: vi.fn(), now: () => 0, exchange, project }).login({
         signal: controller.signal,
@@ -196,7 +227,7 @@ describe("Pi OAuth lifecycle", () => {
       const callback = deferred<LoopbackOutcome>()
       const exchange = vi.fn().mockResolvedValue(credentials)
       const oauth = createPiOAuthLifecycle({
-        fetch: vi.fn(), now: () => 0, exchange, project: vi.fn().mockResolvedValue("project"),
+        fetch: vi.fn(), now: () => 0, exchange, project: vi.fn().mockResolvedValue({ projectId: "project" }),
         openLoopback: vi.fn(() => ({ ready: Promise.resolve(), result: callback.promise, cancel: vi.fn() })),
       })
       const login = oauth.login({ signal: controller.signal, onSelect: async () => method, onAuth: () => undefined, onPrompt: () => prompt.promise, onDeviceCode: () => undefined })
@@ -212,10 +243,10 @@ describe("Pi OAuth lifecycle", () => {
 
   it("normalizes synchronous setup failures and releases the login slot", async () => {
     const randomBytes = vi.fn().mockImplementationOnce(() => { throw new Error("CANARY-setup") }).mockReturnValue(new Uint8Array(32))
-    const callbacks = { onSelect: async () => undefined, onAuth: () => undefined, onPrompt: async () => "", onDeviceCode: () => undefined }
+    const activeCallbacks = { onSelect: async () => undefined, onAuth: () => undefined, onPrompt: async () => "", onDeviceCode: () => undefined }
     const oauth = createPiOAuthLifecycle({ fetch: vi.fn(), now: () => 0, randomBytes, project: vi.fn() })
-    await expect(oauth.login(callbacks)).rejects.toThrow("Antigravity login failed.")
-    await expect(oauth.login(callbacks)).rejects.toThrow("cancelled")
+    await expect(oauth.login(activeCallbacks)).rejects.toThrow("Antigravity login failed.")
+    await expect(oauth.login(activeCallbacks)).rejects.toThrow("cancelled")
   })
 
   it("absorbs a rejected loopback cleanup", async () => {
@@ -224,6 +255,19 @@ describe("Pi OAuth lifecycle", () => {
       openLoopback: () => ({ ready: Promise.resolve(), result: Promise.resolve({ kind: "denied" }), cancel: () => Promise.reject(new Error("CANARY-cleanup")) }),
     })
     await expect(oauth.login({ onSelect: async () => "browser", onAuth: () => undefined, onPrompt: async () => "", onDeviceCode: () => undefined })).rejects.toThrow("authorization was denied")
+  })
+
+  it("preserves a credential project during refresh without discovery", async () => {
+    const project = vi.fn()
+    const oauth = createPiOAuthLifecycle({
+      fetch: vi.fn(), now: () => 0,
+      refresh: vi.fn().mockResolvedValue({ refresh: "refresh", access: "fresh", expires: 99 }),
+      project,
+    })
+
+    await expect(oauth.refreshToken({ ...credentials, projectId: "saved-project", email: "alice@example.com" }, new AbortController().signal))
+      .resolves.toEqual({ refresh: "refresh", access: "fresh", expires: 99, projectId: "saved-project", email: "alice@example.com" })
+    expect(project).not.toHaveBeenCalled()
   })
 
   it("rejects concurrent login and forwards refresh cancellation without leaking dependency errors", async () => {
@@ -237,12 +281,18 @@ describe("Pi OAuth lifecycle", () => {
     selected.resolve(undefined); busy.message = "CANARY-busy"
     await expect(first).rejects.toThrow("cancelled"); await expect(oauth.login({ onSelect: () => { throw busy }, onAuth: () => undefined, onPrompt: async () => "", onDeviceCode: () => undefined })).rejects.toThrow("Antigravity login failed.")
 
-    await expect(oauth.refreshToken(credentials, new AbortController().signal)).resolves.toEqual({ refresh: "refresh", access: "new-access", expires: 99 })
-    expect(oauth.getApiKey({ refresh: "refresh", access: "new-access", expires: 99 })).toBe("new-access")
+    await expect(oauth.refreshToken(credentials, new AbortController().signal)).resolves.toMatchObject({ refresh: "refresh", access: "new-access", expires: 99 })
     await expect(oauth.refreshToken(credentials, new AbortController().signal)).rejects.not.toThrow("CANARY-refresh")
     const signal = new AbortController()
     signal.abort()
     await expect(oauth.refreshToken(credentials, signal.signal)).rejects.toThrow("cancelled")
     expect(refresh).toHaveBeenCalledTimes(2)
+  })
+
+  it("returns the exact token and stored-or-legacy-fallback project JSON", () => {
+    const oauth = createPiOAuthLifecycle({ fetch: vi.fn(), now: () => 0 })
+
+    expect(oauth.getApiKey({ ...credentials, projectId: "saved-project" })).toBe('{"token":"access","projectId":"saved-project"}')
+    expect(oauth.getApiKey({ ...credentials, email: "alice@example.com" })).toBe('{"token":"access","projectId":"13c821e6-cafb-50d3-8763-52400fc585ad"}')
   })
 })

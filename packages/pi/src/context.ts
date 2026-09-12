@@ -3,7 +3,7 @@ import type { Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai"
 const MAX_TEXT_BYTES = 8 * 1024 * 1024
 const MAX_OUTPUT_TOKENS = 65_536
 const PUBLIC_MODEL = "antigravity-gemini-3.8-flash"
-const WIRE_MODEL = "gemini-3.8-flash"
+const WIRE_MODEL = "gemini-3.8-flash-tiered"
 const RESERVED_HEADERS = new Set(["authorization", "host", "content-type", "content-length"])
 
 interface Part {
