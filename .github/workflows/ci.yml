@@ -18,17 +18,20 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: 'npm'
+          node-version: 22.22.2
+          cache: npm
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Run type check
-        run: npm run typecheck
+      - name: Type check all packages
+        run: npm run typecheck:all
 
       - name: Run tests
         run: npm test
 
-      - name: Build
-        run: npm run build
+      - name: Build all packages
+        run: npm run build:all
+
+      - name: Test published package contents
+        run: npm run test:pack

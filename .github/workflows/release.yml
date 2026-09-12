@@ -2,9 +2,12 @@ name: Release
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
   workflow_dispatch:
+
+concurrency:
+  group: npm-release-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: write
@@ -12,178 +15,177 @@ permissions:
 
 jobs:
   publish:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout exact commit
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.sha }}
           fetch-depth: 0
 
       - name: Use Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22.22.2
           registry-url: https://registry.npmjs.org
           always-auth: true
 
-      - name: Determine release state
-        id: determine
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate release manifests
+        run: npx tsx scripts/release-manifest-check.ts
+
+      - name: Type check all packages
+        run: npm run typecheck:all
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build all packages
+        run: npm run build:all
+
+      - name: Test published package contents
+        run: npm run test:pack
+
+      - name: Publish missing packages in dependency order
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
-          CURRENT_VERSION=$(node -p "require('./package.json').version")
-          echo "current_version=$CURRENT_VERSION" >> "$GITHUB_OUTPUT"
 
-          # Abort if version contains beta/alpha/rc (prerelease identifiers)
-          if echo "$CURRENT_VERSION" | grep -qE '(beta|alpha|rc)'; then
-            echo "ERROR: Cannot publish prerelease version '$CURRENT_VERSION' as official release" >&2
-            echo "This is main branch - version should not contain beta/alpha/rc" >&2
-            exit 1
-          fi
-          if git rev-parse HEAD^ >/dev/null 2>&1; then
-            PREVIOUS_VERSION=$(node -e "const { execSync } = require('node:child_process'); try { const data = execSync('git show HEAD^:package.json', { stdio: ['ignore', 'pipe', 'ignore'] }); const json = JSON.parse(data.toString()); if (json && typeof json.version === 'string') { process.stdout.write(json.version); } } catch (error) {}")
-            PREVIOUS_VERSION=${PREVIOUS_VERSION//$'\n'/}
-          else
-            PREVIOUS_VERSION=""
-          fi
-          echo "previous_version=$PREVIOUS_VERSION" >> "$GITHUB_OUTPUT"
-          if [ "$CURRENT_VERSION" = "$PREVIOUS_VERSION" ]; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          fi
-          git fetch --tags --force
-          if git tag -l "v$CURRENT_VERSION" | grep -q "v$CURRENT_VERSION"; then
-            echo "tag_exists=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "tag_exists=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Verify NPM token
-        if: steps.determine.outputs.changed == 'true' && steps.determine.outputs.tag_exists == 'false'
-        run: |
-          if [ -z "${NPM_TOKEN}" ]; then
+          if [ -z "${NODE_AUTH_TOKEN}" ]; then
             echo "NPM_TOKEN secret is required" >&2
             exit 1
           fi
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Install dependencies
-        if: steps.determine.outputs.changed == 'true' && steps.determine.outputs.tag_exists == 'false'
-        run: npm install
+          verify_metadata() {
+            local name="$1"
+            local version="$2"
+            local requires_core="$3"
+            node --input-type=module -e '
+              import { readFileSync } from "node:fs"
 
-      - name: Run Tests
-        if: steps.determine.outputs.changed == 'true' && steps.determine.outputs.tag_exists == 'false'
-        run: npm test
+              const packageInfo = JSON.parse(readFileSync(0, "utf8"))
+              const [name, version, requiresCore] = process.argv.slice(1)
+              if (packageInfo.name !== name || packageInfo.version !== version) {
+                throw new Error(`Registry metadata did not match ${name}@${version}`)
+              }
+              if (requiresCore === "true" && packageInfo.dependencies?.["@benjamolina/antigravity-guard-core"] !== "0.1.0") {
+                throw new Error(`${name}@${version} does not retain the exact core dependency`)
+              }
+            ' "$name" "$version" "$requires_core"
+          }
 
-      - name: Update README and Tag
-        if: steps.determine.outputs.changed == 'true' && steps.determine.outputs.tag_exists == 'false'
-        id: update_readme
-        run: |
-          CURRENT_VERSION="${{ steps.determine.outputs.current_version }}"
-          
-          git checkout main
-          git pull origin main
-          
-          # Update version in README.md
-          sed -i "s/@benjamolina\/opencode-antigravity-guard@[0-9]\+\.[0-9]\+\.[0-9]\+/@benjamolina\/opencode-antigravity-guard@$CURRENT_VERSION/g" README.md
-          
-          if ! git diff --quiet README.md; then
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add README.md
-            git commit -m "docs: update readme version to $CURRENT_VERSION [skip ci]"
-            git push origin main
-            echo "README updated"
-          else
-            echo "README already up to date"
-          fi
-          
-          # Create and push tag on the current HEAD
-          git tag "v$CURRENT_VERSION"
-          git push origin "v$CURRENT_VERSION"
+          query_exact_version() {
+            local name="$1"
+            local version="$2"
+            local requires_core="$3"
+            local output
+            local status
 
-      - name: Build
-        if: steps.determine.outputs.changed == 'true' && steps.determine.outputs.tag_exists == 'false'
-        run: npm run build
-
-      - name: Verify build artifacts
-        if: steps.determine.outputs.changed == 'true' && steps.determine.outputs.tag_exists == 'false'
-        run: |
-          set -euo pipefail
-          [ -f dist/index.js ] || { echo "dist/index.js missing" >&2; exit 1; }
-          [ -f dist/index.d.ts ] || { echo "dist/index.d.ts missing" >&2; exit 1; }
-          [ -d dist/src ] || { echo "dist/src/ missing" >&2; exit 1; }
-
-      - name: Generate release notes
-        if: steps.determine.outputs.changed == 'true' && steps.determine.outputs.tag_exists == 'false'
-        id: release_notes
-        run: |
-          set -euo pipefail
-          CURRENT_VERSION="${{ steps.determine.outputs.current_version }}"
-          PREVIOUS_VERSION="${{ steps.determine.outputs.previous_version }}"
-          RANGE=""
-          COMPARE_URL=""
-          LAST_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || true)
-          if [ -z "$LAST_TAG" ] && [ -n "$PREVIOUS_VERSION" ] && git rev-parse "refs/tags/v${PREVIOUS_VERSION}" >/dev/null 2>&1; then
-            LAST_TAG="v${PREVIOUS_VERSION}"
-          fi
-          if [ -n "$LAST_TAG" ]; then
-            RANGE="${LAST_TAG}..HEAD"
-            COMPARE_URL="https://github.com/${GITHUB_REPOSITORY}/compare/${LAST_TAG}...v${CURRENT_VERSION}"
-          fi
-          if [ -n "$RANGE" ]; then
-            CHANGELOG=$(git log --no-merges --pretty=format:'- %s (%h)' "$RANGE")
-          else
-            CHANGELOG=$(git log --no-merges --pretty=format:'- %s (%h)')
-          fi
-          if [ -z "$CHANGELOG" ]; then
-            CHANGELOG="- No commits found for this release."
-          fi
-          BODY_FILE=$(mktemp)
-          {
-            echo "## Release v${CURRENT_VERSION}"
-            echo ""
-            if [ -n "$COMPARE_URL" ]; then
-              echo "Compare changes: $COMPARE_URL"
-              echo ""
+            if output=$(npm view "${name}@${version}" --json 2>&1); then
+              printf '%s' "$output" | verify_metadata "$name" "$version" "$requires_core"
+              return 0
+            else
+              status=$?
             fi
-            printf "%s\n" "$CHANGELOG"
-            echo ""
-            echo "### Upgrade"
-            echo ""
-            echo "Update your \`opencode.json\`:"
-            echo ""
-            printf '%s\n' '```json'
-            printf '%s\n' '{'
-            printf '%s\n' "  \"plugins\": [\"@benjamolina/opencode-antigravity-guard@${CURRENT_VERSION}\"]"
-            printf '%s\n' '}'
-            printf '%s\n' '```'
-            echo ""
-            echo "If stuck on an old version, clear the cache:"
-            echo ""
-            printf '%s\n' '```bash'
-            printf '%s\n' 'rm -rf ~/.cache/opencode/node_modules ~/.cache/opencode/bun.lock'
-            printf '%s\n' '```'
 
-          } >"$BODY_FILE"
-          cat "$BODY_FILE"
-          {
-            echo "body<<EOF"
-            cat "$BODY_FILE"
-            echo "EOF"
-          } >>"$GITHUB_OUTPUT"
+            if printf '%s\n' "$output" | grep -Eq 'npm (ERR!|error) code E404'; then
+              return 1
+            fi
 
-      - name: Create GitHub release
-        if: steps.determine.outputs.changed == 'true' && steps.determine.outputs.tag_exists == 'false'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v${{ steps.determine.outputs.current_version }}
-          name: v${{ steps.determine.outputs.current_version }}
-          body: ${{ steps.release_notes.outputs.body }}
+            printf '%s\n' "$output" >&2
+            echo "npm view failed for ${name}@${version} (status ${status}); only E404 is treated as missing" >&2
+            return 2
+          }
 
-      - name: Publish to npm
-        if: steps.determine.outputs.changed == 'true' && steps.determine.outputs.tag_exists == 'false'
+          publish_if_missing() {
+            local name="$1"
+            local version="$2"
+            local workspace="$3"
+            local requires_core="$4"
+            local query_status
+
+            if query_exact_version "$name" "$version" "$requires_core"; then
+              echo "Verified existing ${name}@${version}; skipping publish"
+              return
+            else
+              query_status=$?
+            fi
+
+            if [ "$query_status" -ne 1 ]; then
+              exit "$query_status"
+            fi
+
+            echo "Publishing missing ${name}@${version}"
+            if [ -n "$workspace" ]; then
+              npm publish --workspace="$workspace" --access public --tag latest --provenance
+            else
+              npm publish --access public --tag latest --provenance
+            fi
+
+            if ! query_exact_version "$name" "$version" "$requires_core"; then
+              echo "Published ${name}@${version} but it could not be verified" >&2
+              exit 1
+            fi
+          }
+
+          publish_if_missing "@benjamolina/antigravity-guard-core" "0.1.0" "@benjamolina/antigravity-guard-core" false
+          publish_if_missing "@benjamolina/pi-antigravity-guard" "0.1.0" "@benjamolina/pi-antigravity-guard" true
+          publish_if_missing "@benjamolina/opencode-antigravity-guard" "1.1.11" "" true
+
+      - name: Create matching tag and release
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --access public
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          TAG="v1.1.11"
+          git fetch --tags --force
+          if git rev-parse "refs/tags/${TAG}^{commit}" >/dev/null 2>&1; then
+            TAG_SHA=$(git rev-parse "refs/tags/${TAG}^{commit}")
+            if [ "$TAG_SHA" != "$GITHUB_SHA" ]; then
+              echo "Existing ${TAG} points to ${TAG_SHA}, not ${GITHUB_SHA}" >&2
+              exit 1
+            fi
+            echo "Verified existing ${TAG} at ${GITHUB_SHA}"
+          else
+            git tag -a "$TAG" "$GITHUB_SHA" -m "Release ${TAG}"
+            git push origin "refs/tags/${TAG}"
+          fi
+
+          RELEASE_OUTPUT=$(mktemp)
+          if gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" --jq .tag_name >"$RELEASE_OUTPUT" 2>&1; then
+            if [ "$(cat "$RELEASE_OUTPUT")" != "$TAG" ]; then
+              echo "Existing GitHub release did not resolve to ${TAG}" >&2
+              exit 1
+            fi
+            echo "Verified existing GitHub release for ${TAG}"
+            exit 0
+          fi
+
+          if ! grep -q 'HTTP 404' "$RELEASE_OUTPUT"; then
+            cat "$RELEASE_OUTPUT" >&2
+            echo "GitHub release lookup failed; only HTTP 404 is treated as missing" >&2
+            exit 1
+          fi
+
+          NOTES=$(mktemp)
+          cat >"$NOTES" <<'EOF'
+          ## Published packages
+
+          - Core: `@benjamolina/antigravity-guard-core@0.1.0`
+          - Pi: `@benjamolina/pi-antigravity-guard@0.1.0`
+          - OpenCode root: `@benjamolina/opencode-antigravity-guard@1.1.11`
+
+          ### Upgrade the root plugin
+
+          ```bash
+          npm install @benjamolina/opencode-antigravity-guard@1.1.11
+          ```
+          EOF
+          sed -i 's/^          //' "$NOTES"
+          gh release create "$TAG" --title "$TAG" --notes-file "$NOTES"
+          gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" --jq .tag_name | grep -Fx "$TAG"
