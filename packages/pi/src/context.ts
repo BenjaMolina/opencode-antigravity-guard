@@ -29,7 +29,9 @@ export interface GenerationRequest {
     generationConfig: {
       temperature: number
       maxOutputTokens: number
-      thinkingConfig: { thinkingLevel: "low" | "medium" | "high", includeThoughts: boolean }
+      thinkingConfig?:
+        | { thinkingLevel: "low" | "medium" | "high", includeThoughts: boolean }
+        | { thinkingBudget: number, includeThoughts: boolean }
     }
   }
   requestType: "agent"
@@ -71,7 +73,7 @@ export function serializeTextContext(input: SerializeTextContextInput): Generati
       if (role === "toolResult") fail("Tool history is not supported by this text-only provider.")
       if (role !== "user" && role !== "assistant") fail("Unsupported context role for this text-only provider.")
       const assistant = role === "assistant"
-      const parts = messageParts(field(message, "content", true), assistant, assistant && isSameProviderAndModel(message, entry.publicId))
+      const parts = messageParts(field(message, "content", true), assistant, assistant && entry.replay.kind === "same-public-model" && isSameProviderAndModel(message, entry.publicId))
       textBytes += parts.reduce((total, part) => total + byteLength(part.text), 0)
       if (textBytes > MAX_TEXT_BYTES) fail("Text context is too large.")
       contents.push({ role: role === "assistant" ? "model" : "user", parts })
@@ -82,8 +84,11 @@ export function serializeTextContext(input: SerializeTextContextInput): Generati
     const maxTokens = option(options, "maxTokens")
     return { project, model: route.wireModel, request: { contents, ...(systemInstruction ? { systemInstruction } : {}), generationConfig: {
       temperature: typeof temperature === "number" ? temperature : 1,
-      maxOutputTokens: typeof maxTokens === "number" ? maxTokens : 4096,
-      thinkingConfig: serializeThinkingConfig(route.thinking),
+      maxOutputTokens: resolveOutputTokens(maxTokens, entry.descriptor.maxTokens, route.thinking),
+      ...(() => {
+        const thinkingConfig = serializeThinkingConfig(route.thinking)
+        return thinkingConfig ? { thinkingConfig } : {}
+      })(),
     } }, requestType: "agent", userAgent: "antigravity", requestId }
   } catch (error) {
     if (error instanceof ContextSerializationError) throw error
@@ -125,9 +130,22 @@ function isSameProviderAndModel(message: Record<string, unknown>, publicId: stri
   return field(message, "provider") === PROVIDER && field(message, "model") === publicId
 }
 
-function serializeThinkingConfig(thinking: ReturnType<typeof resolveGenerationRoute>["thinking"]): { thinkingLevel: "low" | "medium" | "high", includeThoughts: boolean } {
-  if (thinking.kind !== "native-level") fail("Unsupported reasoning policy.")
-  return { thinkingLevel: thinking.thinkingLevel, includeThoughts: thinking.includeThoughts }
+function serializeThinkingConfig(thinking: ReturnType<typeof resolveGenerationRoute>["thinking"]):
+  | { thinkingLevel: "low" | "medium" | "high", includeThoughts: boolean }
+  | { thinkingBudget: number, includeThoughts: boolean }
+  | undefined {
+  if (thinking.kind === "native-level") return { thinkingLevel: thinking.thinkingLevel, includeThoughts: thinking.includeThoughts }
+  if (thinking.kind === "budget") return { thinkingBudget: thinking.budget, includeThoughts: thinking.includeThoughts }
+  return undefined
+}
+
+function resolveOutputTokens(maxTokens: unknown, maxAllowed: number, thinking: ReturnType<typeof resolveGenerationRoute>["thinking"]): number {
+  if (typeof maxTokens === "number") {
+    if (maxTokens > maxAllowed) fail(`maxTokens must be a positive integer no greater than ${maxAllowed}.`)
+    if (thinking.kind === "budget" && thinking.budget > 0 && maxTokens <= thinking.budget) fail("maxTokens must exceed the selected thinking budget.")
+    return maxTokens
+  }
+  return thinking.kind === "budget" && thinking.budget > 0 ? Math.max(4096, thinking.budget + 1024) : 4096
 }
 
 function validThoughtSignature(value: unknown): string | undefined {
