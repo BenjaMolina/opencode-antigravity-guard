@@ -47,7 +47,7 @@
         "build:pi": "npm run build --workspace=@benjamolina/pi-antigravity-guard",
         "build:all": "npm run build && npm run build:pi",
         "build:schema": "npx tsx script/build-schema.ts",
-        "typecheck": "npm run typecheck:core && npm run typecheck:opencode",
+        "typecheck": "npm run build:core && npm run typecheck:opencode",
         "typecheck:opencode": "tsc --noEmit",
         "typecheck:core": "npm run typecheck --workspace=@benjamolina/antigravity-guard-core",
         "typecheck:pi": "npm run typecheck --workspace=@benjamolina/pi-antigravity-guard",
