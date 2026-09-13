@@ -3,7 +3,7 @@ import type { AssistantMessage, Context, Model, SimpleStreamOptions } from "@ear
 import { ANTIGRAVITY_ENDPOINTS } from "@benjamolina/antigravity-guard-core"
 
 import { getCatalogEntry } from "./catalog.ts"
-import { serializeTextContext } from "./context.ts"
+import { ContextSerializationError, serializeTextContext } from "./context.ts"
 import type { ResponseSemantic } from "./response.ts"
 import { ResponseSemanticError, ResponseSemantics } from "./response.ts"
 import { SseFrameError, SseFramer } from "./sse.ts"
@@ -17,7 +17,7 @@ const API = "antigravity-guard-sse"
 const PROTECTED_HEADERS = new Set(["authorization", "host", "content-type", "content-length"])
 const LOCAL_ERRORS = new WeakSet<StreamTransportError>()
 
-type StreamErrorKind = "aborted" | "access" | "model" | "quota" | "response" | "transport" | "callback"
+type StreamErrorKind = "aborted" | "access" | "capability" | "model" | "quota" | "response" | "transport" | "callback"
 
 export class StreamTransportError extends Error {
   constructor(readonly kind: StreamErrorKind, message: string, readonly status?: number) { super(message) }
@@ -175,6 +175,7 @@ export async function executeStreamTransport(input: StreamTransportInput): Promi
     void responseBody?.cancel().catch(() => undefined)
     if (isLocalStreamError(error)) throw error
     if (signal.aborted) throw streamError("aborted", "Generation was cancelled.")
+    if (error instanceof ContextSerializationError && error.message.startsWith("PI_TOOL_CAPABILITY_NOT_ENABLED")) throw streamError("capability", error.message)
     if (error instanceof SseFrameError || error instanceof ResponseSemanticError) throw streamError("response", "Antigravity returned an invalid stream.")
     throw streamError("transport", "Antigravity generation request failed.")
   }

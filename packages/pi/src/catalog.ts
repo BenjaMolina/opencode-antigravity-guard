@@ -3,6 +3,20 @@ export type StandardReasoningLevel = "off" | "minimal" | "low" | "medium" | "hig
 const ANSWER_RESERVE = 1024
 
 type NativeThinkingLevel = "low" | "medium" | "high"
+
+export interface ToolEvidenceRef {
+  readonly record: string
+  readonly revision: string
+  readonly publicModelId: string
+  readonly reasoning: StandardReasoningLevel
+  readonly wireModel: string
+}
+
+export type ToolCapability =
+  | { readonly state: "disabled", readonly contractRevision: 1, readonly reason: "missing-direct-evidence" | "stale-or-conflicting-evidence" | "claude-continuity-unproven" }
+  | { readonly state: "fixture-qualified", readonly contractRevision: 1, readonly fixtureEvidence: ToolEvidenceRef }
+  | { readonly state: "enabled", readonly contractRevision: 1, readonly fixtureEvidence: ToolEvidenceRef, readonly directEvidence: ToolEvidenceRef }
+
 type NativeRoute = {
   readonly wireModel: string
   readonly thinking: { readonly kind: "native-level", readonly thinkingLevel: NativeThinkingLevel, readonly includeThoughts: boolean }
@@ -12,6 +26,7 @@ type IntegerBudgetRoute = {
   readonly thinking: { readonly kind: "budget", readonly budget: number, readonly includeThoughts: boolean } | { readonly kind: "omit" }
 }
 export type GenerationRoute = NativeRoute | IntegerBudgetRoute
+type ConfiguredGenerationRoute = GenerationRoute & { readonly tools: ToolCapability }
 
 export interface CatalogEntry {
   readonly publicId: string
@@ -21,7 +36,7 @@ export interface CatalogEntry {
     readonly contextWindow: number
     readonly maxTokens: number
   }
-  readonly routes: Readonly<Partial<Record<StandardReasoningLevel, GenerationRoute>>>
+  readonly routes: Readonly<Partial<Record<StandardReasoningLevel, ConfiguredGenerationRoute>>>
   readonly replay: { readonly kind: "same-public-model" | "strip" }
   readonly response: { readonly kind: "gemini-envelope", readonly family: "gemini" | "claude" | "gpt-oss" }
 }
@@ -35,10 +50,10 @@ const CATALOG = freeze(defineCatalog([{
     maxTokens: 65_536,
   },
   routes: {
-    off: { wireModel: "gemini-3.8-flash-tiered", thinking: { kind: "native-level", thinkingLevel: "low", includeThoughts: false } },
-    low: { wireModel: "gemini-3.8-flash-tiered", thinking: { kind: "native-level", thinkingLevel: "low", includeThoughts: true } },
-    medium: { wireModel: "gemini-3.8-flash-tiered", thinking: { kind: "native-level", thinkingLevel: "medium", includeThoughts: true } },
-    high: { wireModel: "gemini-3.8-flash-tiered", thinking: { kind: "native-level", thinkingLevel: "high", includeThoughts: true } },
+    off: { wireModel: "gemini-3.8-flash-tiered", thinking: { kind: "native-level", thinkingLevel: "low", includeThoughts: false }, tools: disabled("missing-direct-evidence") },
+    low: { wireModel: "gemini-3.8-flash-tiered", thinking: { kind: "native-level", thinkingLevel: "low", includeThoughts: true }, tools: disabled("missing-direct-evidence") },
+    medium: { wireModel: "gemini-3.8-flash-tiered", thinking: { kind: "native-level", thinkingLevel: "medium", includeThoughts: true }, tools: disabled("missing-direct-evidence") },
+    high: { wireModel: "gemini-3.8-flash-tiered", thinking: { kind: "native-level", thinkingLevel: "high", includeThoughts: true }, tools: disabled("missing-direct-evidence") },
   },
   replay: { kind: "same-public-model" },
   response: { kind: "gemini-envelope", family: "gemini" },
@@ -51,10 +66,10 @@ const CATALOG = freeze(defineCatalog([{
     maxTokens: 65_536,
   },
   routes: {
-    off: { wireModel: "gemini-3.7-flash-low", thinking: { kind: "budget", budget: 0, includeThoughts: false } },
-    low: { wireModel: "gemini-3.7-flash-low", thinking: { kind: "budget", budget: 1000, includeThoughts: true } },
-    medium: { wireModel: "gemini-3.7-flash-medium", thinking: { kind: "budget", budget: 4000, includeThoughts: true } },
-    high: { wireModel: "gemini-3.7-flash-high", thinking: { kind: "budget", budget: -1, includeThoughts: true } },
+    off: { wireModel: "gemini-3.7-flash-low", thinking: { kind: "budget", budget: 0, includeThoughts: false }, tools: disabled("missing-direct-evidence") },
+    low: { wireModel: "gemini-3.7-flash-low", thinking: { kind: "budget", budget: 1000, includeThoughts: true }, tools: disabled("missing-direct-evidence") },
+    medium: { wireModel: "gemini-3.7-flash-medium", thinking: { kind: "budget", budget: 4000, includeThoughts: true }, tools: disabled("missing-direct-evidence") },
+    high: { wireModel: "gemini-3.7-flash-high", thinking: { kind: "budget", budget: -1, includeThoughts: true }, tools: disabled("missing-direct-evidence") },
   },
   replay: { kind: "strip" },
   response: { kind: "gemini-envelope", family: "gemini" },
@@ -67,10 +82,10 @@ const CATALOG = freeze(defineCatalog([{
     maxTokens: 65_536,
   },
   routes: {
-    off: { wireModel: "gemini-3.6-flash-low", thinking: { kind: "omit" } },
-    low: { wireModel: "gemini-3.6-flash-low", thinking: { kind: "budget", budget: 1000, includeThoughts: true } },
-    medium: { wireModel: "gemini-3.6-flash-medium", thinking: { kind: "budget", budget: 4000, includeThoughts: true } },
-    high: { wireModel: "gemini-3.6-flash-high", thinking: { kind: "budget", budget: -1, includeThoughts: true } },
+    off: { wireModel: "gemini-3.6-flash-low", thinking: { kind: "omit" }, tools: disabled("missing-direct-evidence") },
+    low: { wireModel: "gemini-3.6-flash-low", thinking: { kind: "budget", budget: 1000, includeThoughts: true }, tools: disabled("missing-direct-evidence") },
+    medium: { wireModel: "gemini-3.6-flash-medium", thinking: { kind: "budget", budget: 4000, includeThoughts: true }, tools: disabled("missing-direct-evidence") },
+    high: { wireModel: "gemini-3.6-flash-high", thinking: { kind: "budget", budget: -1, includeThoughts: true }, tools: disabled("missing-direct-evidence") },
   },
   replay: { kind: "strip" },
   response: { kind: "gemini-envelope", family: "gemini" },
@@ -83,9 +98,9 @@ const CATALOG = freeze(defineCatalog([{
     maxTokens: 65_535,
   },
   routes: {
-    off: { wireModel: "gemini-3.1-pro-low", thinking: { kind: "omit" } },
-    low: { wireModel: "gemini-3.1-pro-low", thinking: { kind: "budget", budget: 1001, includeThoughts: true } },
-    high: { wireModel: "gemini-pro-agent", thinking: { kind: "budget", budget: 10001, includeThoughts: true } },
+    off: { wireModel: "gemini-3.1-pro-low", thinking: { kind: "omit" }, tools: disabled("missing-direct-evidence") },
+    low: { wireModel: "gemini-3.1-pro-low", thinking: { kind: "budget", budget: 1001, includeThoughts: true }, tools: disabled("missing-direct-evidence") },
+    high: { wireModel: "gemini-pro-agent", thinking: { kind: "budget", budget: 10001, includeThoughts: true }, tools: disabled("missing-direct-evidence") },
   },
   replay: { kind: "strip" },
   response: { kind: "gemini-envelope", family: "gemini" },
@@ -98,8 +113,8 @@ const CATALOG = freeze(defineCatalog([{
     maxTokens: 64_000,
   },
   routes: {
-    off: { wireModel: "claude-sonnet-4-6", thinking: { kind: "budget", budget: 0, includeThoughts: false } },
-    high: { wireModel: "claude-sonnet-4-6", thinking: { kind: "budget", budget: 1024, includeThoughts: true } },
+    off: { wireModel: "claude-sonnet-4-6", thinking: { kind: "budget", budget: 0, includeThoughts: false }, tools: disabled("claude-continuity-unproven") },
+    high: { wireModel: "claude-sonnet-4-6", thinking: { kind: "budget", budget: 1024, includeThoughts: true }, tools: disabled("claude-continuity-unproven") },
   },
   replay: { kind: "strip" },
   response: { kind: "gemini-envelope", family: "claude" },
@@ -112,8 +127,8 @@ const CATALOG = freeze(defineCatalog([{
     maxTokens: 64_000,
   },
   routes: {
-    off: { wireModel: "claude-opus-4-6-thinking", thinking: { kind: "budget", budget: 0, includeThoughts: false } },
-    high: { wireModel: "claude-opus-4-6-thinking", thinking: { kind: "budget", budget: 1024, includeThoughts: true } },
+    off: { wireModel: "claude-opus-4-6-thinking", thinking: { kind: "budget", budget: 0, includeThoughts: false }, tools: disabled("claude-continuity-unproven") },
+    high: { wireModel: "claude-opus-4-6-thinking", thinking: { kind: "budget", budget: 1024, includeThoughts: true }, tools: disabled("claude-continuity-unproven") },
   },
   replay: { kind: "strip" },
   response: { kind: "gemini-envelope", family: "claude" },
@@ -126,8 +141,8 @@ const CATALOG = freeze(defineCatalog([{
     maxTokens: 32_768,
   },
   routes: {
-    off: { wireModel: "gpt-oss-120b-medium", thinking: { kind: "omit" } },
-    medium: { wireModel: "gpt-oss-120b-medium", thinking: { kind: "budget", budget: 8192, includeThoughts: true } },
+    off: { wireModel: "gpt-oss-120b-medium", thinking: { kind: "omit" }, tools: disabled("missing-direct-evidence") },
+    medium: { wireModel: "gpt-oss-120b-medium", thinking: { kind: "budget", budget: 8192, includeThoughts: true }, tools: disabled("missing-direct-evidence") },
   },
   replay: { kind: "strip" },
   response: { kind: "gemini-envelope", family: "gpt-oss" },
@@ -138,6 +153,10 @@ export type AntigravityPublicModelId = Catalog[number]["publicId"]
 export type AntigravityWireModelId = Catalog[number]["routes"][keyof Catalog[number]["routes"]]["wireModel"]
 
 const lookup = new Map<string, CatalogEntry>(CATALOG.map((entry) => [entry.publicId, entry]))
+
+function disabled(reason: Extract<ToolCapability, { readonly state: "disabled" }>["reason"]): ToolCapability {
+  return { state: "disabled", contractRevision: 1, reason }
+}
 
 function freeze<T>(value: T): T {
   if (typeof value === "object" && value !== null) {
@@ -183,9 +202,31 @@ export function getCatalogEntry(publicId: unknown): CatalogEntry | undefined {
 }
 
 export function resolveGenerationRoute(entry: CatalogEntry, reasoning: unknown): GenerationRoute {
+  return resolveGenerationSelection(entry, reasoning).route
+}
+
+export interface GenerationSelection {
+  readonly level: StandardReasoningLevel
+  readonly route: GenerationRoute
+  readonly tools: ToolCapability
+}
+
+export function resolveGenerationSelection(entry: CatalogEntry, reasoning: unknown): GenerationSelection {
   const level = reasoning === undefined || reasoning === "off" ? "off" : reasoning
   if (typeof level !== "string" || !entry.routes[level as StandardReasoningLevel]) throw new Error("Unsupported reasoning level")
-  return entry.routes[level as StandardReasoningLevel]!
+  const typedLevel = level as StandardReasoningLevel
+  const configured = entry.routes[typedLevel]!
+  const { tools, ...route } = configured
+  return { level: typedLevel, route, tools: resolveToolCapability(tools, entry.publicId, typedLevel, route.wireModel) }
+}
+
+export function resolveToolCapability(capability: ToolCapability, publicModelId: string, reasoning: StandardReasoningLevel, wireModel: string): ToolCapability {
+  if (capability.state === "disabled") return capability
+  const evidence = capability.state === "enabled" ? [capability.fixtureEvidence, capability.directEvidence] : [capability.fixtureEvidence]
+  if (capability.contractRevision !== 1 || evidence.some((item) => item.publicModelId !== publicModelId || item.reasoning !== reasoning || item.wireModel !== wireModel)) {
+    return freeze(disabled("stale-or-conflicting-evidence"))
+  }
+  return capability
 }
 
 export function toPiModelDescriptor(entry: CatalogEntry) {

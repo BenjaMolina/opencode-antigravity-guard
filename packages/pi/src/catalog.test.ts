@@ -7,6 +7,8 @@ import {
   getCatalogEntry,
   listCatalogEntries,
   resolveGenerationRoute,
+  resolveGenerationSelection,
+  resolveToolCapability,
   toPiModelDescriptor,
 } from "./catalog.ts"
 
@@ -122,6 +124,27 @@ describe("Antigravity model catalog", () => {
     }
     expect(readme).toContain("`antigravity-gemini-3.5-flash` is not registered or advertised as supported")
     expect(readme).toContain("Unsupported levels are not advertised")
+  })
+
+  it("keeps per-route frozen capability evidence fail-closed and independent", () => {
+    const catalog = listCatalogEntries()
+    for (const entry of catalog) {
+      for (const level of Object.keys(entry.routes)) {
+        const selection = resolveGenerationSelection(entry, level)
+        expect(Object.isFrozen(selection.tools)).toBe(true)
+        expect(selection.tools.state).toBe("disabled")
+        if (selection.tools.state !== "disabled") throw new Error("expected disabled capability")
+        expect(selection.tools.reason).toBe(entry.response.family === "claude" ? "claude-continuity-unproven" : "missing-direct-evidence")
+      }
+    }
+    const gemini = getCatalogEntry("antigravity-gemini-3.8-flash")!
+    const low = resolveGenerationSelection(gemini, "low")
+    const high = resolveGenerationSelection(gemini, "high")
+    expect(low.level).toBe("low")
+    expect(low.route).toEqual(resolveGenerationRoute(gemini, "low"))
+    expect(low.tools).not.toBe(high.tools)
+    const stale = { state: "fixture-qualified", contractRevision: 0, fixtureEvidence: { record: "fixture", revision: "1", publicModelId: gemini.publicId, reasoning: "low", wireModel: low.route.wireModel } } as unknown as Parameters<typeof resolveToolCapability>[0]
+    expect(resolveToolCapability(stale, gemini.publicId, "low", low.route.wireModel)).toEqual({ state: "disabled", contractRevision: 1, reason: "stale-or-conflicting-evidence" })
   })
 
   it("contains only the evidence-admitted Gemini routes with literal budgets and omissions", () => {

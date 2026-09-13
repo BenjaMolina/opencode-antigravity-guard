@@ -1,6 +1,6 @@
 import type { Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai"
 
-import { getCatalogEntry, resolveGenerationRoute } from "./catalog.ts"
+import { getCatalogEntry, resolveGenerationSelection, type ToolCapability } from "./catalog.ts"
 
 const MAX_TEXT_BYTES = 8 * 1024 * 1024
 const PROVIDER = "antigravity-guard"
@@ -59,7 +59,9 @@ export function serializeTextContext(input: SerializeTextContextInput): Generati
     const requestId = field(input, "requestId", true)
     const entry = isRecord(model) ? getCatalogEntry(field(model, "id", true)) : undefined
     if (!isRecord(context) || !entry || typeof project !== "string" || typeof requestId !== "string") fail("Invalid text context.")
-    const route = resolveGenerationRoute(entry, option(options, "reasoning"))
+    const selection = resolveGenerationSelection(entry, option(options, "reasoning"))
+    const route = selection.route
+    if (isToolBearingContext(context) && selection.tools.state !== "enabled") fail(capabilityError(entry.publicId, selection.level, selection.tools))
     const systemPrompt = field(context, "systemPrompt")
     const tools = field(context, "tools")
     if (systemPrompt !== undefined && typeof systemPrompt !== "string") fail("Text-only context is required.")
@@ -96,6 +98,25 @@ export function serializeTextContext(input: SerializeTextContextInput): Generati
   }
 }
 
+function capabilityError(publicId: string, reasoning: string, capability: ToolCapability): string {
+  const reason = capability.state === "disabled" ? capability.reason : capability.state
+  return `PI_TOOL_CAPABILITY_NOT_ENABLED: ${publicId}/${reasoning} is ${capability.state} (${reason}).`
+}
+
+function isToolBearingContext(context: Record<string, unknown>): boolean {
+  const tools = field(context, "tools")
+  if (tools !== undefined && isDenseArray(tools).length > 0) return true
+  const messages = isDenseArray(field(context, "messages", true))
+  for (const message of messages) {
+    if (!isRecord(message)) continue
+    if (field(message, "role") === "toolResult") return true
+    const content = field(message, "content")
+    if (!Array.isArray(content)) continue
+    for (const part of content) if (isRecord(part) && field(part, "type") === "toolCall") return true
+  }
+  return false
+}
+
 function messageParts(content: unknown, assistant: boolean, sameProviderAndModel: boolean): Part[] {
   if (typeof content === "string") return content ? [{ text: content }] : fail("A text conversation is required.")
   const parts = isDenseArray(content)
@@ -130,7 +151,7 @@ function isSameProviderAndModel(message: Record<string, unknown>, publicId: stri
   return field(message, "provider") === PROVIDER && field(message, "model") === publicId
 }
 
-function serializeThinkingConfig(thinking: ReturnType<typeof resolveGenerationRoute>["thinking"]):
+function serializeThinkingConfig(thinking: ReturnType<typeof resolveGenerationSelection>["route"]["thinking"]):
   | { thinkingLevel: "low" | "medium" | "high", includeThoughts: boolean }
   | { thinkingBudget: number, includeThoughts: boolean }
   | undefined {
@@ -139,7 +160,7 @@ function serializeThinkingConfig(thinking: ReturnType<typeof resolveGenerationRo
   return undefined
 }
 
-function resolveOutputTokens(maxTokens: unknown, maxAllowed: number, thinking: ReturnType<typeof resolveGenerationRoute>["thinking"]): number {
+function resolveOutputTokens(maxTokens: unknown, maxAllowed: number, thinking: ReturnType<typeof resolveGenerationSelection>["route"]["thinking"]): number {
   if (typeof maxTokens === "number") {
     if (maxTokens > maxAllowed) fail(`maxTokens must be a positive integer no greater than ${maxAllowed}.`)
     if (thinking.kind === "budget" && thinking.budget > 0 && maxTokens <= thinking.budget) fail("maxTokens must exceed the selected thinking budget.")

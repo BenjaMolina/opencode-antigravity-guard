@@ -149,6 +149,29 @@ describe("fixed Antigravity SSE transport", () => {
     }))
   })
 
+  it("rejects declaration, call, and result tool contexts before fetch while retaining no-tool transport", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(new Response(
+      `data: ${JSON.stringify({ response: { candidates: [{ content: { parts: [{ text: "ok" }] }, finishReason: "STOP" }] } })}\n\n`,
+      { headers: { "Content-Type": "text/event-stream" } },
+    ))
+    const input = { accessToken: "access-token", projectId: "stored-project", fetch, model: model(), now: () => 1_000, onSemantic: vi.fn(), platform: "win32", requestId: "request-id" }
+    const contexts = [
+      { tools: [{ name: "read_file" }], messages: [{ role: "user", content: "Hello" }] },
+      { messages: [{ role: "assistant", content: [{ type: "toolCall", id: "call-1", name: "read_file", arguments: {} }] }] },
+      { messages: [{ role: "toolResult", content: [], toolCallId: "call-1", toolName: "read_file" }] },
+    ]
+    for (const toolContext of contexts) {
+      await expect(executeStreamTransport({ ...input, context: toolContext as Context })).rejects.toMatchObject({
+        kind: "capability",
+        message: expect.stringContaining("PI_TOOL_CAPABILITY_NOT_ENABLED"),
+      })
+    }
+    expect(fetch).not.toHaveBeenCalled()
+
+    await expect(executeStreamTransport({ ...input, context: context() })).resolves.toBeUndefined()
+    expect(fetch).toHaveBeenCalledOnce()
+  })
+
   it("returns safe HTTP guidance and rejects invalid fixed inputs before transport", async () => {
     const input = {
       accessToken: "access-token", projectId: "stored-project", context: context(), model: model(), now: () => 1_000, onSemantic: vi.fn(), platform: "win32", requestId: "request-id",
