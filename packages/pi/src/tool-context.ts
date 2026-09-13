@@ -1,4 +1,4 @@
-import { ToolPreflightError } from "./tool-contract.ts"
+import { canonicalJson, ToolPreflightError } from "./tool-contract.ts"
 import { normalizeToolDeclarations, type ToolDeclaration } from "./tool-schema.ts"
 
 export interface PreparedToolContext {
@@ -28,6 +28,96 @@ export function prepareToolContext(tools: unknown, choice: unknown): PreparedToo
   }
   if (choice !== undefined && choice !== "auto" && choice !== "none") unsupportedChoice()
   return { declarations, mode: choice === "none" ? "NONE" : "AUTO" }
+}
+
+type WirePart = object
+type WireContent = { role: "user" | "model", parts: WirePart[] }
+type PendingCall = { id: string, name: string }
+
+export function replayToolHistory(messages: unknown[], serializePart: (part: Record<string, unknown>, message: Record<string, unknown>) => WirePart): WireContent[] {
+  const output: WireContent[] = []
+  const calls = new Set<string>()
+  const results = new Set<string>()
+  let pending: { calls: PendingCall[], results: Map<string, WirePart> } | undefined
+  const finalize = () => {
+    if (!pending) return
+    if (pending.results.size !== pending.calls.length) history("PI_TOOL_HISTORY_REPLAY_PENDING")
+    output.push({ role: "user", parts: pending.calls.map((call) => pending!.results.get(call.id)!) })
+    pending = undefined
+  }
+  for (const message of messages) {
+    const current = record(message)
+    if (value(current, "role") === "toolResult") {
+      const id = nonempty(value(current, "toolCallId"), "PI_TOOL_RESULT_FOREIGN")
+      if (results.has(id)) history("PI_TOOL_RESULT_DUPLICATE")
+      if (!pending) history(calls.has(id) ? "PI_TOOL_RESULT_SEPARATED" : "PI_TOOL_RESULT_FOREIGN")
+      const call = pending.calls.find((item) => item.id === id)
+      if (!call) history(calls.has(id) ? "PI_TOOL_RESULT_SEPARATED" : "PI_TOOL_RESULT_FOREIGN")
+      if (value(current, "toolName") !== call.name) history("PI_TOOL_RESULT_NAME_MISMATCH")
+      if (value(current, "addedToolNames") !== undefined && dense(value(current, "addedToolNames")).length) history("PI_TOOL_CALL_INVALID")
+      const text = dense(value(current, "content")).map((item) => {
+        const part = record(item)
+        if (value(part, "type") !== "text" || typeof value(part, "text") !== "string") history("PI_TOOL_RESULT_MEDIA_UNSUPPORTED")
+        return value(part, "text") as string
+      }).join("\n\n")
+      const response = value(current, "isError") === true ? { error: text } : { result: text }
+      pending.results.set(id, { functionResponse: { name: call.name, id, response } })
+      results.add(id)
+      continue
+    }
+    finalize()
+    const role = value(current, "role")
+    if (role !== "user" && role !== "assistant") history("PI_TOOL_CALL_INVALID")
+    const rawContent = value(current, "content")
+    if (typeof rawContent === "string") {
+      if (!rawContent) history("PI_TOOL_CALL_INVALID")
+      output.push({ role: role === "assistant" ? "model" : "user", parts: [{ text: rawContent }] })
+      continue
+    }
+    const content = dense(rawContent)
+    const hasCalls = role === "assistant" && content.some((part) => value(record(part), "type") === "toolCall")
+    if (!hasCalls) {
+      output.push({ role: role === "assistant" ? "model" : "user", parts: content.map((part) => serializePart(record(part), current)) })
+      continue
+    }
+    if (value(current, "stopReason") !== "toolUse") history("PI_TOOL_CALL_INVALID")
+    const group: PendingCall[] = []
+    const parts = content.map((item) => {
+      const part = record(item)
+      if (value(part, "type") !== "toolCall") return serializePart(part, current)
+      const id = nonempty(value(part, "id"), "PI_TOOL_CALL_INVALID")
+      const name = nonempty(value(part, "name"), "PI_TOOL_CALL_INVALID")
+      if (!/^[A-Za-z_][A-Za-z0-9_.:-]*$/.test(name) || calls.has(id)) history(calls.has(id) ? "PI_TOOL_CALL_DUPLICATE" : "PI_TOOL_CALL_INVALID")
+      const args = canonicalJson(value(part, "arguments"), name, "$.arguments")
+      if (Array.isArray(args) || args === null) history("PI_TOOL_CALL_INVALID")
+      calls.add(id)
+      group.push({ id, name })
+      return { functionCall: { name, args, id } }
+    })
+    output.push({ role: "model", parts })
+    pending = { calls: group, results: new Map() }
+  }
+  finalize()
+  return output
+}
+
+function history(code: string): never {
+  throw new ToolPreflightError(code, "history", "$")
+}
+
+function record(value: unknown): Record<string, unknown> {
+  if (!isRecord(value)) history("PI_TOOL_CALL_INVALID")
+  return value
+}
+
+function dense(value: unknown): readonly unknown[] {
+  if (!Array.isArray(value) || Object.keys(value).length !== value.length) history("PI_TOOL_CALL_INVALID")
+  return value
+}
+
+function nonempty(value: unknown, code: string): string {
+  if (typeof value !== "string" || !value.trim()) history(code)
+  return value
 }
 
 function unsupportedChoice(): never {

@@ -305,3 +305,94 @@ The corrective code/test delta is under the parent-authorized 100-line ceiling, 
 ### Deviation and risk
 
 No design deviation occurred. This correction deliberately stops before history replay: it does not serialize, discard, repair, or recover tool-call/result history. Production routes remain disabled; the only full-suite failures are the supplied inherited release-manifest baseline failures.
+
+---
+
+## Unit D blocked: bounded replay implementation was not complete
+
+### Structured status consumed
+
+- Change: `add-pi-tool-support`; explicit parent selection; apply ready; Unit D only on `feat/pi-tool-support-d-replay`, based on Unit C `541115b`.
+- Action context: repo-local; the sole authorized edit root was `C:/Github/Ordico/opencode-antigravity-guard-pi-tools`.
+- Delivery: `auto-chain` / `feature-branch-chain`; strict TDD active with `npm test`; no commit, branch operation, push, publish, or live call occurred.
+
+### TDD Cycle Evidence
+
+| Task | Test file | Layer | Safety net | RED | GREEN | TRIANGULATE | REFACTOR |
+|---|---|---|---|---|---|---|---|
+| D replay | `packages/pi/src/context.test.ts`, `packages/pi/src/tool-context.test.ts` | Unit | 40/40 focused tests passed | Failed as expected when exact parallel replay encountered Unit C's `PI_TOOL_HISTORY_REPLAY_PENDING` seam | A provisional implementation passed 44 focused tests and Pi typecheck | Added success/error/empty result and fail-closed identity/media tests | Not accepted: it did not yet meet all D scenarios, so all provisional source, test, and fixture edits were reverted |
+
+### Verification evidence
+
+| Command | Result | Evidence |
+|---|---|---|
+| `npm test -- --run packages/pi/src/tool-context.test.ts packages/pi/src/context.test.ts` (safety net) | Passed | 2 files, 40 tests. |
+| Same focused context command (RED) | Failed as expected | New reverse-completion replay expectation received `PI_TOOL_HISTORY_REPLAY_PENDING`. |
+| Same focused command (provisional GREEN/TRIANGULATE) | Passed | 2 files, 44 tests. |
+| `npm run typecheck:pi` (provisional) | Passed | Pi workspace TypeScript check completed. |
+| `npm test` | Accepted inherited baseline only | 57/58 files passed, 1,302 tests passed, 25 todo; exactly the known release-manifest failures at lines 76 and 103. |
+
+### Blocker and persisted task status
+
+The provisional replay did not yet cover all required Unit D invalid-history and reconstructed-context cases within the 400-line child boundary, and it risked overlapping Unit E orphan synthesis. To avoid leaving a partial pairing implementation, all provisional code/test/fixture edits were reverted. **No Unit D checkbox was marked complete**; the five exact Unit D `- [ ]` rows remain unchecked in `tasks.md`.
+
+### Remaining tasks and workload boundary
+
+- [ ] **RED:** Add replay tests for one and same-name parallel calls, reverse result completion ordering, exact `functionCall` and `functionResponse` field order, success/error/multiple/empty text encodings, and preserved text/thinking ordering. <!-- sdd-owner: implementation -->
+- [ ] **GREEN:** Implement request-local call-group validation and exact result association by `(toolCallId, toolName)`; emit grouped responses in assistant source-call order and reject no IDs, mismatches, duplicates, foreign/separated results, invalid call terminal state, media, and deferred added-tool names. <!-- sdd-owner: implementation -->
+- [ ] **TRIANGULATE:** Add reconstructed-context cases for resume/fork/compaction/model handoff, noncontiguous history, mixed image/text result content, and concurrent serializations to prove there is no global state or FIFO/name fallback. <!-- sdd-owner: implementation -->
+- [ ] **REFACTOR:** Isolate pending-group finalization from wire encoding and retain deterministic JSON insertion order without mutating Pi messages. <!-- sdd-owner: implementation -->
+- [ ] Verify this unit with focused `tool-context.test.ts` and `context.test.ts`, `npm run typecheck:pi`, and `npm test`; rollback by removing replay serialization as one unit so request emission cannot retain half a pairing implementation. <!-- sdd-owner: implementation -->
+
+No Unit D code/test/fixture diff remains. OpenSpec progress records the blocked attempt only; no size exception is requested.
+
+---
+
+## Unit D completion: deterministic actual-result replay
+
+### Structured status consumed
+
+- Change: `add-pi-tool-support`; parent-explicit Unit D on `feat/pi-tool-support-d-replay`; apply ready.
+- Action context: `repo-local`; all edits stayed under `C:/Github/Ordico/opencode-antigravity-guard-pi-tools` and the user-authorized surfaces.
+- Delivery: confirmed `feature-branch-chain`, child D; strict TDD with `npm test`; no Unit E–H work, commit, branch operation, push, publication, or live call.
+
+### Completed tasks and persisted checkbox updates
+
+All five Unit D implementation-owned rows are visibly `[x]` in `tasks.md`: RED, GREEN, TRIANGULATE, REFACTOR, and Verify. Unit E–H rows remain unchanged and unchecked.
+
+### Files changed
+
+- `packages/pi/src/tool-context.ts`
+- `packages/pi/src/tool-context.test.ts`
+- `packages/pi/src/context.ts`
+- `packages/pi/src/context.test.ts`
+- `openspec/changes/add-pi-tool-support/tasks.md`
+- `openspec/changes/add-pi-tool-support/apply-progress.md`
+
+### TDD Cycle Evidence
+
+| Task | Test file | Layer | Safety net | RED | GREEN | TRIANGULATE | REFACTOR |
+|---|---|---|---|---|---|---|---|
+| D | `tool-context.test.ts`, `context.test.ts` | Unit/integration | 40/40 focused passed | 9 replay assertions failed because `replayToolHistory()` did not exist | 14 tool-context tests passed after request-local grouping | 56 focused tests cover error/empty values, invalid identity/media/deferred names, resume/fork/compaction/model-handoff labels, immutability, and concurrent calls | Pending-group finalization is separate from wire-part encoding; focused tests and Pi typecheck remain green |
+
+### Verification evidence
+
+| Command | Result | Evidence |
+|---|---|---|
+| `npm test -- --run packages/pi/src/tool-context.test.ts packages/pi/src/context.test.ts` (safety net) | Passed | 2 files, 40 tests before edits. |
+| Same focused command (RED) | Failed as expected | 9 failures: `replayToolHistory` was not a function. |
+| Same focused command (GREEN/TRIANGULATE/REFACTOR) | Passed | 2 files, 56 tests passed. |
+| `npm run typecheck:pi` | Passed | Pi workspace TypeScript check completed after final refactor. |
+| `npm test` | Accepted with known inherited baseline only | 57/58 files passed, 1,314 tests passed, 25 todo, and exactly the known release-manifest failures at lines 76 and 103; no additional failures. |
+
+### Implementation notes, remaining work, and workload
+
+- `replayToolHistory()` is request-local and pure: it validates terminal assistant call groups, canonicalizes call arguments, pairs actual contiguous results by exact ID and name, and emits source-call-ordered responses with deterministic field order.
+- Incomplete zero/partial groups retain `PI_TOOL_HISTORY_REPLAY_PENDING`; Unit E remains solely responsible for synthetic missing responses. Foreign, separated, duplicate, mismatched, media-bearing, and deferred-tool histories fail locally.
+- `serializeContext()` uses this same serializer for reconstructed replay while retaining the no-tool text fast path; no Pi history is mutated.
+- Unit D has no remaining unchecked implementation-owned rows. Units E–H remain out of scope and their existing unchecked rows are unchanged.
+- Unit D authored code/test delta is **191 additions and 36 deletions (227 changed lines)**, excluding OpenSpec bookkeeping, under the 400-line child budget. No fixture was necessary because compact parameterized cases exercise the required replay invariants.
+
+### Deviation and risk
+
+No design deviation occurred. The inherited full-suite failures remain limited to the supplied release-manifest baseline; Unit D does not alter those files. Production tool capability remains disabled, and no missing tool result is synthesized.

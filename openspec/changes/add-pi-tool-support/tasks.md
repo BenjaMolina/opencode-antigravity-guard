@@ -77,11 +77,11 @@ The user selected `feature-branch-chain` after reviewing the 2,100–3,100-line 
 **Budget / commit candidate:** 350–400 lines; `feat(pi): replay exact tool call results in source order`.  
 **Finish / rollback boundary:** Valid persisted call/result groups serialize adjacent model/user contents with exact IDs/names; reverting returns tool-bearing histories to the prior explicit preflight outcome, not heuristic repair.
 
-- [ ] **RED:** Add replay tests for one and same-name parallel calls, reverse result completion ordering, exact `functionCall` and `functionResponse` field order, success/error/multiple/empty text encodings, and preserved text/thinking ordering. <!-- sdd-owner: implementation -->
-- [ ] **GREEN:** Implement request-local call-group validation and exact result association by `(toolCallId, toolName)`; emit grouped responses in assistant source-call order and reject no IDs, mismatches, duplicates, foreign/separated results, invalid call terminal state, media, and deferred added-tool names. <!-- sdd-owner: implementation -->
-- [ ] **TRIANGULATE:** Add reconstructed-context cases for resume/fork/compaction/model handoff, noncontiguous history, mixed image/text result content, and concurrent serializations to prove there is no global state or FIFO/name fallback. <!-- sdd-owner: implementation -->
-- [ ] **REFACTOR:** Isolate pending-group finalization from wire encoding and retain deterministic JSON insertion order without mutating Pi messages. <!-- sdd-owner: implementation -->
-- [ ] Verify this unit with focused `tool-context.test.ts` and `context.test.ts`, `npm run typecheck:pi`, and `npm test`; rollback by removing replay serialization as one unit so request emission cannot retain half a pairing implementation. <!-- sdd-owner: implementation -->
+- [x] **RED:** Add replay tests for one and same-name parallel calls, reverse result completion ordering, exact `functionCall` and `functionResponse` field order, success/error/multiple/empty text encodings, and preserved text/thinking ordering. <!-- sdd-owner: implementation -->
+- [x] **GREEN:** Implement request-local call-group validation and exact result association by `(toolCallId, toolName)`; emit grouped responses in assistant source-call order and reject no IDs, mismatches, duplicates, foreign/separated results, invalid call terminal state, media, and deferred added-tool names. <!-- sdd-owner: implementation -->
+- [x] **TRIANGULATE:** Add reconstructed-context cases for resume/fork/compaction/model handoff, noncontiguous history, mixed image/text result content, and concurrent serializations to prove there is no global state or FIFO/name fallback. <!-- sdd-owner: implementation -->
+- [x] **REFACTOR:** Isolate pending-group finalization from wire encoding and retain deterministic JSON insertion order without mutating Pi messages. <!-- sdd-owner: implementation -->
+- [x] Verify this unit with focused `tool-context.test.ts` and `context.test.ts`, `npm run typecheck:pi`, and `npm test`; rollback by removing replay serialization as one unit so request emission cannot retain half a pairing implementation. <!-- sdd-owner: implementation -->
 
 ## E — Context-derived orphan-call recovery
 
