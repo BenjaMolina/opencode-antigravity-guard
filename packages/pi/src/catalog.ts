@@ -87,6 +87,34 @@ const CATALOG = freeze(defineCatalog([{
   },
   replay: { kind: "strip" },
   response: { kind: "gemini-envelope", family: "gemini" },
+}, {
+  publicId: "antigravity-claude-sonnet-4.6",
+  descriptor: {
+    name: "Claude Sonnet 4.6 (Antigravity, text only)",
+    thinkingLevelMap: { minimal: null, low: null, medium: null, high: "high" },
+    contextWindow: 250_000,
+    maxTokens: 64_000,
+  },
+  routes: {
+    off: { wireModel: "claude-sonnet-4-6", thinking: { kind: "budget", budget: 0, includeThoughts: false } },
+    high: { wireModel: "claude-sonnet-4-6", thinking: { kind: "budget", budget: 1024, includeThoughts: true } },
+  },
+  replay: { kind: "strip" },
+  response: { kind: "gemini-envelope", family: "claude" },
+}, {
+  publicId: "antigravity-claude-opus-4.6-thinking",
+  descriptor: {
+    name: "Claude Opus 4.6 Thinking (Antigravity, text only)",
+    thinkingLevelMap: { minimal: null, low: null, medium: null, high: "high" },
+    contextWindow: 250_000,
+    maxTokens: 64_000,
+  },
+  routes: {
+    off: { wireModel: "claude-opus-4-6-thinking", thinking: { kind: "budget", budget: 0, includeThoughts: false } },
+    high: { wireModel: "claude-opus-4-6-thinking", thinking: { kind: "budget", budget: 1024, includeThoughts: true } },
+  },
+  replay: { kind: "strip" },
+  response: { kind: "gemini-envelope", family: "claude" },
 }] as const satisfies readonly CatalogEntry[]))
 
 type Catalog = typeof CATALOG
