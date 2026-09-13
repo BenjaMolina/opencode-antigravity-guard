@@ -51,11 +51,11 @@ The user selected `feature-branch-chain` after reviewing the 2,100–3,100-line 
 **Budget / commit candidate:** 320–400 lines; `feat(pi): validate immutable tool declarations`. Split hostile/boundary cases into a follow-up candidate only if tests and the behavior stay together.  
 **Finish / rollback boundary:** A typed, dependency-neutral normalizer accepts only the specified grammar and fails locally for all other input; reverting removes the unused modules without changing the text serializer.
 
-- [ ] **RED:** Create normalizer/declaration tests for ordered valid declarations, exact canonical nested output, `const`-to-singleton-`enum`, frozen output, and deep input immutability. <!-- sdd-owner: implementation -->
-- [ ] **GREEN:** Implement strict plain-data/JSON helpers and immutable allowlist normalization in `tool-contract.ts` and `tool-schema.ts`, including canonical key order, declaration name/description validation, duplicate-name rejection, and safe declaration/path errors. <!-- sdd-owner: implementation -->
-- [ ] **TRIANGULATE:** Add fixture-backed rejection and limit tests for unknown/reference/union/constraint keywords, invalid enum/type combinations, empty object schemas, cycles/accessors/sparse arrays/symbols/non-finite values, and depth/node/size boundaries. <!-- sdd-owner: implementation -->
-- [ ] **REFACTOR:** Consolidate recursive validation and resource accounting without weakening exact errors, output order, immutability, or the no-`any` Pi boundary. <!-- sdd-owner: implementation -->
-- [ ] Verify this unit with `npm test -- --run packages/pi/src/tool-schema.test.ts`, `npm run typecheck:pi`, and `npm test`; rollback by removing only the new contract/schema modules and their fixtures. <!-- sdd-owner: implementation -->
+- [x] **RED:** Create normalizer/declaration tests for ordered valid declarations, exact canonical nested output, `const`-to-singleton-`enum`, frozen output, and deep input immutability. <!-- sdd-owner: implementation -->
+- [x] **GREEN:** Implement strict plain-data/JSON helpers and immutable allowlist normalization in `tool-contract.ts` and `tool-schema.ts`, including canonical key order, declaration name/description validation, duplicate-name rejection, and safe declaration/path errors. <!-- sdd-owner: implementation -->
+- [x] **TRIANGULATE:** Add fixture-backed rejection and limit tests for unknown/reference/union/constraint keywords, invalid enum/type combinations, empty object schemas, cycles/accessors/sparse arrays/symbols/non-finite values, and depth/node/size boundaries. <!-- sdd-owner: implementation -->
+- [x] **REFACTOR:** Consolidate recursive validation and resource accounting without weakening exact errors, output order, immutability, or the no-`any` Pi boundary. <!-- sdd-owner: implementation -->
+- [x] Verify this unit with `npm test -- --run packages/pi/src/tool-schema.test.ts`, `npm run typecheck:pi`, and `npm test`; rollback by removing only the new contract/schema modules and their fixtures. Aggregate normalized-schema limit correction verified. <!-- sdd-owner: implementation -->
 
 ## C — Tool request preparation and no-tool-compatible dispatcher
 

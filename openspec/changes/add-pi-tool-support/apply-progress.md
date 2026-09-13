@@ -70,3 +70,103 @@ Feature-branch-chain child A only. Authored implementation/test diff is **167 ch
 ## Deviation / risk
 
 No design deviation and no Unit A behavior changed during verification. The initial environmental blocker was remediated by the restored `tsc` dependency and is separately evidenced above. The two full-suite release-manifest failures are known inherited base failures, not Unit A blockers: their only failing assertions are the publish-step and tag-script regex captures at lines 76 and 103, and both implicated out-of-scope files are byte-identical to published base `df3c629`. No commits, branch operations, live calls, publishing, or B–H work occurred.
+
+---
+
+## Unit B completion
+
+### Structured status consumed
+
+- Change: `add-pi-tool-support`; explicit parent selection; status `ready`.
+- Action context: `repo-local`; sole allowed edit root: `C:/Github/Ordico/opencode-antigravity-guard-pi-tools`; no warnings.
+- Delivery: `auto-chain` / `feature-branch-chain`; child slice B on `feat/pi-tool-support-b-schema`, based on Unit A `ea1af21`.
+- Strict TDD: active; test runner: `npm test`. No live calls, commits, branch switching, push, publish, or work outside Unit B occurred.
+
+### Completed tasks and persisted checkbox updates
+
+The five Unit B implementation-owned rows are visibly marked `[x]` in `tasks.md`: RED, GREEN, TRIANGULATE, REFACTOR, and Verify. No Unit C–H checkbox was changed.
+
+### Files changed
+
+- `packages/pi/src/tool-contract.ts`
+- `packages/pi/src/tool-schema.ts`
+- `packages/pi/src/tool-schema.test.ts`
+- `packages/pi/fixtures/tools/schema-rejections.json`
+- `openspec/changes/add-pi-tool-support/tasks.md`
+- `openspec/changes/add-pi-tool-support/apply-progress.md`
+
+### TDD Cycle Evidence
+
+| Task | Test File | Layer | Safety Net | RED | GREEN | TRIANGULATE | REFACTOR |
+|---|---|---|---|---|---|---|---|
+| B | `packages/pi/src/tool-schema.test.ts` | Unit | N/A (new modules) | Failed as expected: missing `./tool-schema.ts` | 1/1 focused passed after minimum normalizer | 10/10 focused passed: fixture rejections, malformed values, constraints, limits, and declaration choice | Recursive normalization and resource accounting remain consolidated; focused test and Pi typecheck pass |
+
+### Verification evidence
+
+| Command | Result | Evidence |
+|---|---|---|
+| `npm test -- --run packages/pi/src/tool-schema.test.ts` (RED) | Failed as expected | Module `./tool-schema.ts` did not exist. |
+| `npm test -- --run packages/pi/src/tool-schema.test.ts` (GREEN) | Passed | 1/1 test passed. |
+| `npm test -- --run packages/pi/src/tool-schema.test.ts` (TRIANGULATE/REFACTOR) | Passed | 10/10 tests passed. |
+| `npm run typecheck:pi` | Passed | Pi workspace TypeScript check completed. |
+| `npm test` | Accepted with known inherited baseline only | 56/57 files passed, 1,287 tests passed, 25 todo, and exactly the two known failures in `scripts/release-manifest-check.test.ts` lines 76 and 103; no additional failures. |
+
+### Implementation notes and deviation
+
+- Added a dependency-neutral typed JSON contract with safe own-data/plain-object checks, canonical key ordering, deep freezing, and stable declaration/path errors.
+- Added immutable allowlist normalization for the admitted object, array, and primitive schema grammar, including `const` to singleton `enum`, declaration ordering/validation, duplicate rejection, constrained-sampling rejection, and schema depth/node/size limits.
+- Added only synthetic rejection fixtures. No root `src/plugin` import, text serializer change, capability activation, or design deviation occurred.
+
+### Remaining tasks
+
+Unit B has no unchecked implementation-owned rows. Units C–H remain intentionally unchecked and out of scope; their exact unchecked `- [ ]` rows remain unchanged in `tasks.md` under those units.
+
+### Workload / PR boundary
+
+Feature-branch-chain child B only. Exact authored code/test/fixture change count is **298 additions, 0 deletions, 298 total**: code **169** (`tool-contract.ts` 62 + `tool-schema.ts` 107), tests **111**, fixtures **18**. This is under the 400-line budget. OpenSpec bookkeeping is excluded. No commit was created.
+
+### Risk
+
+The full-suite release-manifest failures are inherited under the provided baseline and do not block Unit B: they remain only the expected undefined regex captures at lines 76 and 103. Unit B does not enable any route; C–H are required before tool-bearing request/response capability can be exercised.
+
+---
+
+## Unit B verifier correction: aggregate normalized schema size
+
+### Scope and structured status
+
+- Correction scope: `packages/pi/src/tool-schema.ts` and `packages/pi/src/tool-schema.test.ts`, plus this OpenSpec evidence and the existing Unit B Verify checkbox annotation.
+- Explicit selection: `add-pi-tool-support` on `feat/pi-tool-support-b-schema` in `C:/Github/Ordico/opencode-antigravity-guard-pi-tools`.
+- Action context: `repo-local`; all edits stayed within the user-authorized surfaces and root. The injected native status named no change and a different worktree; the explicit user selection resolved that ambiguity.
+- Delivery: existing `feature-branch-chain`, child B. This correction remains part of B; no Unit C–H file, release file, commit, branch operation, publish, or live call occurred.
+
+### Correction
+
+`normalizeToolDeclarations()` now totals UTF-8 byte lengths of each normalized declaration `parameters` object and raises `PI_TOOL_SCHEMA_LIMIT` once the aggregate exceeds `1 MiB`. The existing `256 KiB` per-declaration check is unchanged. The total intentionally counts normalized schemas only, not declaration metadata.
+
+### TDD Cycle Evidence
+
+| Task | Test File | Layer | Safety Net | RED | GREEN | TRIANGULATE | REFACTOR |
+|---|---|---|---|---|---|---|---|
+| B aggregate schema-size correction | `packages/pi/src/tool-schema.test.ts` | Unit | 10/10 focused passed | 11-test run failed exactly because five individually valid 220 KiB normalized schemas did not throw | Added 1 MiB aggregate accounting; 11/11 focused passed | Added the declaration-metadata case; 12/12 focused passed | Named the aggregate bound and retained the existing per-declaration accounting; 12/12 focused passed |
+
+### Verification evidence
+
+| Command | Result | Evidence |
+|---|---|---|
+| `npm test -- --run packages/pi/src/tool-schema.test.ts` (safety net) | Passed | 10/10 existing focused tests passed before correction. |
+| `npm test -- --run packages/pi/src/tool-schema.test.ts` (RED) | Failed as expected | 10 passed, 1 failed: five individually valid 220 KiB normalized schemas did not throw `PI_TOOL_SCHEMA_LIMIT`. |
+| `npm test -- --run packages/pi/src/tool-schema.test.ts` (GREEN) | Passed | 11/11 tests passed after aggregate accounting. |
+| `npm test -- --run packages/pi/src/tool-schema.test.ts` (TRIANGULATE/REFACTOR) | Passed | 12/12 tests passed, including oversized aggregate rejection and large declaration metadata acceptance. |
+| `npm run typecheck:pi` | Passed | Pi workspace `tsc -p tsconfig.json --noEmit` completed. |
+| `npm test` | Accepted with known inherited baseline only | 56/57 files passed, 1,289 tests passed, 25 todo, and exactly the two known failures in `scripts/release-manifest-check.test.ts` at lines 76 and 103; no other failure occurred. |
+
+### Persisted task status and workload
+
+All five Unit B implementation-owned rows remain visibly `[x]` in `tasks.md`; the Verify row now records that the aggregate correction was verified. Unit C–H rows remain unchanged and unchecked.
+
+The correction is **29 additions, 0 deletions, 29 changed lines**: implementation **7** and tests **22**. Current complete Unit B authored code/test/fixture count is **327 additions, 0 deletions, 327 total** (`tool-contract.ts` 62, `tool-schema.ts` 114, `tool-schema.test.ts` 133, fixture 18), excluding OpenSpec evidence. It remains below the 400-line Unit B budget.
+
+### Deviation and risk
+
+No design deviation occurred: the correction implements the design-required 1 MiB aggregate normalized schema bound that the previous Unit B implementation omitted. The only full-suite failures are the user-confirmed inherited release-manifest failures; release files were not changed.
