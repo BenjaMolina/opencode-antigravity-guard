@@ -2,6 +2,7 @@ import type { Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai"
 import { describe, expect, it } from "vitest"
 
 import { ContextSerializationError, serializeTextContext } from "./context.ts"
+import { listCatalogEntries } from "./catalog.ts"
 
 const model = { id: "antigravity-gemini-3.8-flash" } as Model<string>
 const request = (context: Context, options?: SimpleStreamOptions) => serializeTextContext({
@@ -233,6 +234,26 @@ describe("Pi text context serialization", () => {
           expect(() => serialize({ reasoning: "medium", maxTokens: 8192 })).toThrow(ContextSerializationError)
           expect(serialize({ reasoning: "medium", maxTokens: 8193 }).request.generationConfig.maxOutputTokens).toBe(8193)
           for (const reasoning of ["minimal", "low", "high"] as const) expect(() => serialize({ reasoning })).toThrow(ContextSerializationError)
+        })
+
+        it("rejects tools, tool history, and images for every registered model before request serialization", () => {
+          const catalog = listCatalogEntries()
+          expect(catalog).toHaveLength(7)
+          const unsupportedContexts = [
+            { tools: [{}], messages: [{ role: "user", content: "x", timestamp: 0 }] },
+            { messages: [{ role: "toolResult", content: [], timestamp: 0 }] },
+            { messages: [{ role: "user", content: [{ type: "image" }], timestamp: 0 }] },
+          ]
+          for (const entry of catalog) {
+            for (const context of unsupportedContexts) {
+              expect(() => serializeTextContext({
+                context: context as Context,
+                model: { ...model, id: entry.publicId },
+                project: "project",
+                requestId: "agent-id",
+              })).toThrow(ContextSerializationError)
+            }
+          }
         })
 
         it("uses defaults, accepts repeated text, and bounds serialized text", () => {

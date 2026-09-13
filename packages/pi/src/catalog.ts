@@ -1,5 +1,7 @@
 export type StandardReasoningLevel = "off" | "minimal" | "low" | "medium" | "high"
 
+const ANSWER_RESERVE = 1024
+
 type NativeThinkingLevel = "low" | "medium" | "high"
 type NativeRoute = {
   readonly wireModel: string
@@ -145,12 +147,29 @@ function freeze<T>(value: T): T {
   return value
 }
 
-export function defineCatalog<T extends readonly { readonly publicId: string, readonly routes: Readonly<Record<string, { readonly wireModel: string }>> }[]>(entries: T): T {
+export function defineCatalog<T extends readonly {
+  readonly publicId: string
+  readonly descriptor?: CatalogEntry["descriptor"]
+  readonly routes: Readonly<Record<string, { readonly wireModel: string, readonly thinking?: GenerationRoute["thinking"] }>>
+}[]>(entries: T): T {
   const identities = new Set<string>()
   for (const entry of entries) {
     if (identities.has(entry.publicId)) throw new Error(`Duplicate public model ID: ${entry.publicId}`)
     identities.add(entry.publicId)
     if (!Object.keys(entry.routes).length) throw new Error(`Model has no routes: ${entry.publicId}`)
+    if (!entry.descriptor) continue
+    for (const [level, route] of Object.entries(entry.routes)) {
+      if (!route.thinking) throw new Error(`Route has no thinking policy: ${entry.publicId}/${level}`)
+      if (level !== "off" && !Object.hasOwn(entry.descriptor.thinkingLevelMap, level)) {
+        throw new Error(`Route is outside descriptor map: ${entry.publicId}/${level}`)
+      }
+      if (level !== "off" && entry.descriptor.thinkingLevelMap[level as keyof typeof entry.descriptor.thinkingLevelMap] === null) {
+        throw new Error(`Route is hidden by descriptor: ${entry.publicId}/${level}`)
+      }
+      if (route.thinking.kind === "budget" && route.thinking.budget > 0 && Number.isFinite(route.thinking.budget) && route.thinking.budget + ANSWER_RESERVE > entry.descriptor.maxTokens) {
+        throw new Error(`Finite thinking budget does not leave answer reserve: ${entry.publicId}/${level}`)
+      }
+    }
   }
   return entries
 }
