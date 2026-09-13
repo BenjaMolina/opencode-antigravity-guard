@@ -76,6 +76,29 @@ describe("fixed Antigravity SSE transport", () => {
     expect(payload.request.generationConfig).not.toHaveProperty("thinkingConfig")
   })
 
+  it("streams a Claude thought/text fixture through the fixed Antigravity endpoint", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(new Response(
+      `data: ${JSON.stringify({ response: { modelVersion: "claude-sonnet-4-6", candidates: [{ content: { parts: [{ thought: true, text: "plan", thoughtSignature: "c2ln" }, { text: "answer", thoughtSignature: "dGV4dA==" }] }, finishReason: "STOP" }], usageMetadata: { promptTokenCount: 7, cachedContentTokenCount: 2, candidatesTokenCount: 3, thoughtsTokenCount: 4, totalTokenCount: 14 } } })}\n\n`,
+      { headers: { "Content-Type": "text/event-stream" } },
+    ))
+    const onSemantic = vi.fn()
+    await executeStreamTransport({
+      accessToken: "access-token", projectId: "stored-project", context: context(), fetch,
+      generationOptions: { reasoning: "high" },
+      model: { ...model(), id: "antigravity-claude-sonnet-4.6" }, now: () => 1_000,
+      onSemantic, platform: "win32", requestId: "request-id",
+    })
+    expect(fetch).toHaveBeenCalledWith(endpoint, expect.objectContaining({
+      body: expect.stringMatching(/"model":"claude-sonnet-4-6"/),
+    }))
+    expect(onSemantic.mock.calls.map(([semantic]) => semantic)).toEqual([
+      { type: "thinking", thinking: "plan", signature: "c2ln" },
+      { type: "text", text: "answer", signature: "dGV4dA==" },
+      { type: "finish", reason: "stop" },
+      { type: "usage", input: 5, output: 7, cacheRead: 2, cacheWrite: 0, reasoning: 4, total: 14 },
+    ])
+  })
+
   it("sends only the Antigravity headers required for SSE and excludes Google client metadata", async () => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(new Response([
       `data: ${JSON.stringify({ response: { candidates: [{ content: { parts: [{ text: "Hi" }] } }] } })}\n\n`,

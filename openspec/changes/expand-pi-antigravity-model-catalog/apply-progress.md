@@ -137,3 +137,109 @@ The parent supplied authoritative ready status for `expand-pi-antigravity-model-
 ### Remaining tasks
 
 Unit C, Unit D, and Unit E implementation rows remain unchecked and out of scope. Unit B has no unchecked implementation rows.
+
+## Unit C — Evidence-admitted Claude policies
+
+**Status:** complete
+
+### Completed implementation tasks
+
+All six Unit C implementation checkboxes are marked `- [x]` in `tasks.md`.
+
+- Reconfirmed stored four-source per-level evidence for Sonnet and Opus: literal Claude wire IDs, 250,000/64,000 descriptor limits, integer budget `0` hidden for `off`, integer budget `1024` visible for `high`, strict terminal metadata/usage fixtures, and strip-only replay.
+- Added only the two literal Claude rows. They expose `off` and `high`; `minimal`, `low`, and `medium` fail before transport.
+- Covered equal/lower high-budget output rejection, a valid explicit reserve, omitted-output defaults, no caller mutation, text-only rejection, cross-model signature stripping, strict interleaved response semantics, and the fixed OAuth SSE endpoint.
+- The existing discriminated serializer already applies the required output-budget safety and omits no configuration by post-construction deletion; no `context.ts`, `response.ts`, provider, Gemini, GPT-OSS, or README production changes were needed.
+
+### Files changed
+
+- `packages/pi/src/catalog.ts`
+- `packages/pi/src/catalog.test.ts`
+- `packages/pi/src/context.test.ts`
+- `packages/pi/src/response.test.ts`
+- `packages/pi/src/stream.test.ts`
+- `openspec/changes/expand-pi-antigravity-model-catalog/tasks.md`
+- `openspec/changes/expand-pi-antigravity-model-catalog/apply-progress.md`
+
+### TDD Cycle Evidence
+
+| Task | Test file | Layer | Safety net | RED | GREEN | TRIANGULATE | REFACTOR |
+|---|---|---|---|---|---|---|---|
+| Claude literal catalog/routes and output safety | `catalog.test.ts`, `context.test.ts` | Unit | Focused four-file suite: 60/60 | Focused catalog/context run exit 1: both Claude IDs unregistered | Literal rows added; focused catalog/context run reached 34/34 after updating the prior ordered-list expectation | Both models, all rejected levels, `1000`/`1024` rejection, `1025` acceptance, omitted off/high defaults, signature stripping, no caller mutation, and tools rejection | Existing discriminated integer-budget serializer met the design; no production refactor was needed |
+| Claude strict response and fixed-endpoint streaming | `response.test.ts`, `stream.test.ts` | Unit/integration seam | Focused four-file suite: 60/60 | Existing strict parser and lifecycle were baseline characterization, not fabricated RED; new catalog admission RED above blocked the Claude transport path | Redacted Sonnet/Opus interleaved `thought`/text/signature plus `STOP`, model-version, and usage fixtures passed without parser changes | Fixed-endpoint Sonnet SSE fixture asserted exact wire ID and ordered thought/text/finish/usage semantics; both response model fixtures passed | No `response.ts` change: the strict fixture matched the specified envelope |
+
+### Verification
+
+| Command | Exit | Result |
+|---|---:|---|
+| `npx vitest run packages/pi/src/catalog.test.ts packages/pi/src/context.test.ts packages/pi/src/response.test.ts packages/pi/src/stream.test.ts` | 0 | 60 baseline focused tests passed before edits |
+| `npx vitest run packages/pi/src/catalog.test.ts packages/pi/src/context.test.ts` | 1 | Expected RED: both Claude IDs were absent and context rejected them (2 failed, 32 passed) |
+| `npx vitest run packages/pi/src/catalog.test.ts packages/pi/src/context.test.ts` | 1 | Expected intermediate failure: prior catalog ordering assertion needed its newly admitted Claude IDs (1 failed, 33 passed) |
+| `npx vitest run packages/pi/src/catalog.test.ts packages/pi/src/context.test.ts` | 0 | GREEN: 34 tests passed |
+| `npx vitest run packages/pi/src/catalog.test.ts packages/pi/src/context.test.ts packages/pi/src/response.test.ts packages/pi/src/stream.test.ts` | 0 | TRIANGULATE: 66 tests passed |
+| `npm run typecheck:pi` | 0 | Pi package typecheck passed |
+| `git diff --check` | 0 | No whitespace errors |
+
+### Deviations and risks
+
+- No design deviation and no `response.ts` edit: redacted strict Claude fixtures fit the existing parser exactly.
+- No live, OAuth, network, installation, staging, commit, push, PR, publish, or release action occurred.
+- CodeGraph returned the primary checkout's stale stream source despite the explicit worktree; after confirming the worktree-specific `.codegraph/` presence, targeted file reads were used for the explicit workspace only.
+
+### Workload and PR boundary
+
+- Delivery path: chained PRs, `stacked-to-main`.
+- Current boundary: Unit C only — Claude Sonnet/Opus catalog admission, request policy coverage, and strict shared-envelope fixtures; no GPT-OSS, Gemini 3.5 admission, or README work.
+- Source/test delta: 140 changed lines (140 additions, 0 deletions), excluding OpenSpec artifacts; within the 400-line budget.
+- Rollback: remove only the two Claude rows and Unit C tests, retaining Units A/B Gemini behavior.
+
+### Structured status consumed
+
+```yaml
+schemaName: spec-driven
+changeName: expand-pi-antigravity-model-catalog
+artifactStore: openspec
+planningHome:
+  root: C:/Github/Ordico/opencode-antigravity-guard-release
+  changesDir: C:/Github/Ordico/opencode-antigravity-guard-release/openspec/changes
+changeRoot: C:/Github/Ordico/opencode-antigravity-guard-release/openspec/changes/expand-pi-antigravity-model-catalog
+artifacts: { proposal: done, specs: done, design: done, tasks: done, applyProgress: done }
+taskProgress: { total: 27, complete: 17, remaining: 10 }
+applyState: ready
+actionContext:
+  mode: repo-local
+  workspaceRoot: C:/Github/Ordico/opencode-antigravity-guard-release
+  allowedEditRoots: [C:/Github/Ordico/opencode-antigravity-guard-release/packages/pi, C:/Github/Ordico/opencode-antigravity-guard-release/openspec/changes/expand-pi-antigravity-model-catalog]
+  warnings: ["Parent-owned native attempt token was consumed but not acquired, reset, or settled by this executor."]
+nextRecommended: sdd-verify
+```
+
+### Remaining tasks
+
+Unit D (six unchecked implementation rows) and Unit E (four unchecked implementation rows) remain out of scope. Unit C has no unchecked implementation rows.
+
+## Unit C corrective retry - provider registration expectation
+
+**Status:** complete
+
+- Corrected `provider.test.ts` from four to the six Unit C-admitted descriptors in catalog order: 3.8, 3.7, 3.6, 3.1 Pro, Sonnet, Opus.
+- No production code or task checkbox changed; all six Unit C rows remain visibly `- [x]`.
+
+### TDD Cycle Evidence
+
+| Task | RED | GREEN | TRIANGULATE/REFACTOR |
+|---|---|---|---|
+| Stale provider registration expectation | Parent observed expected 4, received 6 | `provider.test.ts`: 5/5 | Exact ordered Sonnet/Opus IDs asserted; no refactor needed |
+
+### Verification
+
+- `npx vitest run packages/pi/src/provider.test.ts`: exit 0 (5 passed).
+- `npx vitest run packages/pi/src`: exit 0 (11 files, 138 passed).
+- `npm run typecheck:pi`: exit 0.
+- `git diff --check`: exit 0.
+
+### Boundary and remaining work
+
+- Corrective scope: 4 changed test lines; allowed roots respected; no live/network/install/commit/stage/push/PR/subagent action occurred.
+- Parent token `sha256:241586c8407153059158bfdb5ec52e3c4e8671cf647361c116e2f28a6d38f1ba` was not acquired, reset, or settled.
+- Unit D and Unit E's ten implementation rows remain unchecked and out of scope.
