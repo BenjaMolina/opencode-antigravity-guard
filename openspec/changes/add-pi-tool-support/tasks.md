@@ -90,11 +90,11 @@ The user selected `feature-branch-chain` after reviewing the 2,100–3,100-line 
 **Budget / commit candidate:** 250–350 lines; `feat(pi): recover missing tool results from context`.  
 **Finish / rollback boundary:** Missing results become the specified adjacent synthetic failed response, solely from supplied context; reverting removes only synthetic recovery and leaves valid actual-result replay intact.
 
-- [ ] **RED:** Add tests for all-orphan and partially completed parallel groups, asserting the exact fixed error object and insertion order, source-order mixing of actual/synthetic results, and no synthetic call/result after an incomplete generated assistant message. <!-- sdd-owner: implementation -->
-- [ ] **GREEN:** At pending-group finalization, create the prescribed `PI_TOOL_RESULT_MISSING` response for each absent exact result without persistence, cache, lock, history mutation, retry, or route change. <!-- sdd-owner: implementation -->
-- [ ] **TRIANGULATE:** Add later-real-result, delayed-result-after-unrelated-history, repeated reconstruction, resume/fork, and concurrency tests to prove deterministic recovery and fail-closed separated results. <!-- sdd-owner: implementation -->
-- [ ] **REFACTOR:** Make synthetic construction a fixed-order local factory and keep recovery count request-scoped for later safe diagnostics. <!-- sdd-owner: implementation -->
-- [ ] Verify this unit with focused tool-context tests, `npm run typecheck:pi`, and `npm test`; rollback by reverting the recovery finalizer only, never by deleting user history or evidence. <!-- sdd-owner: implementation -->
+- [x] **RED:** Add tests for all-orphan and partially completed parallel groups, asserting the exact fixed error object and insertion order, source-order mixing of actual/synthetic results, and no synthetic call/result after an incomplete generated assistant message. <!-- sdd-owner: implementation -->
+- [x] **GREEN:** At pending-group finalization, create the prescribed `PI_TOOL_RESULT_MISSING` response for each absent exact result without persistence, cache, lock, history mutation, retry, or route change. <!-- sdd-owner: implementation -->
+- [x] **TRIANGULATE:** Add later-real-result, delayed-result-after-unrelated-history, repeated reconstruction, resume/fork, and concurrency tests to prove deterministic recovery and fail-closed separated results. <!-- sdd-owner: implementation -->
+- [x] **REFACTOR:** Make synthetic construction a fixed-order local factory and keep recovery count request-scoped for later safe diagnostics. <!-- sdd-owner: implementation -->
+- [x] Verify this unit with focused tool-context tests, `npm run typecheck:pi`, and `npm test`; rollback by reverting the recovery finalizer only, never by deleting user history or evidence. <!-- sdd-owner: implementation -->
 
 ## F — Atomic streamed function-call semantics and delayed terminal commit
 

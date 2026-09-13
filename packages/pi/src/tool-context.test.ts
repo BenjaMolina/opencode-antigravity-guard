@@ -51,6 +51,48 @@ describe("Pi tool history replay", () => {
     expect(history).toEqual(before)
   })
 
+  it("synthesizes missing parallel results with the fixed error response in source order", () => {
+    const missing = {
+      error: {
+        code: "PI_TOOL_RESULT_MISSING",
+        message: "Tool execution did not complete or its result was not recorded. Treat the call as failed; do not assume it had no side effects and do not retry it automatically.",
+      },
+    }
+    const recoveryCounts: number[] = []
+    expect(replayToolHistory([assistant([call("one"), call("two")])], part, (count) => recoveryCounts.push(count))[1]).toEqual({
+      role: "user",
+      parts: [
+        { functionResponse: { name: "read_file", id: "one", response: missing } },
+        { functionResponse: { name: "read_file", id: "two", response: missing } },
+      ],
+    })
+    expect(recoveryCounts).toEqual([2])
+    expect(replayToolHistory([assistant([call("one"), call("two")]), result("two", ["complete"])], part)[1]).toEqual({
+      role: "user",
+      parts: [
+        { functionResponse: { name: "read_file", id: "one", response: missing } },
+        { functionResponse: { name: "read_file", id: "two", response: { result: "complete" } } },
+      ],
+    })
+  })
+
+  it("reconstructs real results instead of cached recovery and rejects separated results", async () => {
+    const orphan = [assistant([call("one")])]
+    const recovered = JSON.stringify(replayToolHistory(orphan, part))
+    const completed = JSON.stringify(replayToolHistory([...orphan, result("one", ["recorded"])], part))
+    expect(recovered).not.toBe(completed)
+    expect(completed).toContain('"result":"recorded"')
+    expect(() => replayToolHistory([...orphan, { role: "user", content: "unrelated", timestamp: 0 }, result("one", ["late"])], part)).toThrow("PI_TOOL_RESULT_SEPARATED")
+    const before = structuredClone(orphan)
+    const serializations = await Promise.all(Array.from({ length: 3 }, () => Promise.resolve(JSON.stringify(replayToolHistory(orphan, part)))))
+    expect(serializations).toEqual([recovered, recovered, recovered])
+    expect(orphan).toEqual(before)
+  })
+
+  it("does not fabricate a result for an assistant call without a terminal tool-use stop", () => {
+    expect(() => replayToolHistory([assistant([call("one")], "stop")], part)).toThrow("PI_TOOL_CALL_INVALID")
+  })
+
   it.each([
     [assistant([call("one"), call("one")]), "PI_TOOL_CALL_DUPLICATE"],
     [assistant([call("one")], "stop"), "PI_TOOL_CALL_INVALID"],

@@ -396,3 +396,61 @@ All five Unit D implementation-owned rows are visibly `[x]` in `tasks.md`: RED, 
 ### Deviation and risk
 
 No design deviation occurred. The inherited full-suite failures remain limited to the supplied release-manifest baseline; Unit D does not alter those files. Production tool capability remains disabled, and no missing tool result is synthesized.
+
+
+---
+
+## Unit E completion: context-derived orphan-call recovery
+
+### Structured status consumed
+
+- Change: `add-pi-tool-support`; user-authoritative status: apply ready, 20/40 complete, Unit E next, based on D `c496466`.
+- Action context: `repo-local`; all edits remained inside `C:/Github/Ordico/opencode-antigravity-guard-pi-tools` and the explicit allowed surfaces.
+- Delivery: `auto-chain` / `feature-branch-chain`; child E only. Strict TDD was active with `npm test`. No Unit F–H work, commit, branch operation, push, publish, live call, persistence, cache, lock, retry, route change, or history mutation occurred.
+
+### Completed tasks and persisted checkbox updates
+
+All five Unit E implementation-owned rows are visibly marked `[x]` in `tasks.md`: RED, GREEN, TRIANGULATE, REFACTOR, and Verify. Unit F–H rows remain unchecked and unchanged.
+
+### Files changed
+
+- `packages/pi/src/tool-context.ts`
+- `packages/pi/src/tool-context.test.ts`
+- `packages/pi/src/context.test.ts`
+- `openspec/changes/add-pi-tool-support/tasks.md`
+- `openspec/changes/add-pi-tool-support/apply-progress.md`
+
+### TDD Cycle Evidence
+
+| Task | Test file | Layer | Safety net | RED | GREEN | TRIANGULATE | REFACTOR |
+|---|---|---|---|---|---|---|---|
+| E | `tool-context.test.ts`, `context.test.ts` | Unit/integration | 56 focused tests passed before E production edits | 1 new exact all-orphan/partial-parallel test failed with `PI_TOOL_HISTORY_REPLAY_PENDING` | 57 focused tests passed after fixed synthetic finalization | 59 focused tests passed for supplied-later real result, delayed separated result rejection, repeated/concurrent reconstruction, and invalid non-terminal assistant calls | Extracted the fixed-order local synthetic factory and exposed a request-scoped recovery-count callback; focused tests and Pi typecheck remained green |
+
+### Verification evidence
+
+| Command | Result | Evidence |
+|---|---|---|
+| `npm test -- --run packages/pi/src/tool-context.test.ts packages/pi/src/context.test.ts` (safety net) | Passed | 56 tests: 20 `tool-context`, 36 `context` before the E test was added. |
+| Same focused command (RED) | Failed as expected | 56 passed, 1 failed: all-orphan group raised `PI_TOOL_HISTORY_REPLAY_PENDING`. |
+| Same focused command (GREEN) | Passed | 57 focused tests after synthetic group finalization; the stale Unit D expectation was updated to the approved E behavior. |
+| `npm test -- --run packages/pi/src/tool-context.test.ts` (recovery-count RED) | Failed as expected | 21 passed, 1 failed because the request-scoped callback was not yet invoked. |
+| `npm test -- --run packages/pi/src/tool-context.test.ts packages/pi/src/context.test.ts` (TRIANGULATE/REFACTOR) | Passed | 59 focused tests: 22 `tool-context`, 37 `context`. |
+| `npm run typecheck:pi` | Passed | Pi workspace `tsc -p tsconfig.json --noEmit` completed. |
+| `npm test` | Accepted with known inherited baseline only | 57/58 files passed, 1,317 tests passed, 25 todo, and exactly the two supplied release-manifest failures in `scripts/release-manifest-check.test.ts` lines 76 and 103 (`expected undefined to be defined`). |
+
+### Implementation notes and deviation
+
+- Pending terminal call groups now emit one adjacent synthetic `functionResponse` per missing exact result, with fixed `error`, `code`, then `message` insertion order and the required `PI_TOOL_RESULT_MISSING` payload.
+- Actual and synthetic responses are mixed in original assistant source-call order; a supplied contiguous real result wins because each reconstruction derives only from its supplied context.
+- Separated delayed results remain rejected, non-terminal assistant call messages remain invalid, and replay has no cache, persistence, lock, retry, route change, or history mutation.
+- `replayToolHistory()` exposes an optional request-scoped recovery-count callback as a safe diagnostics seam. No deviation from the design occurred.
+
+### Remaining tasks and workload / PR boundary
+
+Unit E has no remaining unchecked implementation-owned rows. Units F–H remain intentionally unchecked and out of scope.
+
+Feature-branch-chain child E only: the authored production/test change is **74 additions, 5 deletions, 79 changed lines** (`tool-context.ts`: 24/3; `tool-context.test.ts`: 42/0; `context.test.ts`: 8/2), excluding OpenSpec bookkeeping. This is below the 400-line budget. No commit was created.
+
+### Risk
+
+The two full-suite release-manifest failures are the user-confirmed inherited baseline and did not involve any edited file. Production capability remains disabled; no live calls, publication, or Unit F–H behavior was introduced.
