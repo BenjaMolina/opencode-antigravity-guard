@@ -108,7 +108,25 @@ describe("ResponseSemantics", () => {
     expect(() => semantics.finish()).not.toThrow()
   })
 
-  it("rejects malformed records, unsupported output, invalid usage, and incomplete completion", () => {
+  it("accepts the strict GPT-OSS thought/text/usage fixture and retains terminal semantics", () => {
+      const semantics = new ResponseSemantics()
+      expect(semantics.push(record({
+        modelVersion: "gpt-oss-120b-medium",
+        candidates: [{ content: { parts: [
+          { thought: true, text: "plan", thoughtSignature: "c2ln" },
+          { text: "answer", thoughtSignature: "dGV4dA==" },
+        ] }, finishReason: "STOP" }],
+        usageMetadata: { promptTokenCount: 7, cachedContentTokenCount: 2, candidatesTokenCount: 3, thoughtsTokenCount: 4, totalTokenCount: 14 },
+      }))).toEqual([
+        { type: "thinking", thinking: "plan", signature: "c2ln" },
+        { type: "text", text: "answer", signature: "dGV4dA==" },
+        { type: "finish", reason: "stop" },
+        { type: "usage", input: 5, output: 7, cacheRead: 2, cacheWrite: 0, reasoning: 4, total: 14 },
+      ])
+      expect(() => semantics.finish()).not.toThrow()
+    })
+
+    it("rejects malformed records, unsupported output, invalid usage, and incomplete completion", () => {
     const invalid = [
       "{", JSON.stringify({ error: { message: "nope" } }), record({ promptFeedback: {} }),
       record({ candidates: [{ index: 1 }] }), record({ candidates: [{ finishReason: "STOP" }], error: {} }), record({ candidates: [{ content: { parts: [{ thought: "true", text: "no" }] } }] }),

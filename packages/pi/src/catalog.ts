@@ -115,6 +115,20 @@ const CATALOG = freeze(defineCatalog([{
   },
   replay: { kind: "strip" },
   response: { kind: "gemini-envelope", family: "claude" },
+}, {
+  publicId: "antigravity-gpt-oss-120b",
+  descriptor: {
+    name: "GPT-OSS 120B (Antigravity, text only)",
+    thinkingLevelMap: { minimal: null, low: null, medium: "medium", high: null },
+    contextWindow: 131_072,
+    maxTokens: 32_768,
+  },
+  routes: {
+    off: { wireModel: "gpt-oss-120b-medium", thinking: { kind: "omit" } },
+    medium: { wireModel: "gpt-oss-120b-medium", thinking: { kind: "budget", budget: 8192, includeThoughts: true } },
+  },
+  replay: { kind: "strip" },
+  response: { kind: "gemini-envelope", family: "gpt-oss" },
 }] as const satisfies readonly CatalogEntry[]))
 
 type Catalog = typeof CATALOG

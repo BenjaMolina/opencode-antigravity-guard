@@ -62,12 +62,12 @@ For every behavior increment, record apply evidence for the focused command, exi
 
 **Start:** Unit A catalog with no GPT-OSS row and Gemini 3.5 blocked. **Finish:** GPT-OSS has literal off/medium behavior; 3.5 remains strictly rejected/unregistered. **Dependencies:** Unit A. **Rollback:** remove the GPT-OSS row, tests/fixture, and documentation claim only.
 
-- [ ] Reconfirm in `evidence.md` that `gpt-oss-120b-medium` is literal identity data for both routes, with 131,072/32,768 limits, off omission, medium budget 8192, strict text/thought/usage fixture compatibility, and strip-only replay. <!-- sdd-owner: implementation -->
-- [ ] **RED:** Add catalog/context failures for the exact GPT-OSS descriptor/map, literal wire identity for off and medium, omission versus 8192 budget, rejected unsupported levels, and explicit `maxTokens <=8192` rejection. <!-- sdd-owner: implementation -->
-- [ ] **GREEN:** Add the GPT-OSS catalog row and use the existing discriminated integer-budget serializer/output safety without suffix parsing, family inference, native Gemini `thinkingLevel`, fallback, or alternate routing. <!-- sdd-owner: implementation -->
-- [ ] **TRIANGULATE/REFACTOR:** Add default-output reserve, valid explicit-output, signature stripping, and text-only pre-fetch boundary tests, then refactor only duplicated table-driven assertions under green. <!-- sdd-owner: implementation -->
-- [ ] **RED → GREEN → TRIANGULATE → REFACTOR:** Add redacted GPT-OSS response/stream fixture coverage for thought/text ordering, strict usage/finish behavior, fixed OAuth endpoint, and terminal lifecycle; retain the 3.5 nonterminal HTTP-200 rejection and registration absence as a regression fixture. <!-- sdd-owner: implementation -->
-- [ ] Run focused GPT-OSS and blocked-3.5 catalog/context/response/stream tests, `npm run typecheck:pi`, and `npm run build:pi`; record no live calls and the isolated rollback scope. <!-- sdd-owner: implementation -->
+- [x] Reconfirm in `evidence.md` that `gpt-oss-120b-medium` is literal identity data for both routes, with 131,072/32,768 limits, off omission, medium budget 8192, strict text/thought/usage fixture compatibility, and strip-only replay. <!-- sdd-owner: implementation -->
+- [x] **RED:** Add catalog/context failures for the exact GPT-OSS descriptor/map, literal wire identity for off and medium, omission versus 8192 budget, rejected unsupported levels, and explicit `maxTokens <=8192` rejection. <!-- sdd-owner: implementation -->
+- [x] **GREEN:** Add the GPT-OSS catalog row and use the existing discriminated integer-budget serializer/output safety without suffix parsing, family inference, native Gemini `thinkingLevel`, fallback, or alternate routing. <!-- sdd-owner: implementation -->
+- [x] **TRIANGULATE/REFACTOR:** Add default-output reserve, valid explicit-output, signature stripping, and text-only pre-fetch boundary tests, then refactor only duplicated table-driven assertions under green. <!-- sdd-owner: implementation -->
+- [x] **RED → GREEN → TRIANGULATE → REFACTOR:** Add redacted GPT-OSS response/stream fixture coverage for thought/text ordering, strict usage/finish behavior, fixed OAuth endpoint, and terminal lifecycle; retain the 3.5 nonterminal HTTP-200 rejection and registration absence as a regression fixture. <!-- sdd-owner: implementation -->
+- [x] Run focused GPT-OSS and blocked-3.5 catalog/context/response/stream tests, `npm run typecheck:pi`, and `npm run build:pi`; record no live calls and the isolated rollback scope. <!-- sdd-owner: implementation -->
 
 ## Unit E — Documentation and whole-workspace verification (100–180 lines)
 

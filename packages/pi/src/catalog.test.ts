@@ -67,6 +67,18 @@ describe("Antigravity model catalog", () => {
     }
   })
 
+  it("admits GPT-OSS only at literal off and medium routes", () => {
+    const entry = getCatalogEntry("antigravity-gpt-oss-120b")!
+    expect(toPiModelDescriptor(entry)).toMatchObject({
+      contextWindow: 131_072,
+      maxTokens: 32_768,
+      thinkingLevelMap: { minimal: null, low: null, medium: "medium", high: null },
+    })
+    expect(resolveGenerationRoute(entry, "off")).toEqual({ wireModel: "gpt-oss-120b-medium", thinking: { kind: "omit" } })
+    expect(resolveGenerationRoute(entry, "medium")).toEqual({ wireModel: "gpt-oss-120b-medium", thinking: { kind: "budget", budget: 8192, includeThoughts: true } })
+    for (const level of ["minimal", "low", "high", "xhigh", "max"] as const) expect(() => resolveGenerationRoute(entry, level)).toThrow("Unsupported reasoning level")
+  })
+
   it("contains only the evidence-admitted Gemini routes with literal budgets and omissions", () => {
     expect(listCatalogEntries().map((entry) => entry.publicId)).toEqual([
       "antigravity-gemini-3.8-flash",
@@ -75,6 +87,7 @@ describe("Antigravity model catalog", () => {
       "antigravity-gemini-3.1-pro",
       "antigravity-claude-sonnet-4.6",
       "antigravity-claude-opus-4.6-thinking",
+      "antigravity-gpt-oss-120b",
     ])
     expect(getCatalogEntry("antigravity-gemini-3.5-flash")).toBeUndefined()
     expect(toPiModelDescriptor(getCatalogEntry("antigravity-gemini-3.1-pro")!)).toMatchObject({
