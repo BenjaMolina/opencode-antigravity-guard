@@ -2,6 +2,7 @@ import { calculateCost, createAssistantMessageEventStream } from "@earendil-work
 import type { AssistantMessage, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai"
 import { ANTIGRAVITY_ENDPOINTS } from "@benjamolina/antigravity-guard-core"
 
+import { getCatalogEntry } from "./catalog.ts"
 import { serializeTextContext } from "./context.ts"
 import type { ResponseSemantic } from "./response.ts"
 import { ResponseSemanticError, ResponseSemantics } from "./response.ts"
@@ -13,7 +14,6 @@ const MAX_ERROR_BYTES = 64 * 1024
 const ANTIGRAVITY_USER_AGENT = "antigravity/cli/1.1.23 (aidev_client; os_type=linux; arch=amd64; cl=974125021; auth_method=consumer)"
 const ENDPOINT = `${ANTIGRAVITY_ENDPOINTS.daily}/v1internal:streamGenerateContent?alt=sse`
 const API = "antigravity-guard-sse"
-const MODEL = "antigravity-gemini-3.8-flash"
 const PROTECTED_HEADERS = new Set(["authorization", "host", "content-type", "content-length"])
 const LOCAL_ERRORS = new WeakSet<StreamTransportError>()
 
@@ -181,7 +181,7 @@ export async function executeStreamTransport(input: StreamTransportInput): Promi
 }
 
 function validateInput(input: StreamTransportInput): void {
-  if (input.model.id !== MODEL || input.model.api !== API) throw streamError("response", "The selected Antigravity model or API is unsupported.")
+  if (!getCatalogEntry(input.model.id) || input.model.api !== API) throw streamError("response", "The selected Antigravity model or API is unsupported.")
 }
 
 async function payloadHook(input: StreamTransportInput, payload: unknown, signal: AbortSignal): Promise<unknown> {
