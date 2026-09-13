@@ -243,3 +243,67 @@ Unit D (six unchecked implementation rows) and Unit E (four unchecked implementa
 - Corrective scope: 4 changed test lines; allowed roots respected; no live/network/install/commit/stage/push/PR/subagent action occurred.
 - Parent token `sha256:241586c8407153059158bfdb5ec52e3c4e8671cf647361c116e2f28a6d38f1ba` was not acquired, reset, or settled.
 - Unit D and Unit E's ten implementation rows remain unchecked and out of scope.
+
+
+## Unit D — GPT-OSS admission and blocked-3.5 regression
+
+**Status:** complete
+
+### Completed implementation tasks
+
+All six Unit D implementation checkboxes are marked `- [x]` in `tasks.md`.
+
+- Reconfirmed the stored, redacted four-source evidence record: GPT-OSS uses literal `gpt-oss-120b-medium` for off and medium, limits of 131,072/32,768, off omission, medium budget 8192, strict thought/text/usage compatibility, and strip-only replay.
+- Added the literal `antigravity-gpt-oss-120b` catalog row only. It exposes off and medium, rejects unsupported levels, omits `thinkingConfig` for off, and sends the visible integer budget 8192 for medium.
+- Covered safe default output (9216 for medium), explicit equal-budget rejection, valid 8193 output, signature stripping, strict GPT-OSS response/usage/finish semantics, fixed OAuth SSE routing, provider registration, and preserved Gemini 3.5 absence/nonterminal rejection.
+
+### Files changed
+
+- `packages/pi/src/catalog.ts`
+- `packages/pi/src/catalog.test.ts`
+- `packages/pi/src/context.test.ts`
+- `packages/pi/src/provider.test.ts`
+- `packages/pi/src/response.test.ts`
+- `packages/pi/src/stream.test.ts`
+- `openspec/changes/expand-pi-antigravity-model-catalog/tasks.md`
+- `openspec/changes/expand-pi-antigravity-model-catalog/apply-progress.md`
+
+### TDD Cycle Evidence
+
+| Task | RED | GREEN | TRIANGULATE | REFACTOR |
+|---|---|---|---|---|
+| GPT-OSS catalog and context policy | `npx vitest run packages/pi/src/catalog.test.ts packages/pi/src/context.test.ts` exit 1: GPT entry was absent and context rejected its public ID | Literal catalog row added; focused command first exposed the stale six-ID ordering expectation, then exit 0 with 37 tests after registration-order assertion was extended | Off omission, medium 8192, default 9216, explicit 8192 rejection, 8193 acceptance, unsupported levels, and strip replay are asserted | Reused the existing discriminated integer-budget serializer; no production serializer refactor was needed |
+| Strict response and stream fixture coverage | Existing shared parser/lifecycle was characterization evidence; admission RED above prevented GPT transport | Redacted GPT thought/text/usage `STOP` fixtures passed in `response.test.ts` and `stream.test.ts` without parser change | Fixed endpoint, literal wire ID, ordered thought/text/finish/usage semantics, 3.5 absent catalog lookup, and the existing 3.5 nonterminal HTTP-200 rejection remain covered | No `response.ts` change: the strict fixture matched the designed envelope |
+
+### Verification
+
+| Command | Exit | Result |
+|---|---:|---|
+| `npx vitest run packages/pi/src/catalog.test.ts packages/pi/src/context.test.ts` | 1 | Expected RED: missing GPT-OSS catalog identity and context routing |
+| `npx vitest run packages/pi/src/catalog.test.ts packages/pi/src/context.test.ts` | 1 | Expected intermediate stale ordered-registration assertion after the literal row was added |
+| `npx vitest run packages/pi/src/catalog.test.ts packages/pi/src/context.test.ts` | 0 | GREEN: 37 tests passed |
+| `npx vitest run packages/pi/src/catalog.test.ts packages/pi/src/context.test.ts packages/pi/src/provider.test.ts packages/pi/src/response.test.ts packages/pi/src/stream.test.ts` | 0 | 75 focused tests passed |
+| `npm run typecheck:pi` | 0 | Pi typecheck passed |
+| `npm run build:pi` | 0 | Pi build passed |
+| `npm test` | 0 | 56 files passed; 1,273 tests passed and 25 todo |
+| `git diff --check` | 0 | No whitespace errors |
+
+### Deviations and risks
+
+- No design deviation and no `response.ts` edit: the strict GPT-OSS fixture fit the existing parser.
+- No live, OAuth, network, install, staging, commit, push, PR, publish, or release action occurred.
+
+### Workload and PR boundary
+
+- Delivery path: stacked-to-main.
+- Current boundary: Unit D only — GPT-OSS admission, exact routes, strict fixtures, and Gemini 3.5 regression preservation; no README work.
+- Source/test delta: 101 changed lines (98 additions, 3 deletions), excluding OpenSpec artifacts; within the 400-line budget.
+- Rollback: remove only the GPT-OSS row and Unit D tests, retaining Units A–C and the blocked-3.5 regression.
+
+### Structured status consumed
+
+The parent supplied authoritative apply-ready status for `expand-pi-antigravity-model-catalog`, explicit workspace `C:/Github/Ordico/opencode-antigravity-guard-release`, `feat/pi-catalog-gpt` based on `00f3ccb`, allowed roots `packages/pi` and the change artifacts, strict TDD, and the resolved stacked delivery slice. Parent-owned native token `sha256:483fc021ee45456361d272a046f5cf18c6beb71c05ec190bf558b18134fd24d5` was neither acquired, reset, nor settled.
+
+### Remaining tasks
+
+Unit E's four implementation rows remain unchecked and out of scope. Unit D has no unchecked implementation rows.
