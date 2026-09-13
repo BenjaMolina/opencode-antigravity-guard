@@ -40,6 +40,18 @@ describe("Antigravity Guard provider registration", () => {
     expect(typeof config.streamSimple).toBe("function")
   })
 
+  it("keeps every registered descriptor text-only and zero-cost", () => {
+    const registerProvider = vi.fn()
+
+    registerAntigravityProvider({ registerProvider })
+
+    const [, config] = registerProvider.mock.calls[0] ?? []
+    for (const model of config.models) {
+      expect(model.input).toEqual(["text"])
+      expect(model.cost).toEqual({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 })
+    }
+  })
+
   it("completes offline login, best-effort project persistence, refresh, and streamed text through registered boundaries", async () => {
     const registerProvider = vi.fn()
     const fetch = vi.fn<typeof globalThis.fetch>()
