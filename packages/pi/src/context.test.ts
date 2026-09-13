@@ -161,6 +161,53 @@ describe("Pi text context serialization", () => {
       ]) expect(() => serialize(unsupported as Context)).toThrow(ContextSerializationError)
     })
 
+    it("serializes Claude high as its literal integer budget and rejects an equal explicit output limit", () => {
+      const context = { messages: [{ role: "user", content: "x", timestamp: 0 }] } as Context
+      const serialize = (id: string, options?: SimpleStreamOptions) => serializeTextContext({
+        context,
+        model: { ...model, id },
+        options,
+        project: "project",
+        requestId: "agent-id",
+      })
+      for (const id of ["antigravity-claude-sonnet-4.6", "antigravity-claude-opus-4.6-thinking"]) {
+        expect(serialize(id, { reasoning: "high" })).toMatchObject({
+          model: id === "antigravity-claude-sonnet-4.6" ? "claude-sonnet-4-6" : "claude-opus-4-6-thinking",
+          request: { generationConfig: { maxOutputTokens: 4096, thinkingConfig: { thinkingBudget: 1024, includeThoughts: true } } },
+        })
+        expect(() => serialize(id, { reasoning: "high", maxTokens: 1024 })).toThrow(ContextSerializationError)
+      }
+    })
+
+    it("uses Claude off and explicit reserves without replaying signatures or accepting tools", () => {
+      const signed = { messages: [
+        { role: "user", content: "x", timestamp: 0 },
+        { role: "assistant", content: [
+          { type: "thinking", thinking: "plan", thinkingSignature: "c2ln" },
+          { type: "text", text: "answer", textSignature: "c2ln" },
+        ], provider: "antigravity-guard", model: "antigravity-claude-sonnet-4.6", api: "antigravity-guard-sse", usage: {}, stopReason: "stop", timestamp: 0 },
+      ] } as Context
+      const serialize = (context: Context, id = "antigravity-claude-sonnet-4.6", options?: SimpleStreamOptions) => serializeTextContext({
+        context,
+        model: { ...model, id },
+        options,
+        project: "project",
+        requestId: "agent-id",
+      })
+      const before = structuredClone(signed)
+      expect(serialize(signed).request).toMatchObject({
+        contents: [
+          { role: "user", parts: [{ text: "x" }] },
+          { role: "model", parts: [{ text: "plan" }, { text: "answer" }] },
+        ],
+        generationConfig: { maxOutputTokens: 4096, thinkingConfig: { thinkingBudget: 0, includeThoughts: false } },
+      })
+      expect(signed).toEqual(before)
+      expect(serialize(signed, "antigravity-claude-opus-4.6-thinking", { reasoning: "high", maxTokens: 1025 }).request.generationConfig.maxOutputTokens).toBe(1025)
+      for (const maxTokens of [1000, 1024]) expect(() => serialize(signed, "antigravity-claude-opus-4.6-thinking", { reasoning: "high", maxTokens })).toThrow(ContextSerializationError)
+      expect(() => serialize({ tools: [{}], messages: [{ role: "user", content: "x", timestamp: 0 }] } as Context)).toThrow(ContextSerializationError)
+    })
+
     it("uses defaults, accepts repeated text, and bounds serialized text", () => {
     expect(request({ messages: [{ role: "user", content: "same", timestamp: 0 }, { role: "user", content: "same", timestamp: 0 }] })).toMatchObject({
       model: "gemini-3.8-flash-tiered", request: { generationConfig: { temperature: 1, maxOutputTokens: 4096 } },

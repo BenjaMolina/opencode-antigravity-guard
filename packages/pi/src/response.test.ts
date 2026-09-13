@@ -85,6 +85,29 @@ describe("ResponseSemantics", () => {
     expect(() => semantics.finish()).toThrow(ResponseSemanticError)
   })
 
+  it.each([
+    ["claude-sonnet-4-6", "sonnet"],
+    ["claude-opus-4-6-thinking", "opus"],
+  ])("accepts strict interleaved Claude %s thought/text/signature lifecycle fixtures", (modelVersion, text) => {
+    const semantics = new ResponseSemantics()
+    expect(semantics.push(record({
+      modelVersion,
+      candidates: [{ content: { parts: [
+        { thought: true, text: "plan", thoughtSignature: "c2ln" },
+        { text, thoughtSignature: "dGV4dA==" },
+        { thought: true, text: "check", thoughtSignature: "Y2hlY2s=" },
+      ] }, finishReason: "STOP" }],
+      usageMetadata: { promptTokenCount: 7, cachedContentTokenCount: 2, candidatesTokenCount: 3, thoughtsTokenCount: 4, totalTokenCount: 14 },
+    }))).toEqual([
+      { type: "thinking", thinking: "plan", signature: "c2ln" },
+      { type: "text", text, signature: "dGV4dA==" },
+      { type: "thinking", thinking: "check", signature: "Y2hlY2s=" },
+      { type: "finish", reason: "stop" },
+      { type: "usage", input: 5, output: 7, cacheRead: 2, cacheWrite: 0, reasoning: 4, total: 14 },
+    ])
+    expect(() => semantics.finish()).not.toThrow()
+  })
+
   it("rejects malformed records, unsupported output, invalid usage, and incomplete completion", () => {
     const invalid = [
       "{", JSON.stringify({ error: { message: "nope" } }), record({ promptFeedback: {} }),

@@ -50,12 +50,31 @@ describe("Antigravity model catalog", () => {
     } }])).not.toThrow()
   })
 
+  it("admits Claude Sonnet and Opus only at the evidenced integer-budget routes", () => {
+    for (const [publicId, wireModel] of [
+      ["antigravity-claude-sonnet-4.6", "claude-sonnet-4-6"],
+      ["antigravity-claude-opus-4.6-thinking", "claude-opus-4-6-thinking"],
+    ]) {
+      const entry = getCatalogEntry(publicId)!
+      expect(toPiModelDescriptor(entry)).toMatchObject({
+        contextWindow: 250_000,
+        maxTokens: 64_000,
+        thinkingLevelMap: { minimal: null, low: null, medium: null, high: "high" },
+      })
+      expect(resolveGenerationRoute(entry, "off")).toEqual({ wireModel, thinking: { kind: "budget", budget: 0, includeThoughts: false } })
+      expect(resolveGenerationRoute(entry, "high")).toEqual({ wireModel, thinking: { kind: "budget", budget: 1024, includeThoughts: true } })
+      for (const level of ["minimal", "low", "medium"] as const) expect(() => resolveGenerationRoute(entry, level)).toThrow("Unsupported reasoning level")
+    }
+  })
+
   it("contains only the evidence-admitted Gemini routes with literal budgets and omissions", () => {
     expect(listCatalogEntries().map((entry) => entry.publicId)).toEqual([
       "antigravity-gemini-3.8-flash",
       "antigravity-gemini-3.7-flash",
       "antigravity-gemini-3.6-flash",
       "antigravity-gemini-3.1-pro",
+      "antigravity-claude-sonnet-4.6",
+      "antigravity-claude-opus-4.6-thinking",
     ])
     expect(getCatalogEntry("antigravity-gemini-3.5-flash")).toBeUndefined()
     expect(toPiModelDescriptor(getCatalogEntry("antigravity-gemini-3.1-pro")!)).toMatchObject({
