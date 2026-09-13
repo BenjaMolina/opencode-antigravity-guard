@@ -49,4 +49,32 @@ describe("Antigravity model catalog", () => {
       off: { wireModel: "same" }, low: { wireModel: "same" },
     } }])).not.toThrow()
   })
+
+  it("contains only the evidence-admitted Gemini routes with literal budgets and omissions", () => {
+    expect(listCatalogEntries().map((entry) => entry.publicId)).toEqual([
+      "antigravity-gemini-3.8-flash",
+      "antigravity-gemini-3.7-flash",
+      "antigravity-gemini-3.6-flash",
+      "antigravity-gemini-3.1-pro",
+    ])
+    expect(getCatalogEntry("antigravity-gemini-3.5-flash")).toBeUndefined()
+    expect(toPiModelDescriptor(getCatalogEntry("antigravity-gemini-3.1-pro")!)).toMatchObject({
+      thinkingLevelMap: { minimal: null, low: "low", medium: null, high: "high" },
+      contextWindow: 1_048_576,
+      maxTokens: 65_535,
+    })
+
+    const route = (model: string, level: "off" | "low" | "medium" | "high") =>
+      resolveGenerationRoute(getCatalogEntry(model)!, level)
+    expect(route("antigravity-gemini-3.7-flash", "off")).toEqual({ wireModel: "gemini-3.7-flash-low", thinking: { kind: "budget", budget: 0, includeThoughts: false } })
+    expect(route("antigravity-gemini-3.7-flash", "medium")).toEqual({ wireModel: "gemini-3.7-flash-medium", thinking: { kind: "budget", budget: 4000, includeThoughts: true } })
+    expect(route("antigravity-gemini-3.7-flash", "high")).toEqual({ wireModel: "gemini-3.7-flash-high", thinking: { kind: "budget", budget: -1, includeThoughts: true } })
+    expect(route("antigravity-gemini-3.6-flash", "off")).toEqual({ wireModel: "gemini-3.6-flash-low", thinking: { kind: "omit" } })
+    expect(route("antigravity-gemini-3.6-flash", "low")).toEqual({ wireModel: "gemini-3.6-flash-low", thinking: { kind: "budget", budget: 1000, includeThoughts: true } })
+    expect(route("antigravity-gemini-3.6-flash", "medium")).toEqual({ wireModel: "gemini-3.6-flash-medium", thinking: { kind: "budget", budget: 4000, includeThoughts: true } })
+    expect(route("antigravity-gemini-3.1-pro", "off")).toEqual({ wireModel: "gemini-3.1-pro-low", thinking: { kind: "omit" } })
+    expect(route("antigravity-gemini-3.1-pro", "low")).toEqual({ wireModel: "gemini-3.1-pro-low", thinking: { kind: "budget", budget: 1001, includeThoughts: true } })
+    expect(route("antigravity-gemini-3.1-pro", "high")).toEqual({ wireModel: "gemini-pro-agent", thinking: { kind: "budget", budget: 10001, includeThoughts: true } })
+    expect(() => route("antigravity-gemini-3.1-pro", "medium")).toThrow("Unsupported reasoning level")
+  })
 })

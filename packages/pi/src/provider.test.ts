@@ -20,18 +20,14 @@ describe("Antigravity Guard provider registration", () => {
       name: "Antigravity Guard",
       baseUrl: "https://daily-cloudcode-pa.sandbox.googleapis.com",
       api: "antigravity-guard-sse",
-      models: [{
-        id: "antigravity-gemini-3.8-flash",
-        name: "Gemini 3.8 Flash (Antigravity, text only)",
-        reasoning: true,
-        thinkingLevelMap: { minimal: null, low: "low", medium: "medium", high: "high" },
-        input: ["text"],
-        contextWindow: 1_048_576,
-        maxTokens: 65_536,
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-      }],
     })
-    expect(config.models).toHaveLength(1)
+    expect(config.models).toHaveLength(4)
+    expect(config.models.map((model: { id: string }) => model.id)).toEqual([
+      "antigravity-gemini-3.8-flash",
+      "antigravity-gemini-3.7-flash",
+      "antigravity-gemini-3.6-flash",
+      "antigravity-gemini-3.1-pro",
+    ])
     expect(config.models[0]?.id).toBe("antigravity-gemini-3.8-flash")
     expect(config.models[0]?.thinkingLevelMap).toEqual({ minimal: null, low: "low", medium: "medium", high: "high" })
     expect(config.oauth).toMatchObject({ name: "Antigravity Guard", isSubscription: true })

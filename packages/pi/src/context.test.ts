@@ -111,7 +111,57 @@ describe("Pi text context serialization", () => {
         ])
       })
 
-      it("uses defaults, accepts repeated text, and bounds serialized text", () => {
+      it("serializes literal evidence-admitted Gemini routes and omits off config only where proven", () => {
+      const context = { messages: [{ role: "user", content: "x", timestamp: 0 }] } as Context
+      const serialize = (id: string, options?: SimpleStreamOptions) => serializeTextContext({
+        context,
+        model: { ...model, id },
+        options,
+        project: "project",
+        requestId: "agent-id",
+      })
+      expect(serialize("antigravity-gemini-3.7-flash")).toMatchObject({
+        model: "gemini-3.7-flash-low",
+        request: { generationConfig: { thinkingConfig: { thinkingBudget: 0, includeThoughts: false } } },
+      })
+      expect(serialize("antigravity-gemini-3.7-flash", { reasoning: "medium" })).toMatchObject({
+        model: "gemini-3.7-flash-medium",
+        request: { generationConfig: { thinkingConfig: { thinkingBudget: 4000, includeThoughts: true } } },
+      })
+      expect(serialize("antigravity-gemini-3.6-flash").request.generationConfig).not.toHaveProperty("thinkingConfig")
+      expect(serialize("antigravity-gemini-3.6-flash", { reasoning: "high" })).toMatchObject({
+        model: "gemini-3.6-flash-high",
+        request: { generationConfig: { thinkingConfig: { thinkingBudget: -1, includeThoughts: true } } },
+      })
+      expect(serialize("antigravity-gemini-3.1-pro")).toMatchObject({ model: "gemini-3.1-pro-low" })
+      expect(serialize("antigravity-gemini-3.1-pro").request.generationConfig).not.toHaveProperty("thinkingConfig")
+      expect(serialize("antigravity-gemini-3.1-pro", { reasoning: "high" })).toMatchObject({
+        model: "gemini-pro-agent",
+        request: { generationConfig: { maxOutputTokens: 11025, thinkingConfig: { thinkingBudget: 10001, includeThoughts: true } } },
+      })
+      expect(() => serialize("antigravity-gemini-3.1-pro", { reasoning: "medium" })).toThrow(ContextSerializationError)
+      expect(() => serialize("antigravity-gemini-3.1-pro", { reasoning: "high", maxTokens: 10001 })).toThrow(ContextSerializationError)
+    })
+
+    it.each([
+      "antigravity-gemini-3.7-flash",
+      "antigravity-gemini-3.6-flash",
+      "antigravity-gemini-3.1-pro",
+    ])("strips historical signatures and rejects tools before serializing %s", (id) => {
+      const signed = { messages: [
+        { role: "user", content: "x", timestamp: 0 },
+        { role: "assistant", content: [{ type: "thinking", thinking: "plan", thinkingSignature: "c2ln" }, { type: "text", text: "answer", textSignature: "c2ln" }], provider: "antigravity-guard", model: id, api: "antigravity-guard-sse", usage: {}, stopReason: "stop", timestamp: 0 },
+      ] } as Context
+      const serialize = (context: Context) => serializeTextContext({ context, model: { ...model, id }, project: "project", requestId: "agent-id" })
+      expect(serialize(signed).request.contents[1]?.parts).toEqual([{ text: "plan" }, { text: "answer" }])
+      for (const unsupported of [
+        { tools: [{}], messages: [{ role: "user", content: "x", timestamp: 0 }] },
+        { messages: [{ role: "toolResult", content: [], timestamp: 0 }] },
+        { messages: [{ role: "user", content: [{ type: "image" }], timestamp: 0 }] },
+      ]) expect(() => serialize(unsupported as Context)).toThrow(ContextSerializationError)
+    })
+
+    it("uses defaults, accepts repeated text, and bounds serialized text", () => {
     expect(request({ messages: [{ role: "user", content: "same", timestamp: 0 }, { role: "user", content: "same", timestamp: 0 }] })).toMatchObject({
       model: "gemini-3.8-flash-tiered", request: { generationConfig: { temperature: 1, maxOutputTokens: 4096 } },
     })

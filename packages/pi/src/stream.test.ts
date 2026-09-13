@@ -61,6 +61,21 @@ describe("fixed Antigravity SSE transport", () => {
     expect(onResponse).toHaveBeenCalledWith(expect.objectContaining({ status: 200 }), model())
   })
 
+  it("serializes an omission-policy Gemini request through the fixed Antigravity transport", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(new Response(
+      `data: ${JSON.stringify({ response: { candidates: [{ content: { parts: [{ text: "Hi" }] } }] } })}\n\ndata: ${JSON.stringify({ response: { candidates: [{ finishReason: "STOP" }] } })}\n\n`,
+      { headers: { "Content-Type": "text/event-stream" } },
+    ))
+    await executeStreamTransport({
+      accessToken: "access-token", projectId: "stored-project", context: context(), fetch,
+      model: { ...model(), id: "antigravity-gemini-3.6-flash" }, now: () => 1_000,
+      onSemantic: vi.fn(), platform: "win32", requestId: "request-id",
+    })
+    const payload = JSON.parse(String(fetch.mock.calls[0]?.[1]?.body))
+    expect(payload).toMatchObject({ model: "gemini-3.6-flash-low" })
+    expect(payload.request.generationConfig).not.toHaveProperty("thinkingConfig")
+  })
+
   it("sends only the Antigravity headers required for SSE and excludes Google client metadata", async () => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(new Response([
       `data: ${JSON.stringify({ response: { candidates: [{ content: { parts: [{ text: "Hi" }] } }] } })}\n\n`,
