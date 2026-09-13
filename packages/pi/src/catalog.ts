@@ -158,6 +158,11 @@ function disabled(reason: Extract<ToolCapability, { readonly state: "disabled" }
   return { state: "disabled", contractRevision: 1, reason }
 }
 
+/** Constructs deterministic capability data for hermetic serializer tests only. */
+export function createEnabledToolCapability(evidence: ToolEvidenceRef): Extract<ToolCapability, { readonly state: "enabled" }> {
+  return freeze({ state: "enabled", contractRevision: 1, fixtureEvidence: evidence, directEvidence: evidence })
+}
+
 function freeze<T>(value: T): T {
   if (typeof value === "object" && value !== null) {
     Object.freeze(value)

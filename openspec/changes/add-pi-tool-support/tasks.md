@@ -64,11 +64,11 @@ The user selected `feature-branch-chain` after reviewing the 2,100–3,100-line 
 **Budget / commit candidate:** 300–400 lines; `feat(pi): serialize admitted tool declarations`.  
 **Finish / rollback boundary:** The dispatcher calls `serializeTextContext()` unchanged for non-tool context and emits only validated declaration fields for enabled routes; reverting restores the direct text serializer call.
 
-- [ ] **RED:** Add context golden tests for unchanged no-tool envelopes and field order, exact `tools`/`toolConfig` request order, omitted choice and `auto` mapping to `AUTO`, `none` mapping to `NONE`, and declaration order retention. <!-- sdd-owner: implementation -->
-- [ ] **GREEN:** Expose `serializeContext()` in `context.ts`, preserve `serializeTextContext()` as the exact fast path, and use prepared declarations to emit only `tools` and `toolConfig` for enabled tool-bearing requests. <!-- sdd-owner: implementation -->
-- [ ] **TRIANGULATE:** Add preflight tests for forced/named/unknown choices, `auto` without declarations, `constrainedSampling`, history-only contexts, and rejected contexts proving `fetch` is never called. <!-- sdd-owner: implementation -->
-- [ ] **REFACTOR:** Keep tool classification and tool-choice preparation request-local and narrow the dispatcher interface so no tool-only fields or policy leaks into no-tool serialization. <!-- sdd-owner: implementation -->
-- [ ] Verify this unit with focused `context.test.ts`/`tool-context.test.ts`, `npm run typecheck:pi`, and `npm test`; rollback by reverting dispatcher/preparation edits together while retaining A/B foundations. <!-- sdd-owner: implementation -->
+- [x] **RED:** Add context golden tests for unchanged no-tool envelopes and field order, exact `tools`/`toolConfig` request order, omitted choice and `auto` mapping to `AUTO`, `none` mapping to `NONE`, and declaration order retention. <!-- sdd-owner: implementation -->
+- [x] **GREEN:** Expose `serializeContext()` in `context.ts`, preserve `serializeTextContext()` as the exact fast path, and use prepared declarations to emit only `tools` and `toolConfig` for enabled tool-bearing requests. <!-- sdd-owner: implementation -->
+- [x] **TRIANGULATE:** Add preflight tests for forced/named/unknown choices, `auto` without declarations, `constrainedSampling`, history-only contexts, and rejected contexts proving `fetch` is never called. <!-- sdd-owner: implementation -->
+- [x] **REFACTOR:** Keep tool classification and tool-choice preparation request-local and narrow the dispatcher interface so no tool-only fields or policy leaks into no-tool serialization. <!-- sdd-owner: implementation -->
+- [x] Verify this unit with focused `context.test.ts`/`tool-context.test.ts`, `npm run typecheck:pi`, and `npm test`; rollback by reverting dispatcher/preparation edits together while retaining A/B foundations. History-only dispatch correction verified. <!-- sdd-owner: implementation -->
 
 ## D — Assistant-call and tool-result replay with deterministic parallel grouping
 

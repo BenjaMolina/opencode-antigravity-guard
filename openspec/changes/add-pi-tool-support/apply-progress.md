@@ -170,3 +170,138 @@ The correction is **29 additions, 0 deletions, 29 changed lines**: implementatio
 ### Deviation and risk
 
 No design deviation occurred: the correction implements the design-required 1 MiB aggregate normalized schema bound that the previous Unit B implementation omitted. The only full-suite failures are the user-confirmed inherited release-manifest failures; release files were not changed.
+
+---
+
+## Unit C blocked: no authorized enabled-route test seam
+
+### Structured status consumed
+
+- Change: `add-pi-tool-support`; explicit parent selection; apply `ready`; 10/40 complete and 30 remaining.
+- Action context: `repo-local`; sole allowed edit root: `C:/Github/Ordico/opencode-antigravity-guard-pi-tools`; no warnings.
+- Delivery: `auto-chain` / `feature-branch-chain`; Unit C on `feat/pi-tool-support-c-request`, based on `b6ef74e`.
+- Strict TDD: active; test runner: `npm test`. No production, test, fixture, catalog, task-checkbox, commit, branch, push, publication, or live-call change was made.
+
+### Blocker
+
+Unit C requires tests that serialize declarations through an **enabled** exact route. The inherited catalog capability foundation intentionally leaves every route disabled, and the Unit C allowlist excludes `packages/pi/src/catalog.ts` and `catalog.test.ts`. Enabling even a narrow test-only route capability would require the catalog test seam that the parent explicitly instructed this unit to stop and report. Implementing a dispatcher without this enabled-route proof would violate Unit C's RED/GREEN requirements and the fail-closed admission design.
+
+### TDD Cycle Evidence
+
+| Task | Test File | Layer | Safety Net | RED | GREEN | TRIANGULATE | REFACTOR |
+|---|---|---|---|---|---|---|---|
+| C | `packages/pi/src/context.test.ts`, planned `packages/pi/src/tool-context.test.ts` | Unit | 32/32 passed | Not started: enabled-route seam is unauthorized | Not started | Not started | Not started |
+
+### Verification evidence
+
+| Command | Result | Evidence |
+|---|---|---|
+| `npm test -- --run packages/pi/src/context.test.ts` | Passed | 1 file, 32 tests passed before edits. |
+
+### Persisted task status and workload
+
+No Unit C task was completed or checked. The exact Unit C implementation-owned rows remain unchecked in `tasks.md`: RED, GREEN, TRIANGULATE, REFACTOR, and Verify. Authored Unit C code/test/fixture lines: **0 additions, 0 deletions, 0 total**. OpenSpec progress bookkeeping only is outside the code-review budget.
+
+### Required resolution
+
+Authorize a narrow catalog test seam (for example, an injected/test-only exact route capability) within the Unit C allowed surfaces, or provide an already-enabled exact test route. No capability should be enabled for production behavior.
+
+---
+
+## Unit C completion
+
+### Structured status consumed
+
+- Change: `add-pi-tool-support`; explicit parent selection; apply `ready`; 10/40 complete before this unit.
+- Action context: `repo-local`; sole allowed edit root: `C:/Github/Ordico/opencode-antigravity-guard-pi-tools`; no unsafe-root warning.
+- Delivery: `auto-chain` / `feature-branch-chain`; child slice C on `feat/pi-tool-support-c-request`; strict TDD active with `npm test`.
+- Parent-authorized correction added only a deterministic catalog capability construction/injection seam for hermetic tests. Production catalog literals remain disabled, and no route, environment flag, mutable global, live call, commit, push, or publication was used.
+
+### Completed tasks and persisted checkbox updates
+
+The five Unit C implementation-owned rows (RED, GREEN, TRIANGULATE, REFACTOR, Verify) are visibly marked `[x]` in `tasks.md`. No Unit D–H checkbox changed.
+
+### Files changed
+
+- `packages/pi/src/catalog.ts`
+- `packages/pi/src/catalog.test.ts`
+- `packages/pi/src/context.ts`
+- `packages/pi/src/context.test.ts`
+- `packages/pi/src/tool-context.ts`
+- `packages/pi/src/tool-context.test.ts`
+- `packages/pi/fixtures/tools/declarations.json`
+- `openspec/changes/add-pi-tool-support/tasks.md`
+- `openspec/changes/add-pi-tool-support/apply-progress.md`
+
+### TDD Cycle Evidence
+
+| Task | Test file | RED | GREEN | TRIANGULATE | REFACTOR |
+|---|---|---|---|---|---|
+| C | `context.test.ts`, `tool-context.test.ts`, `catalog.test.ts` | Focused run failed as expected: missing `tool-context.ts` and `createEnabledToolCapability()` | 38/38 `context` and `tool-context` tests passed after the dispatcher and request-local preparation landed | 48/48 focused catalog/context/tool-context tests passed, covering immutable enabled test data, declaration order, AUTO/NONE, forced/named rejection, and auto-without-declarations | Pi typecheck passed and the focused suite remained 48/48; production catalog routes still resolve disabled |
+
+### Verification evidence
+
+| Command | Result | Evidence |
+|---|---|---|
+| `npm test -- --run packages/pi/src/context.test.ts packages/pi/src/tool-context.test.ts` (RED) | Failed as expected | 32 existing tests passed; the new context test failed because `createEnabledToolCapability` was absent and the new module could not be loaded. |
+| Same focused command (GREEN) | Passed | 38/38 tests passed. |
+| `npm test -- --run packages/pi/src/catalog.test.ts packages/pi/src/context.test.ts packages/pi/src/tool-context.test.ts` | Passed | 3 files, 48/48 tests passed. |
+| `npm run typecheck:pi` | Passed | `tsc -p tsconfig.json --noEmit` completed for the Pi workspace. |
+| `npm test` | Accepted with known inherited baseline only | 57/58 files passed, 1,296 tests passed, 25 todo, and exactly two release-manifest failures: `scripts/release-manifest-check.test.ts` lines 76 and 103, both `expected undefined to be defined`. |
+
+### Implementation notes and deviation
+
+- `serializeContext()` preserves `serializeTextContext()` as the no-tool fast path, reconstructing the request only for prepared declarations and placing `tools` then `toolConfig` before `generationConfig`.
+- `prepareToolContext()` is request-local, retains normalized declaration order, maps omitted/`auto` to `AUTO` and `none` to `NONE`, and rejects forced/named choices and `auto` without declarations.
+- `createEnabledToolCapability()` constructs frozen matching evidence only for hermetic injection; all literal catalog routes remain disabled. This is the authorized correction, not a production capability activation.
+- The existing Unit A gate continues to prove disabled/fixture-qualified contexts fail before transport; C did not alter transport or make a route enabled.
+
+### Remaining tasks and workload boundary
+
+Unit C has no unchecked implementation-owned rows. Units D–H remain intentionally unchecked and out of scope. This feature-branch-chain child C change is **123 additions, 4 deletions, 127 total changed code/test/fixture lines** (excluding OpenSpec bookkeeping), below the 400-line budget. No commit was created.
+
+### Risk
+
+The full-suite release-manifest failures match the supplied inherited baseline and are out of scope. The request dispatcher is not yet wired into transport and replay/lifecycle support remains Units D–G; production tool-bearing requests therefore remain fail-closed.
+
+---
+
+## Unit C correction: history-only tool dispatch
+
+### Structured status consumed
+
+- Change: `add-pi-tool-support`; explicit parent selection; apply `ready`; 15/40 complete.
+- Action context: `repo-local`; sole allowed edit root: `C:/Github/Ordico/opencode-antigravity-guard-pi-tools`; no warnings.
+- Delivery: confirmed `feature-branch-chain`, Unit C correction. The bounded correction is authorized at 100 lines maximum and keeps the cumulative Unit C work under 400 lines.
+- Strict TDD is active with `npm test`. No production capability was enabled, no Unit D replay was implemented, and no commit, branch, push, publication, or live call occurred.
+
+### Correction
+
+`serializeContext()` now classifies declarations, assistant `toolCall` blocks, and `toolResult` messages before choosing the no-tool fast path. For every tool-bearing context it resolves and validates the injected exact selection before dispatch. An injected enabled selection with history only now rejects locally with `PI_TOOL_HISTORY_REPLAY_PENDING: replay awaits Unit D.` instead of falling through to the production-disabled selection. Disabled production routes remain fail-closed with their existing capability error.
+
+### TDD Cycle Evidence
+
+| Task | Test file | Layer | Safety net | RED | GREEN | TRIANGULATE | REFACTOR |
+|---|---|---|---|---|---|---|---|
+| C history-only dispatch correction | `packages/pi/src/context.test.ts`, `packages/pi/src/tool-context.ts` | Unit | 48/48 focused catalog/context/tool-context tests passed | New enabled assistant-call history test failed with `PI_TOOL_CAPABILITY_NOT_ENABLED` from the production-disabled selection | The dispatcher classified history before the declaration fast path and the new test passed | Added an enabled `toolResult`-only context test; both history forms receive the stable Unit D preflight | Extracted safe request-local tool-context classification; focused tests and Pi typecheck remain green |
+
+### Verification evidence
+
+| Command | Result | Evidence |
+|---|---|---|
+| `npm test -- --run packages/pi/src/catalog.test.ts packages/pi/src/context.test.ts packages/pi/src/tool-context.test.ts` (safety net) | Passed | 3 files, 48 tests. |
+| `npm test -- --run packages/pi/src/context.test.ts` (RED) | Failed as expected | 33 passed, 1 failed: injected enabled assistant history instead used the production-disabled capability error. |
+| `npm test -- --run packages/pi/src/context.test.ts packages/pi/src/tool-context.test.ts` (GREEN) | Passed | 39 tests. |
+| `npm test -- --run packages/pi/src/catalog.test.ts packages/pi/src/context.test.ts packages/pi/src/tool-context.test.ts` (TRIANGULATE/REFACTOR) | Passed | 3 files, 50 tests. |
+| `npm run typecheck:pi` | Passed | Pi workspace TypeScript check completed. |
+| `npm test` | Accepted with known inherited baseline only | 57/58 files passed, 1,298 tests passed, 25 todo, and exactly two failures in `scripts/release-manifest-check.test.ts` at lines 76 and 103 (`expected undefined to be defined`). |
+
+### Persisted task status and workload
+
+The existing five Unit C implementation-owned rows remain visibly `[x]` in `tasks.md`; its Verify row now records this history-only dispatch correction. Unit D-H rows remain unchanged and unchecked.
+
+The corrective code/test delta is under the parent-authorized 100-line ceiling, and Unit C remains under its 400-line review budget. The correction changes only `packages/pi/src/context.ts`, `packages/pi/src/context.test.ts`, and `packages/pi/src/tool-context.ts`, plus OpenSpec evidence.
+
+### Deviation and risk
+
+No design deviation occurred. This correction deliberately stops before history replay: it does not serialize, discard, repair, or recover tool-call/result history. Production routes remain disabled; the only full-suite failures are the supplied inherited release-manifest baseline failures.

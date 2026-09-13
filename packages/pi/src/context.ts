@@ -1,6 +1,7 @@
 import type { Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai"
 
-import { getCatalogEntry, resolveGenerationSelection, type ToolCapability } from "./catalog.ts"
+import { getCatalogEntry, resolveGenerationSelection, type GenerationSelection, type ToolCapability } from "./catalog.ts"
+import { hasToolContext, prepareToolContext } from "./tool-context.ts"
 
 const MAX_TEXT_BYTES = 8 * 1024 * 1024
 const PROVIDER = "antigravity-guard"
@@ -26,6 +27,8 @@ export interface GenerationRequest {
   request: {
     contents: Content[]
     systemInstruction?: { parts: Part[] }
+    tools?: { functionDeclarations: unknown }[]
+    toolConfig?: { functionCallingConfig: { mode: "AUTO" | "NONE" } }
     generationConfig: {
       temperature: number
       maxOutputTokens: number
@@ -48,6 +51,31 @@ export interface SerializeTextContextInput {
 }
 
 export class ContextSerializationError extends Error {}
+
+export function serializeContext(input: SerializeTextContextInput, injectedSelection?: GenerationSelection): GenerationRequest {
+  const context = input.context as unknown
+  if (!hasToolContext(context)) return serializeTextContext(input)
+  const options = input.options as unknown
+  const entry = isRecord(input.model) ? getCatalogEntry(field(input.model, "id", true)) : undefined
+  if (!entry || !isRecord(context)) return serializeTextContext(input)
+  const selected = resolveGenerationSelection(entry, isRecord(options) ? option(options, "reasoning") : undefined)
+  const selection = injectedSelection ?? selected
+  if (selection.level !== selected.level || selection.route.wireModel !== selected.route.wireModel) fail("Invalid tool capability selection.")
+  if (selection.tools.state !== "enabled") fail(capabilityError(entry.publicId, selection.level, selection.tools))
+  const prepared = prepareToolContext(field(context, "tools") ?? [], isRecord(options) ? field(options, "toolChoice") : undefined)
+  if (!prepared) fail("PI_TOOL_HISTORY_REPLAY_PENDING: replay awaits Unit D.")
+  const { tools: _tools, ...textContext } = context
+  const { toolChoice: _choice, ...textOptions } = isRecord(options) ? options : {}
+  const text = serializeTextContext({ ...input, context: textContext as unknown as Context, options: textOptions as SimpleStreamOptions })
+  const { contents, systemInstruction, generationConfig } = text.request
+  return { ...text, request: {
+    contents,
+    ...(systemInstruction ? { systemInstruction } : {}),
+    tools: [{ functionDeclarations: prepared.declarations }],
+    toolConfig: { functionCallingConfig: { mode: prepared.mode } },
+    generationConfig,
+  } }
+}
 
 export function serializeTextContext(input: SerializeTextContextInput): GenerationRequest {
   try {

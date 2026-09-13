@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 
 import {
+  createEnabledToolCapability,
   defineCatalog,
   getCatalogEntry,
   listCatalogEntries,
@@ -145,6 +146,15 @@ describe("Antigravity model catalog", () => {
     expect(low.tools).not.toBe(high.tools)
     const stale = { state: "fixture-qualified", contractRevision: 0, fixtureEvidence: { record: "fixture", revision: "1", publicModelId: gemini.publicId, reasoning: "low", wireModel: low.route.wireModel } } as unknown as Parameters<typeof resolveToolCapability>[0]
     expect(resolveToolCapability(stale, gemini.publicId, "low", low.route.wireModel)).toEqual({ state: "disabled", contractRevision: 1, reason: "stale-or-conflicting-evidence" })
+  })
+
+  it("constructs enabled capability only as immutable test data without changing catalog literals", () => {
+    const entry = getCatalogEntry("antigravity-gemini-3.8-flash")!
+    const selection = resolveGenerationSelection(entry, "off")
+    const enabled = createEnabledToolCapability({ record: "fixture", revision: "1", publicModelId: entry.publicId, reasoning: "off", wireModel: selection.route.wireModel })
+    expect(Object.isFrozen(enabled)).toBe(true)
+    expect(enabled.state).toBe("enabled")
+    expect(resolveGenerationSelection(entry, "off").tools.state).toBe("disabled")
   })
 
   it("contains only the evidence-admitted Gemini routes with literal budgets and omissions", () => {
