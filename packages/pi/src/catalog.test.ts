@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs"
+
 import { describe, expect, it } from "vitest"
 
 import {
@@ -50,6 +52,32 @@ describe("Antigravity model catalog", () => {
     } }])).not.toThrow()
   })
 
+  it("rejects routes hidden by a descriptor and finite budgets without answer reserve", () => {
+    const definition = {
+      publicId: "one",
+      descriptor: {
+        name: "One",
+        thinkingLevelMap: { minimal: null, low: "low", medium: null, high: null },
+        contextWindow: 100,
+        maxTokens: 1024,
+      },
+      replay: { kind: "strip" as const },
+      response: { kind: "gemini-envelope" as const, family: "gemini" as const },
+    }
+    expect(() => defineCatalog([{ ...definition, routes: {
+      high: { wireModel: "one", thinking: { kind: "budget" as const, budget: 1, includeThoughts: true } },
+    } }])).toThrow("Route is hidden by descriptor")
+    expect(() => defineCatalog([{ ...definition, routes: {
+      xhigh: { wireModel: "one", thinking: { kind: "budget" as const, budget: 1, includeThoughts: true } },
+    } }])).toThrow("Route is outside descriptor map")
+    expect(() => defineCatalog([{ ...definition, routes: {
+      max: { wireModel: "one", thinking: { kind: "budget" as const, budget: 1, includeThoughts: true } },
+    } }])).toThrow("Route is outside descriptor map")
+    expect(() => defineCatalog([{ ...definition, routes: {
+      low: { wireModel: "one", thinking: { kind: "budget" as const, budget: 1, includeThoughts: true } },
+    } }])).toThrow("does not leave answer reserve")
+  })
+
   it("admits Claude Sonnet and Opus only at the evidenced integer-budget routes", () => {
     for (const [publicId, wireModel] of [
       ["antigravity-claude-sonnet-4.6", "claude-sonnet-4-6"],
@@ -77,6 +105,23 @@ describe("Antigravity model catalog", () => {
     expect(resolveGenerationRoute(entry, "off")).toEqual({ wireModel: "gpt-oss-120b-medium", thinking: { kind: "omit" } })
     expect(resolveGenerationRoute(entry, "medium")).toEqual({ wireModel: "gpt-oss-120b-medium", thinking: { kind: "budget", budget: 8192, includeThoughts: true } })
     for (const level of ["minimal", "low", "high", "xhigh", "max"] as const) expect(() => resolveGenerationRoute(entry, level)).toThrow("Unsupported reasoning level")
+  })
+
+  it("documents the exact static catalog without advertising blocked models or levels", () => {
+    const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8")
+    const catalog = listCatalogEntries().map((entry) => ({
+      id: entry.publicId,
+      levels: Object.keys(entry.routes).join(", "),
+      contextWindow: entry.descriptor.contextWindow.toLocaleString("en-US"),
+      maxTokens: entry.descriptor.maxTokens.toLocaleString("en-US"),
+    }))
+
+    expect(readme).toContain("| Public ID | Exposed Pi levels | Context / output |");
+    for (const entry of catalog) {
+      expect(readme).toContain(`| \`${entry.id}\` | ${entry.levels} | ${entry.contextWindow} / ${entry.maxTokens} |`)
+    }
+    expect(readme).toContain("`antigravity-gemini-3.5-flash` is not registered or advertised as supported")
+    expect(readme).toContain("Unsupported levels are not advertised")
   })
 
   it("contains only the evidence-admitted Gemini routes with literal budgets and omissions", () => {
