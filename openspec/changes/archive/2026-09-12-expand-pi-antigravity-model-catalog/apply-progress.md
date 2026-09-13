@@ -307,3 +307,148 @@ The parent supplied authoritative apply-ready status for `expand-pi-antigravity-
 ### Remaining tasks
 
 Unit E's four implementation rows remain unchecked and out of scope. Unit D has no unchecked implementation rows.
+
+
+## Unit E — Documentation and whole-workspace verification
+
+**Status:** complete
+
+### Completed implementation tasks
+
+All four Unit E implementation checkboxes are marked `- [x]` in `tasks.md`.
+
+- Added catalog/documentation contract coverage for the final ordered seven-model registration, static README table, unsupported-level boundary, and blocked Gemini 3.5 exclusion.
+- Documented only the evidence-admitted public IDs, each exposed level and `off` semantics, descriptor limits, output-budget rule, released 3.8 mapping, static text-only boundary, and unchanged OAuth/quota path.
+- Added provider projection coverage that every registered descriptor remains text-only and zero-cost.
+
+### Files changed
+
+- `packages/pi/src/catalog.test.ts`
+- `packages/pi/src/provider.test.ts`
+- `packages/pi/README.md`
+- `openspec/changes/expand-pi-antigravity-model-catalog/tasks.md`
+- `openspec/changes/expand-pi-antigravity-model-catalog/apply-progress.md`
+
+### TDD Cycle Evidence
+
+| Task | Test file | Layer | Safety net | RED | GREEN | TRIANGULATE | REFACTOR |
+|---|---|---|---|---|---|---|---|
+| Final catalog/documentation contract | `packages/pi/src/catalog.test.ts` | Unit | `npx vitest run packages/pi/src/catalog.test.ts packages/pi/src/provider.test.ts` exit 0: 11 tests | `npx vitest run packages/pi/src/catalog.test.ts` exit 1: README lacked the static catalog table | README table and bounded claims added; catalog test exit 0: 7 tests | Table derives each row's ID, routes, and limits from `listCatalogEntries()`; it also asserts unsupported levels and unregistered 3.5 are not advertised | No production refactor required; final focused catalog/provider run exit 0: 13 tests |
+| Provider descriptor capability projection | `packages/pi/src/provider.test.ts` | Unit | Same 11-test focused baseline | Existing registration order and 3.8 descriptor assertions were baseline characterization, not fabricated RED | New all-descriptor text-only/zero-cost projection assertion passed in the 13-test focused run | Catalog/documentation test covers a distinct blocked-ID and unsupported-level path | No refactor required; assertions are compact and behavior-specific |
+
+### Verification
+
+| Command | Exit | Result |
+|---|---:|---|
+| `npx vitest run packages/pi/src/catalog.test.ts packages/pi/src/provider.test.ts` | 0 | 11 tests passed safety net before Unit E edits |
+| `npx vitest run packages/pi/src/catalog.test.ts` | 1 | Expected RED: static README catalog table was absent |
+| `npx vitest run packages/pi/src/catalog.test.ts` | 0 | GREEN: 7 catalog tests passed |
+| `npx vitest run packages/pi/src/catalog.test.ts packages/pi/src/provider.test.ts` | 0 | TRIANGULATE/REFACTOR: 13 tests passed |
+| `npx vitest run packages/pi/src` | 0 | Focused Pi suite: 11 files, 144 tests passed |
+| `npm run typecheck:pi` | 0 | Pi typecheck passed |
+| `npm run build:pi` | 0 | Pi build passed |
+| `npm test` | 0 | 56 files, 1,275 tests passed, 25 todo |
+| `npm run typecheck` | 0 | Root typecheck passed |
+| `npm run test:pack` | 0 | Packed root/core Node 20 and Pi Node 22 consumer checks passed |
+| `git diff --check` | 0 | No whitespace errors |
+
+### Final catalog assertions and package result
+
+- Registration order is exactly 3.8 Flash, 3.7 Flash, 3.6 Flash, 3.1 Pro, Claude Sonnet 4.6, Claude Opus 4.6 Thinking, and GPT-OSS 120B.
+- Every registered descriptor projects `input: ["text"]` and zero input/output/cache costs; 3.8 remains first with its exact released level map.
+- Gemini 3.5 remains absent from catalog lookup, registration, and supported documentation; unsupported levels are neither advertised nor transportable.
+- The pack consumer completed with the reported root/core Node 20 and Pi Node 22 package contents/load checks passing.
+
+### Deviations and risks
+
+- No design deviation. Documentation reads the catalog's public contract through a test that derives each row from `listCatalogEntries()`.
+- `npm test` emitted expected test-only invalid-aspect-ratio diagnostics and `npm run test:pack` emitted dependency deprecation warnings; both commands exited 0.
+- No live, OAuth, account, network, direct installation, staging, commit, push, PR, publish, manifest, workflow, or release action occurred.
+
+### Workload and PR boundary
+
+- Delivery path: stacked-to-main.
+- Current boundary: Unit E only — final catalog documentation, cross-check tests, and whole-workspace verification; Units A–D remain prior dependencies based at `07308e0`.
+- Source/test/documentation delta: 58 changed lines (53 additions, 5 deletions), excluding OpenSpec artifacts; within the 400-line budget.
+- Rollback: revert only Unit E documentation and verification tests; catalog-candidate rollback remains owned by its originating unit.
+
+### Structured status consumed
+
+The parent supplied the resolved change and worktree `C:/Github/Ordico/opencode-antigravity-guard-release`, branch `feat/pi-catalog-docs`, base Unit D `07308e0`, strict-TDD mode, allowed edit surfaces, and stacked delivery boundary. Parent-owned native token `sha256:8836d23420d5cbe0be43115e84aa63f6913b7ee517af30951c168560cef7391e` was not acquired, reset, or settled.
+
+### Remaining tasks
+
+All implementation-owned Unit A–E rows are visibly checked. Version, manifest, workflow, release, commit, PR, publishing, and live/e2e work remain outside this authorization.
+
+## Verified-blocker correction — catalog invariants and seven-model text-only matrix
+
+**Status:** complete
+
+### Completed corrective work
+
+- Added `defineCatalog()` runtime rejection for a non-`off` route hidden by a descriptor map and for a positive finite thinking budget that cannot retain the required 1,024-token answer reserve.
+- Added committed `context.test.ts` coverage that iterates the nonempty seven-entry static catalog and rejects tool definitions, tool history, and image content for every model before a generation request can be returned.
+- All implementation task rows were already visibly checked; this verification correction does not alter task ownership or checkbox state.
+
+### Files changed
+
+- `packages/pi/src/catalog.ts`
+- `packages/pi/src/catalog.test.ts`
+- `packages/pi/src/context.test.ts`
+- `openspec/changes/expand-pi-antigravity-model-catalog/apply-progress.md`
+- `openspec/changes/expand-pi-antigravity-model-catalog/verify-report.md`
+
+### TDD Cycle Evidence
+
+| Task | Test file | Layer | Safety net | RED | GREEN | TRIANGULATE | REFACTOR |
+|---|---|---|---|---|---|---|---|
+| Catalog descriptor and output-budget invariants | `packages/pi/src/catalog.test.ts` | Unit | 38 focused tests passed | 1 failure: hidden `high` route was accepted | 40 focused tests passed after validation | Hidden route and insufficient positive-budget reserve are distinct malformed definitions | Validation is a small in-loop invariant; no refactor required |
+| Seven-model unsupported-context regression matrix | `packages/pi/src/context.test.ts` | Unit | 38 focused tests passed | Committed matrix was absent; new assertions established the required regression contract | 40 focused tests passed | Seven nonempty catalog entries each exercise tools, tool history, and image content | No production change required because the existing rejection path already satisfied the newly committed matrix |
+
+### Verification
+
+| Command | Exit | Result |
+|---|---:|---|
+| `npx vitest run packages/pi/src/catalog.test.ts packages/pi/src/context.test.ts` | 0 | 40 tests passed after GREEN |
+| `npx vitest run packages/pi/src` | 0 | 11 files, 146 tests passed |
+| `npm run typecheck:pi` | 0 | Pi typecheck passed |
+| `git diff --check` | 0 | No whitespace errors |
+
+### Deviations, scope, and remaining work
+
+- No design deviation: the validation implements the existing descriptor/route/output-budget invariant and the matrix makes the existing text-only contract explicit for all registered entries.
+- Corrective source/test delta is 78 changed lines against the branch base, within the requested 200-line boundary.
+- Exact unchecked implementation task lines: none; all 27 implementation tasks remain visibly checked.
+- Structured correction context: selected change `expand-pi-antigravity-model-catalog`; workspace `C:/Github/Ordico/opencode-antigravity-guard-release`; branch `feat/pi-catalog-docs`; allowed roots were respected. The parent-owned correction token `sha256:2195855f92103d7cf6aa934997f9c37c6da7b0216497781914da9017cb5780a8` was not acquired, reset, or settled.
+
+
+## Final route-map invariant remediation
+
+**Status:** complete
+
+- Corrected `defineCatalog()` so every non-`off` route must have an own `thinkingLevelMap` entry; an absent entry now fails before hidden-route or output-budget checks.
+- Added strict-TDD regression coverage for absent `xhigh` and `max` routes; both are rejected with `Route is outside descriptor map`.
+- No implementation task checkbox changed: all 27 implementation rows were already visibly checked.
+
+### TDD Cycle Evidence
+
+| Task | Test file | Layer | Safety net | RED | GREEN | TRIANGULATE | REFACTOR |
+|---|---|---|---|---|---|---|---|
+| Final route-map invariant | `packages/pi/src/catalog.test.ts` | Unit | `npx vitest run packages/pi/src/catalog.test.ts` exit 0 (8/8) | Exit 1 (7/8): `xhigh` route was accepted until only its budget check failed | Exit 0 (8/8) after own-map validation | `max`, also absent from the descriptor map, is rejected by the same invariant | None needed; minimal two-branch guard remains explicit |
+
+### Verification
+
+| Command | Exit | Result |
+|---|---:|---|
+| `npx vitest run packages/pi/src/catalog.test.ts` | 1 | Expected RED: missing-map `xhigh` did not throw the route-map invariant error |
+| `npx vitest run packages/pi/src/catalog.test.ts` | 0 | GREEN and triangulation: 8 tests passed |
+| `npx vitest run packages/pi/src` | 0 | 11 files, 146 tests passed |
+| `npm run typecheck:pi` | 0 | Pi typecheck passed |
+| `git diff --check` | 0 | No whitespace errors; Git emitted existing LF-to-CRLF warnings |
+
+### Scope and boundary
+
+- Changed files: `packages/pi/src/catalog.ts`, `packages/pi/src/catalog.test.ts`, this progress artifact, and `verify-report.md`.
+- Bounded remediation remains below 120 changed source/test lines and makes no network, install, live/OAuth, commit, stage, delivery, or subagent action.
+- Parent-owned attempt ordinal 11 and token `sha256:6709f0d859c957679714af0cc3a919b25c88a934b51cd65ca113d8748b1edddb` were neither acquired, reset, nor settled.
+- All 27 implementation task rows remain checked; exact unchecked implementation lines: none.
