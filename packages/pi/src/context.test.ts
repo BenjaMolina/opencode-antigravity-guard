@@ -208,7 +208,34 @@ describe("Pi text context serialization", () => {
       expect(() => serialize({ tools: [{}], messages: [{ role: "user", content: "x", timestamp: 0 }] } as Context)).toThrow(ContextSerializationError)
     })
 
-    it("uses defaults, accepts repeated text, and bounds serialized text", () => {
+    it("serializes literal GPT-OSS routes with safe output limits and strip-only replay", () => {
+          const signed = { messages: [
+            { role: "user", content: "x", timestamp: 0 },
+            { role: "assistant", content: [
+              { type: "thinking", thinking: "plan", thinkingSignature: "c2ln" },
+              { type: "text", text: "answer", textSignature: "c2ln" },
+            ], provider: "antigravity-guard", model: "antigravity-gpt-oss-120b", api: "antigravity-guard-sse", usage: {}, stopReason: "stop", timestamp: 0 },
+          ] } as Context
+          const serialize = (options?: SimpleStreamOptions) => serializeTextContext({
+            context: signed, model: { ...model, id: "antigravity-gpt-oss-120b" }, options, project: "project", requestId: "agent-id",
+          })
+          expect(serialize().request).toMatchObject({
+            contents: [
+              { role: "user", parts: [{ text: "x" }] },
+              { role: "model", parts: [{ text: "plan" }, { text: "answer" }] },
+            ],
+            generationConfig: { maxOutputTokens: 4096 },
+          })
+          expect(serialize().request.generationConfig).not.toHaveProperty("thinkingConfig")
+          expect(serialize({ reasoning: "medium" }).request).toMatchObject({
+            generationConfig: { maxOutputTokens: 9216, thinkingConfig: { thinkingBudget: 8192, includeThoughts: true } },
+          })
+          expect(() => serialize({ reasoning: "medium", maxTokens: 8192 })).toThrow(ContextSerializationError)
+          expect(serialize({ reasoning: "medium", maxTokens: 8193 }).request.generationConfig.maxOutputTokens).toBe(8193)
+          for (const reasoning of ["minimal", "low", "high"] as const) expect(() => serialize({ reasoning })).toThrow(ContextSerializationError)
+        })
+
+        it("uses defaults, accepts repeated text, and bounds serialized text", () => {
     expect(request({ messages: [{ role: "user", content: "same", timestamp: 0 }, { role: "user", content: "same", timestamp: 0 }] })).toMatchObject({
       model: "gemini-3.8-flash-tiered", request: { generationConfig: { temperature: 1, maxOutputTokens: 4096 } },
     })
