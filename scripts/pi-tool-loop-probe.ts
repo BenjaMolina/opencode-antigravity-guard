@@ -68,7 +68,7 @@ async function run(): Promise<void> {
     : validateDisabledProbeEvents(events, PROBE_ROUTE)
 
   if (!result.passed) {
-    emit({ status: "not-admitted", expectation, route: result.route, assertions: result.assertions, terminalCategory: sanitizeTerminalCategory(events), events: summarizeEvents(events) })
+    emit({ status: "not-admitted", expectation, route: result.route, assertions: result.assertions, terminalCategory: sanitizeTerminalCategory(events), terminal: summarizeTerminalMessages(events) })
     process.exitCode = 1
     return
   }
@@ -198,11 +198,34 @@ export function sanitizeTerminalCategory(events: readonly ProbeEvent[]): "capabi
   return events.some((event) => containsText(event, "generation request") || containsText(event, "SSE") || containsText(event, "stream")) ? "transport" : "process"
 }
 
-function summarizeEvents(events: readonly ProbeEvent[]): readonly { readonly type: string, readonly capabilityRejected: boolean }[] {
-  return events.flatMap((event) => typeof event.type === "string" ? [{
-    type: event.type,
-    capabilityRejected: containsText(event, "PI_TOOL_CAPABILITY_NOT_ENABLED"),
-  }] : [])
+const TERMINAL_STOP_REASONS = new Set(["stop", "length", "toolUse", "error", "aborted", "pending"])
+const TERMINAL_CONTENT_TYPES = new Set(["text", "thinking", "toolCall"])
+
+export function summarizeTerminalMessages(events: readonly ProbeEvent[]): readonly {
+  readonly event: "message_end" | "turn_end"
+  readonly role: "assistant"
+  readonly stopReason?: string
+  readonly contentTypes: readonly ("text" | "thinking" | "toolCall" | "unknown")[]
+  readonly hasToolDiagnostics: boolean
+  readonly localError?: { readonly category: "capability", readonly code: "PI_TOOL_CAPABILITY_NOT_ENABLED" }
+}[] {
+  return events.flatMap((event) => {
+    if (event.type !== "message_end" && event.type !== "turn_end") return []
+    const message = objectValue(event.message)
+    if (message?.role !== "assistant") return []
+    const contentTypes = Array.isArray(message.content)
+      ? message.content.map((part) => {
+        const type = objectValue(part)?.type
+        return typeof type === "string" && TERMINAL_CONTENT_TYPES.has(type) ? type as "text" | "thinking" | "toolCall" : "unknown"
+      })
+      : []
+    const stopReason = typeof message.stopReason === "string" && TERMINAL_STOP_REASONS.has(message.stopReason) ? message.stopReason : undefined
+    const hasToolDiagnostics = Array.isArray(message.diagnostics) && message.diagnostics.some((item) => objectValue(item)?.type === "antigravity-guard.tools")
+    const localError = typeof message.errorMessage === "string" && message.errorMessage.includes("PI_TOOL_CAPABILITY_NOT_ENABLED")
+      ? { category: "capability" as const, code: "PI_TOOL_CAPABILITY_NOT_ENABLED" as const }
+      : undefined
+    return [{ event: event.type, role: "assistant" as const, ...(stopReason ? { stopReason } : {}), contentTypes, hasToolDiagnostics, ...(localError ? { localError } : {}) }]
+  })
 }
 
 async function writeEvidence(result: ProbeResult): Promise<void> {

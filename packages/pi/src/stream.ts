@@ -3,7 +3,7 @@ import type { AssistantMessage, Context, Model, SimpleStreamOptions } from "@ear
 import { ANTIGRAVITY_ENDPOINTS } from "@benjamolina/antigravity-guard-core"
 
 import { getCatalogEntry, resolveGenerationSelection, type GenerationSelection } from "./catalog.ts"
-import { ContextSerializationError, serializeContext } from "./context.ts"
+import { ContextSerializationError, serializeContext, type GenerationRequest } from "./context.ts"
 import { ToolPreflightError } from "./tool-contract.ts"
 import { hasToolContext } from "./tool-context.ts"
 import type { ResponseSemantic, ToolResponsePolicy } from "./response.ts"
@@ -262,10 +262,10 @@ function preflightCategory(code: string): string {
   return "capability"
 }
 
-function responsePolicy(payload: { request: { tools?: { functionDeclarations: unknown }[], toolConfig?: { functionCallingConfig: { mode: "AUTO" | "NONE" } } } }, selection: GenerationSelection): ToolResponsePolicy {
+function responsePolicy(payload: GenerationRequest, selection: GenerationSelection): ToolResponsePolicy {
   const declarations = payload.request.tools?.[0]?.functionDeclarations
-  if (selection.tools.state !== "enabled" || payload.request.toolConfig?.functionCallingConfig.mode !== "AUTO" || !Array.isArray(declarations)) return { kind: "reject" }
-  const names = declarations.map((item) => typeof item === "object" && item !== null ? Object.getOwnPropertyDescriptor(item, "name")?.value : undefined)
+  if (selection.tools.state !== "enabled" || payload.request.toolConfig?.functionCallingConfig.mode === "NONE" || !Array.isArray(declarations)) return { kind: "reject" }
+  const names = declarations.map((declaration) => Object.getOwnPropertyDescriptor(declaration, "name")?.value)
   return names.every((name): name is string => typeof name === "string") ? { kind: "accept", declaredNames: new Set(names) } : { kind: "reject" }
 }
 

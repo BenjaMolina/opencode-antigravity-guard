@@ -21,13 +21,19 @@ interface Content {
   parts: object[]
 }
 
+interface GeminiFunctionDeclaration {
+  readonly name: string
+  readonly description: string
+  readonly parametersJsonSchema: object
+}
+
 export interface GenerationRequest {
   project: string
   model: string
   request: {
     contents: Content[]
     systemInstruction?: { parts: Part[] }
-    tools?: { functionDeclarations: unknown }[]
+    tools?: { functionDeclarations: readonly GeminiFunctionDeclaration[] }[]
     toolConfig?: { functionCallingConfig: { mode: "AUTO" | "NONE" } }
     generationConfig: {
       temperature: number
@@ -71,7 +77,10 @@ export function serializeContext(input: SerializeTextContextInput, injectedSelec
   return { ...text, request: {
     contents,
     ...(systemInstruction ? { systemInstruction } : {}),
-    ...(prepared ? { tools: [{ functionDeclarations: prepared.declarations }], toolConfig: { functionCallingConfig: { mode: prepared.mode } } } : {}),
+    ...(prepared ? {
+      tools: [{ functionDeclarations: prepared.declarations.map(({ name, description, parameters }) => ({ name, description, parametersJsonSchema: parameters })) }],
+      ...(prepared.mode === "NONE" ? { toolConfig: { functionCallingConfig: { mode: "NONE" } } } : {}),
+    } : {}),
     generationConfig,
   } }
 }

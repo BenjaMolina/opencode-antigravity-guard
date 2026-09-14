@@ -81,7 +81,20 @@ describe("fixed Antigravity SSE transport", () => {
       ])
     })
 
-    it("propagates enabled capability state and request-local recovery count into lifecycle diagnostics", async () => {
+    it("rejects function calls when explicit NONE disables an otherwise admitted declaration", async () => {
+        const entry = getCatalogEntry(model().id)!
+        const base = resolveGenerationSelection(entry, undefined)
+        const selection = { ...base, tools: createEnabledToolCapability({ record: "test", revision: "1", publicModelId: entry.publicId, reasoning: base.level, wireModel: base.route.wireModel }) }
+        await expect(executeStreamTransport({
+          accessToken: "access-token", projectId: "stored-project",
+          context: { tools: [{ name: "read_file", description: "Read a file", parameters: { type: "object", properties: { path: { type: "string" } } } }], messages: [{ role: "user", content: "Hello", timestamp: 0 }] } as unknown as Context,
+          generationOptions: { toolChoice: "none" },
+          fetch: vi.fn<typeof globalThis.fetch>().mockResolvedValue(new Response(`data: ${JSON.stringify({ response: { candidates: [{ content: { parts: [{ functionCall: { id: "call-1", name: "read_file", args: {} } }] }, finishReason: "OTHER" }] } })}\n\n`, { headers: { "Content-Type": "text/event-stream" } })),
+          model: model(), now: () => 1_000, onSemantic: vi.fn(), platform: "win32", requestId: "request-id", selection,
+        })).rejects.toMatchObject({ kind: "response" })
+      })
+
+      it("propagates enabled capability state and request-local recovery count into lifecycle diagnostics", async () => {
     const entry = getCatalogEntry(model().id)!
     const selection = resolveGenerationSelection(entry, undefined)
     const enabled = { ...selection, tools: createEnabledToolCapability({ record: "test", revision: "1", publicModelId: entry.publicId, reasoning: selection.level, wireModel: selection.route.wireModel }) }
