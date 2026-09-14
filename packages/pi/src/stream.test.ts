@@ -75,12 +75,34 @@ describe("fixed Antigravity SSE transport", () => {
         model: model(), now: () => 1_000, onSemantic: (semantic) => { semantics.push(semantic) }, platform: "win32", requestId: "request-id", selection,
       })
       expect(semantics).toEqual([
+        { type: "toolDiagnostics", details: { publicModelId: entry.publicId, reasoning: base.level, capabilityState: "enabled", preflight: "accepted", recoveryCount: 0 } },
         { type: "toolCall", callIndex: 0, id: "call-1", name: "read_file", arguments: {}, argumentsJson: "{}" },
         { type: "finish", reason: "toolUse" },
       ])
     })
 
-    it("serializes an omission-policy Gemini request through the fixed Antigravity transport", async () => {
+    it("propagates enabled capability state and request-local recovery count into lifecycle diagnostics", async () => {
+    const entry = getCatalogEntry(model().id)!
+    const selection = resolveGenerationSelection(entry, undefined)
+    const enabled = { ...selection, tools: createEnabledToolCapability({ record: "test", revision: "1", publicModelId: entry.publicId, reasoning: selection.level, wireModel: selection.route.wireModel }) }
+    const lifecycle = createPiLifecycleStream({
+      model: model(),
+      now: () => 1_000,
+      runTransport: ({ onSemantic, signal }) => executeStreamTransport({
+        accessToken: "access-token", projectId: "stored-project",
+        context: { messages: [{ role: "assistant", content: [{ type: "toolCall", id: "call-1", name: "read_file", arguments: {} }], stopReason: "toolUse", timestamp: 0 }] } as unknown as Context,
+        fetch: vi.fn<typeof globalThis.fetch>().mockResolvedValue(new Response(`data: ${JSON.stringify({ response: { candidates: [{ content: { parts: [{ text: "done" }] }, finishReason: "STOP" }] } })}\n\n`, { headers: { "Content-Type": "text/event-stream" } })),
+        model: model(), now: () => 1_000, onSemantic, platform: "win32", requestId: "request-id", selection: enabled, signal,
+      }),
+    })
+    for await (const _event of lifecycle) undefined
+    expect(await lifecycle.result()).toMatchObject({
+      stopReason: "stop",
+      diagnostics: [{ type: "antigravity-guard.tools", details: { publicModelId: entry.publicId, reasoning: selection.level, capabilityState: "enabled", preflight: "accepted", recoveryCount: 1, terminal: "stop" } }],
+    })
+  })
+
+  it("serializes an omission-policy Gemini request through the fixed Antigravity transport", async () => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(new Response(
       `data: ${JSON.stringify({ response: { candidates: [{ content: { parts: [{ text: "Hi" }] } }] } })}\n\ndata: ${JSON.stringify({ response: { candidates: [{ finishReason: "STOP" }] } })}\n\n`,
       { headers: { "Content-Type": "text/event-stream" } },
@@ -166,6 +188,37 @@ describe("fixed Antigravity SSE transport", () => {
         "User-Agent": "antigravity/cli/1.1.23 (aidev_client; os_type=linux; arch=amd64; cl=974125021; auth_method=consumer)",
       },
     }))
+  })
+
+  it("preserves safe schema preflight diagnostics before fetch", async () => {
+    const entry = getCatalogEntry(model().id)!
+    const selection = resolveGenerationSelection(entry, undefined)
+    const enabled = { ...selection, tools: createEnabledToolCapability({ record: "test", revision: "1", publicModelId: entry.publicId, reasoning: selection.level, wireModel: selection.route.wireModel }) }
+    const fetch = vi.fn<typeof globalThis.fetch>()
+    await expect(executeStreamTransport({
+      accessToken: "access-token", projectId: "stored-project",
+      context: { tools: [{ name: "read_file", description: "Read a file", parameters: { type: "string" } }], messages: [{ role: "user", content: "Hello", timestamp: 0 }] } as unknown as Context,
+      fetch, model: model(), now: () => 1_000, onSemantic: vi.fn(), platform: "win32", requestId: "request-id", selection: enabled,
+    })).rejects.toMatchObject({
+      kind: "preflight",
+      details: { publicModelId: entry.publicId, reasoning: selection.level, capabilityState: "enabled", preflightCategory: "schema", preflightPath: "$.type" },
+    })
+    expect(fetch).not.toHaveBeenCalled()
+
+    const lifecycle = createPiLifecycleStream({
+      model: model(),
+      now: () => 1_000,
+      runTransport: ({ onSemantic, signal }) => executeStreamTransport({
+        accessToken: "access-token", projectId: "stored-project",
+        context: { tools: [{ name: "read_file", description: "Read a file", parameters: { type: "string" } }], messages: [{ role: "user", content: "Hello", timestamp: 0 }] } as unknown as Context,
+        fetch, model: model(), now: () => 1_000, onSemantic, platform: "win32", requestId: "request-id", selection: enabled, signal,
+      }),
+    })
+    for await (const _event of lifecycle) undefined
+    expect(await lifecycle.result()).toMatchObject({
+      stopReason: "error",
+      diagnostics: [{ type: "antigravity-guard.tools", details: { publicModelId: entry.publicId, reasoning: selection.level, capabilityState: "enabled", preflightCategory: "schema", preflightPath: "$.type", terminal: "error" } }],
+    })
   })
 
   it("rejects declaration, call, and result tool contexts before fetch while retaining no-tool transport", async () => {

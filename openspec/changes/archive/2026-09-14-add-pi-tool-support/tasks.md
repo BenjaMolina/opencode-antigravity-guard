@@ -129,11 +129,11 @@ The user selected `feature-branch-chain` after reviewing the 2,100–3,100-line 
 **Budget / commit candidate:** 220–320 lines; `docs(pi): document evidence-gated tool capability`.  
 **Finish / rollback boundary:** Public package wording and distribution checks match fail-closed catalog status; reverting docs/pack assertions does not alter runtime tool policy, and route activation remains out of scope.
 
-- [ ] **RED:** Add provider and pack-consumer tests asserting the legacy two-argument registration, unchanged seven descriptors/OAuth hooks, emitted runtime module availability, clean production install/load, and absence of source/tests/fixtures or repository-relative runtime imports from the archive. <!-- sdd-owner: implementation -->
-- [ ] **GREEN:** Update only necessary provider imports, pack assertions, and README/package wording; document route-level states, text-versus-tool distinction, preflight boundaries, `AUTO`/`NONE`, schema/result limits, and Claude’s disabled status without claiming enabled tools. <!-- sdd-owner: implementation -->
-- [ ] **TRIANGULATE:** Add documentation-to-catalog consistency assertions for disabled and fixture-qualified routes and run the full no-tool plus tool preflight/regression matrix against all seven text registrations. <!-- sdd-owner: implementation -->
-- [ ] **REFACTOR:** Remove duplicated status literals by deriving documentation test data from catalog-facing data where package boundaries permit, while keeping OpenSpec evidence out of runtime loading. <!-- sdd-owner: implementation -->
-- [ ] Verify this unit and the complete accepted change with `npm test`, `npm run typecheck:pi`, `npm run build:pi`, `npm run typecheck`, `npm run build`, and `npm run test:pack`; report any environment-dependent direct-validation gap as a blocker rather than enabling a route. <!-- sdd-owner: implementation -->
+- [x] **RED:** Add provider and pack-consumer tests asserting the legacy two-argument registration, unchanged seven descriptors/OAuth hooks, emitted runtime module availability, clean production install/load, and absence of source/tests/fixtures or repository-relative runtime imports from the archive. <!-- sdd-owner: implementation -->
+- [x] **GREEN:** Update only necessary provider imports, pack assertions, and README/package wording; document route-level states, text-versus-tool distinction, preflight boundaries, `AUTO`/`NONE`, schema/result limits, and Claude’s disabled status without claiming enabled tools. <!-- sdd-owner: implementation -->
+- [x] **TRIANGULATE:** Add documentation-to-catalog consistency assertions for disabled and fixture-qualified routes and run the full no-tool plus tool preflight/regression matrix against all seven text registrations. <!-- sdd-owner: implementation -->
+- [x] **REFACTOR:** Remove duplicated status literals by deriving documentation test data from catalog-facing data where package boundaries permit, while keeping OpenSpec evidence out of runtime loading. <!-- sdd-owner: implementation -->
+- [x] Verify this unit and the complete accepted change with `npm test`, `npm run typecheck:pi`, `npm run build:pi`, `npm run typecheck`, `npm run build`, and `npm run test:pack`; report any environment-dependent direct-validation gap as a blocker rather than enabling a route. <!-- sdd-owner: implementation -->
 
 ## Handoff conditions
 
