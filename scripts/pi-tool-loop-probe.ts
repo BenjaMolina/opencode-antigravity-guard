@@ -1,7 +1,7 @@
+import { spawn } from "node:child_process"
 import { mkdir, writeFile } from "node:fs/promises"
 import { resolve } from "node:path"
 import { pathToFileURL } from "node:url"
-import { spawn } from "node:child_process"
 import { StringDecoder } from "node:string_decoder"
 
 export const PROBE_ROUTE = {
@@ -14,6 +14,7 @@ const COMPLETION_MARKER = "PI_EVIDENCE_LOOP_OK"
 const ECHO_VALUE = "gemini-tool-loop"
 const TIMEOUT_MS = 90_000
 const EVIDENCE_PATH = "packages/pi/evidence/gemini-3.8-flash-off-tool-loop.json"
+const EVIDENCE_PROMPT = "Call pi_evidence_echo exactly once with value gemini-tool-loop. After it returns, reply with exactly PI_EVIDENCE_LOOP_OK and no other text or tool calls."
 
 type Route = typeof PROBE_ROUTE
 type ProbeEvent = Record<string, unknown>
@@ -22,13 +23,18 @@ type ProbeResult = {
   readonly route: Route
   readonly assertions: readonly string[]
 }
+type ProbeTermination = "exit" | "spawn-error" | "timeout"
+type ProbeRun = {
+  readonly events: readonly ProbeEvent[]
+  readonly termination: ProbeTermination
+}
 
 export function validateProbeEvents(events: readonly ProbeEvent[], route: Route): ProbeResult {
   const assertions: string[] = []
   const toolStarts = events.filter((event) => event.type === "tool_execution_start")
   const toolEnds = events.filter((event) => event.type === "tool_execution_end")
   const turns = events.filter((event) => event.type === "turn_end")
-  const settled = events.filter((event) => event.type === "agent_settled")
+  const agentEnds = events.filter((event) => event.type === "agent_end")
   const start = toolStarts[0]
   const end = toolEnds[0]
 
@@ -36,7 +42,7 @@ export function validateProbeEvents(events: readonly ProbeEvent[], route: Route)
   if (toolEnds.length === 1 && end?.toolName === "pi_evidence_echo" && end.isError === false) assertions.push("echo-completed")
   if (turns.length === 2 && objectValue(turns[0]?.message)?.stopReason === "toolUse") assertions.push("first-turn-tool-use")
   if (turns.length === 2 && hasExactMarker(objectValue(turns[1]?.message), COMPLETION_MARKER)) assertions.push("second-turn-marker")
-  if (settled.length === 1) assertions.push("agent-settled")
+  if (agentEnds.length === 1) assertions.push("agent-ended")
 
   return { passed: assertions.length === 5, route, assertions }
 }
@@ -45,13 +51,38 @@ export function validateDisabledProbeEvents(events: readonly ProbeEvent[], route
   const assertions: string[] = []
   const capabilityError = events.some((event) => containsText(event, "PI_TOOL_CAPABILITY_NOT_ENABLED"))
   const toolEvents = events.filter((event) => typeof event.type === "string" && event.type.startsWith("tool_execution_"))
-  const settled = events.filter((event) => event.type === "agent_settled")
+  const agentEnds = events.filter((event) => event.type === "agent_end")
 
   if (capabilityError) assertions.push("capability-rejected")
   if (toolEvents.length === 0) assertions.push("no-tool-execution")
-  if (settled.length === 1) assertions.push("agent-settled")
+  if (agentEnds.length === 1) assertions.push("agent-ended")
 
   return { passed: assertions.length === 3, route, assertions }
+}
+
+export function jsonProbeArgs(root: string): readonly string[] {
+  const providerExtension = resolve(root, "packages/pi/dist/extension.js")
+  const probeExtension = resolve(root, "packages/pi/evidence/pi-evidence-echo.ts")
+  return [
+    "--mode", "json",
+    "--no-session",
+    "--no-extensions",
+    "-e", providerExtension,
+    "-e", probeExtension,
+    "--no-skills",
+    "--no-prompt-templates",
+    "--no-context-files",
+    "--no-approve",
+    "--provider", "antigravity-guard",
+    "--model", PROBE_ROUTE.publicModelId,
+    "--thinking", PROBE_ROUTE.reasoning,
+    "--tools", "pi_evidence_echo",
+    EVIDENCE_PROMPT,
+  ]
+}
+
+export function isJsonProbeComplete(events: readonly ProbeEvent[], termination: ProbeTermination): boolean {
+  return termination === "exit" && events.filter((event) => event.type === "agent_end").length === 1
 }
 
 async function run(): Promise<void> {
@@ -62,13 +93,13 @@ async function run(): Promise<void> {
     return
   }
 
-  const events = await runRpcProbe()
+  const probe = await runJsonProbe()
   const result = expectation === "enabled"
-    ? validateProbeEvents(events, PROBE_ROUTE)
-    : validateDisabledProbeEvents(events, PROBE_ROUTE)
+    ? validateProbeEvents(probe.events, PROBE_ROUTE)
+    : validateDisabledProbeEvents(probe.events, PROBE_ROUTE)
 
-  if (!result.passed) {
-    emit({ status: "not-admitted", expectation, route: result.route, assertions: result.assertions, terminalCategory: sanitizeTerminalCategory(events), terminal: summarizeTerminalMessages(events) })
+  if (!isJsonProbeComplete(probe.events, probe.termination) || !result.passed) {
+    emit({ status: "not-admitted", expectation, route: result.route, assertions: result.assertions, terminalCategory: sanitizeTerminalCategory(probe.events), terminal: summarizeTerminalMessages(probe.events) })
     process.exitCode = 1
     return
   }
@@ -84,33 +115,24 @@ function expectationFromArgs(args: readonly string[]): "disabled" | "enabled" | 
   return disabled === enabled ? undefined : disabled ? "disabled" : "enabled"
 }
 
-function runRpcProbe(): Promise<ProbeEvent[]> {
+function runJsonProbe(): Promise<ProbeRun> {
   const root = process.cwd()
-  const providerExtension = resolve(root, "packages/pi/dist/extension.js")
-  const probeExtension = resolve(root, "packages/pi/evidence/pi-evidence-echo.ts")
-  const child = spawn("pi", [
-    "--mode", "rpc",
-    "--no-session",
-    "--no-extensions",
-    "-e", providerExtension,
-    "-e", probeExtension,
-    "--no-skills",
-    "--no-prompt-templates",
-    "--no-context-files",
-    "--no-approve",
-    "--provider", "antigravity-guard",
-    "--model", PROBE_ROUTE.publicModelId,
-    "--thinking", PROBE_ROUTE.reasoning,
-    "--tools", "pi_evidence_echo",
-  ], { cwd: root, stdio: ["pipe", "pipe", "ignore"] })
+  const child = spawn("pi", jsonProbeArgs(root), { cwd: root, stdio: ["ignore", "pipe", "ignore"] })
 
   return new Promise((resolveEvents) => {
     const events: ProbeEvent[] = []
     const decoder = new StringDecoder("utf8")
     let buffer = ""
     let finished = false
-    const timeout = setTimeout(() => finish(true), TIMEOUT_MS)
-
+    let exited = false
+    let stdoutEnded = child.stdout === null
+    const finish = (termination: ProbeTermination) => {
+      if (finished) return
+      finished = true
+      clearTimeout(timeout)
+      flush()
+      resolveEvents({ events, termination })
+    }
     const consume = (chunk: Buffer) => {
       buffer += decoder.write(chunk)
       while (true) {
@@ -121,50 +143,42 @@ function runRpcProbe(): Promise<ProbeEvent[]> {
         collectEvent(line, events)
       }
     }
-    const finish = (timedOut = false) => {
-      if (finished) return
-      finished = true
-      clearTimeout(timeout)
-      child.stdin.end()
-      if (timedOut && !child.killed) child.kill()
-      resolveEvents(events)
-    }
-
-    child.stdout.on("data", consume)
-    child.stdout.on("end", () => {
+    const flush = () => {
       const trailing = `${buffer}${decoder.end()}`.replace(/\r$/, "")
+      buffer = ""
       if (trailing) collectEvent(trailing, events)
+    }
+    const finishAfterExit = () => {
+      if (exited && stdoutEnded) finish("exit")
+    }
+    const timeout = setTimeout(() => {
+      if (!child.killed) child.kill()
+      finish("timeout")
+    }, TIMEOUT_MS)
+
+    child.stdout?.on("data", consume)
+    child.stdout?.once("end", () => {
+      stdoutEnded = true
+      finishAfterExit()
     })
-    child.once("error", finish)
-    child.once("exit", () => setTimeout(finish, 0))
-    child.stdin.write(`${JSON.stringify({
-      id: "pi-tool-loop-probe",
-      type: "prompt",
-      message: "Call pi_evidence_echo exactly once with value gemini-tool-loop. After it returns, reply with exactly PI_EVIDENCE_LOOP_OK and no other text or tool calls.",
-    })}\n`)
-    child.stdout.on("data", () => {
-      if (hasPromptRunSettled(events)) finish()
+    child.once("error", () => finish("spawn-error"))
+    child.once("exit", () => {
+      exited = true
+      finishAfterExit()
+    })
+    child.once("close", () => {
+      if (exited) finish("exit")
     })
   })
-}
-
-export function hasPromptRunSettled(events: readonly ProbeEvent[]): boolean {
-  let accepted = false
-  let started = false
-  for (const event of events) {
-    if (!accepted && event.type === "response" && event.id === "pi-tool-loop-probe" && event.command === "prompt" && event.success === true) accepted = true
-    else if (accepted && !started && event.type === "agent_start") started = true
-    else if (started && event.type === "agent_settled") return true
-  }
-  return false
 }
 
 function collectEvent(line: string, events: ProbeEvent[]): void {
   try {
     const parsed: unknown = JSON.parse(line)
-    if (objectValue(parsed)) events.push(parsed)
+    const event = objectValue(parsed)
+    if (event && event.type !== "session") events.push(event)
   } catch {
-    // RPC output outside the JSONL contract is intentionally discarded.
+    // JSON-mode output outside Pi's event contract is intentionally discarded.
   }
 }
 
@@ -198,89 +212,42 @@ export function sanitizeTerminalCategory(events: readonly ProbeEvent[]): "capabi
   return events.some((event) => containsText(event, "generation request") || containsText(event, "SSE") || containsText(event, "stream")) ? "transport" : "process"
 }
 
-type DiagnosticFailureKind = "aborted" | "access" | "capability" | "model" | "quota" | "preflight" | "response" | "transport" | "callback"
-type ReplayMode = "none" | "signed-function-response" | "unsigned-observation"
-type CapabilityState = "disabled" | "fixture-qualified" | "enabled"
-type PreflightCategory = "schema" | "tool-choice" | "declaration" | "history" | "capability"
 type TerminalDiagnostics = {
-  readonly replayMode: ReplayMode
-  readonly recoveryCount: number
+  readonly toolExecutionTerminate?: boolean
   readonly userMessageCount: number
   readonly assistantMessageCount: number
   readonly toolResultMessageCount: number
-  readonly assistantToolCallBlockCount: number
-  readonly declaredToolCount: number
-  readonly capabilityState: CapabilityState
-  readonly preflightCategory?: PreflightCategory
-  readonly preflightPath?: string
-  readonly failure?: { readonly kind: DiagnosticFailureKind, readonly status?: number }
 }
-
-const TOOL_DIAGNOSTIC_KEYS = new Set(["publicModelId", "reasoning", "capabilityState", "preflight", "preflightCategory", "preflightPath", "replayMode", "recoveryCount", "userMessageCount", "assistantMessageCount", "toolResultMessageCount", "assistantToolCallBlockCount", "declaredToolCount", "failure", "terminal"])
 
 export function summarizeTerminalMessages(events: readonly ProbeEvent[]): readonly TerminalDiagnostics[] {
   return events.flatMap((event) => {
-    if (event.type !== "message_end" && event.type !== "turn_end") return []
-    const message = objectValue(event.message)
-    if (message?.role !== "assistant" || !Array.isArray(message.diagnostics)) return []
-    for (const item of message.diagnostics) {
-      const diagnostic = objectValue(item)
-      if (diagnostic?.type !== "antigravity-guard.tools") continue
-      const summary = sanitizeToolDiagnostics(objectValue(diagnostic.details))
-      if (summary) return [summary]
-    }
-    return []
+    if (event.type !== "agent_end") return []
+    const summary = summarizeAgentEnd(event)
+    return summary ? [summary] : []
   })
 }
 
-function sanitizeToolDiagnostics(details: ProbeEvent | undefined): TerminalDiagnostics | undefined {
-  if (!details || Object.keys(details).some((key) => !TOOL_DIAGNOSTIC_KEYS.has(key))) return undefined
-  if (typeof details.publicModelId !== "string" || typeof details.reasoning !== "string" || typeof details.preflight !== "string") return undefined
-  if (!isReplayMode(details.replayMode) || !isNonnegativeSafeInteger(details.recoveryCount) || !isNonnegativeSafeInteger(details.userMessageCount) || !isNonnegativeSafeInteger(details.assistantMessageCount) || !isNonnegativeSafeInteger(details.toolResultMessageCount) || !isNonnegativeSafeInteger(details.assistantToolCallBlockCount) || !isNonnegativeSafeInteger(details.declaredToolCount) || !isCapabilityState(details.capabilityState)) return undefined
-  if (details.preflightCategory !== undefined && !isPreflightCategory(details.preflightCategory)) return undefined
-  if (details.preflightPath !== undefined && (typeof details.preflightPath !== "string" || !/^\$(?:\.[A-Za-z_][A-Za-z0-9_]*|\[\d+\])*$/.test(details.preflightPath))) return undefined
-  const failure = diagnosticFailure(details.failure)
-  if (details.failure !== undefined && !failure) return undefined
-  return {
-    replayMode: details.replayMode,
-    recoveryCount: details.recoveryCount,
-    userMessageCount: details.userMessageCount,
-    assistantMessageCount: details.assistantMessageCount,
-    toolResultMessageCount: details.toolResultMessageCount,
-    assistantToolCallBlockCount: details.assistantToolCallBlockCount,
-    declaredToolCount: details.declaredToolCount,
-    capabilityState: details.capabilityState,
-    ...(details.preflightCategory ? { preflightCategory: details.preflightCategory } : {}),
-    ...(details.preflightPath ? { preflightPath: details.preflightPath } : {}),
-    ...(failure ? { failure } : {}),
+function summarizeAgentEnd(event: ProbeEvent): TerminalDiagnostics | undefined {
+  if (event.toolExecutionTerminate !== undefined && typeof event.toolExecutionTerminate !== "boolean") return undefined
+  if (!Array.isArray(event.messages)) return undefined
+
+  let userMessageCount = 0
+  let assistantMessageCount = 0
+  let toolResultMessageCount = 0
+  for (const message of event.messages) {
+    const value = objectValue(message)
+    if (!value || typeof value.role !== "string") return undefined
+    if (value.role === "user") userMessageCount += 1
+    if (value.role === "assistant") assistantMessageCount += 1
+    if (value.role === "toolResult") toolResultMessageCount += 1
   }
-}
 
-function diagnosticFailure(value: unknown): { readonly kind: DiagnosticFailureKind, readonly status?: number } | undefined {
-  const failure = objectValue(value)
-  if (!failure || Object.keys(failure).some((key) => key !== "kind" && key !== "status") || !isDiagnosticFailureKind(failure.kind)) return undefined
-  if (failure.status !== undefined && (typeof failure.status !== "number" || !Number.isInteger(failure.status) || failure.status < 100 || failure.status > 599)) return undefined
-  return { kind: failure.kind, ...(failure.status === undefined ? {} : { status: failure.status }) }
-}
-
-function isNonnegativeSafeInteger(value: unknown): value is number {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0
-}
-
-function isReplayMode(value: unknown): value is ReplayMode {
-  return value === "none" || value === "signed-function-response" || value === "unsigned-observation"
-}
-
-function isCapabilityState(value: unknown): value is CapabilityState {
-  return value === "disabled" || value === "fixture-qualified" || value === "enabled"
-}
-
-function isPreflightCategory(value: unknown): value is PreflightCategory {
-  return value === "schema" || value === "tool-choice" || value === "declaration" || value === "history" || value === "capability"
-}
-
-function isDiagnosticFailureKind(value: unknown): value is DiagnosticFailureKind {
-  return value === "aborted" || value === "access" || value === "capability" || value === "model" || value === "quota" || value === "preflight" || value === "response" || value === "transport" || value === "callback"
+  return {
+    ...(event.toolExecutionTerminate === undefined ? {} : { toolExecutionTerminate: event.toolExecutionTerminate }),
+    userMessageCount,
+    assistantMessageCount,
+    toolResultMessageCount,
+  }
 }
 
 async function writeEvidence(result: ProbeResult): Promise<void> {
@@ -288,11 +255,11 @@ async function writeEvidence(result: ProbeResult): Promise<void> {
   await mkdir(resolve(process.cwd(), "packages/pi/evidence"), { recursive: true })
   await writeFile(path, `${JSON.stringify({
     schemaVersion: 1,
-    record: "pi-rpc-tool-loop",
+    record: "pi-json-tool-loop",
     revision: "gemini-3.8-flash-off-v1",
     route: result.route,
     provenance: {
-      runner: "Pi RPC",
+      runner: "Pi JSON event mode",
       credentialSource: "Pi-managed antigravity-guard OAuth",
       providerExtension: "packages/pi/dist/extension.js",
       probeTool: "pi_evidence_echo",

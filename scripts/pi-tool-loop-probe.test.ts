@@ -1,9 +1,10 @@
+import { resolve } from "node:path"
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
 import { describe, expect, it } from "vitest"
 
 import { normalizeToolDeclarations } from "../packages/pi/src/tool-schema.ts"
 import extension from "../packages/pi/evidence/pi-evidence-echo.ts"
-import { hasPromptRunSettled, sanitizeTerminalCategory, summarizeTerminalMessages, validateDisabledProbeEvents, validateProbeEvents } from "./pi-tool-loop-probe.ts"
+import { isJsonProbeComplete, jsonProbeArgs, sanitizeTerminalCategory, summarizeTerminalMessages, validateDisabledProbeEvents, validateProbeEvents } from "./pi-tool-loop-probe.ts"
 
 type RegisteredTool = Parameters<ExtensionAPI["registerTool"]>[0]
 
@@ -41,42 +42,64 @@ describe("Pi tool-loop probe evidence", () => {
     }])
   })
 
-  it("retains exact-value runtime validation", async () => {
+  it("returns the exact non-terminating valid execution result and retains exact-value runtime validation", async () => {
     const tool = registerEvidenceEcho()
 
+    await expect(tool.execute("test-call", { value: "gemini-tool-loop" }, undefined)).resolves.toEqual({ content: [{ type: "text", text: "PI_EVIDENCE_ECHO_OK" }], details: { value: "gemini-tool-loop" }, terminate: false })
     await expect(tool.execute("test-call", { value: "other" }, undefined)).rejects.toThrow("pi_evidence_echo requires the fixed evidence value.")
   })
 
-  it("admits exactly one completed pi_evidence_echo call followed by the completion marker", () => {
+  it("admits exactly one successful echo, two terminal turns, and one agent end", () => {
     expect(validateProbeEvents([
       { type: "tool_execution_start", toolName: "pi_evidence_echo", args: { value: "gemini-tool-loop" } },
       { type: "tool_execution_end", toolName: "pi_evidence_echo", isError: false },
       { type: "turn_end", message: { stopReason: "toolUse", content: [] } },
       { type: "turn_end", message: { stopReason: "stop", content: [{ type: "text", text: "PI_EVIDENCE_LOOP_OK" }] } },
-      { type: "agent_settled" },
+      { type: "session", id: "ignored-session-header" },
+      { type: "agent_end" },
     ], route)).toEqual({
       passed: true,
       route,
-      assertions: ["echo-started", "echo-completed", "first-turn-tool-use", "second-turn-marker", "agent-settled"],
+      assertions: ["echo-started", "echo-completed", "first-turn-tool-use", "second-turn-marker", "agent-ended"],
     })
   })
 
   it("rejects raw provider output, missing completion, and any tool other than the deterministic echo", () => {
     expect(validateProbeEvents([
       { type: "tool_execution_start", toolName: "bash", args: { command: "echo unsafe" } },
-      { type: "agent_settled" },
+      { type: "agent_end" },
     ], route)).toEqual({
       passed: false,
       route,
-      assertions: ["agent-settled"],
+      assertions: ["agent-ended"],
     })
   })
 
-  it("ignores initial settlement until the correlated accepted prompt has started and settled", () => {
-    const accepted = { type: "response", id: "pi-tool-loop-probe", command: "prompt", success: true }
-    expect(hasPromptRunSettled([{ type: "agent_settled" }, accepted, { type: "agent_start" }, { type: "agent_settled" }])).toBe(true)
-    expect(hasPromptRunSettled([{ type: "agent_settled" }, accepted, { type: "agent_start" }])).toBe(false)
-    expect(hasPromptRunSettled([{ type: "agent_settled" }, { ...accepted, id: "other" }, { type: "agent_start" }, { type: "agent_settled" }])).toBe(false)
+  it("builds an isolated Pi JSON-mode command with the evidence prompt as positional input", () => {
+    expect(jsonProbeArgs("/workspace")).toEqual([
+      "--mode", "json",
+      "--no-session",
+      "--no-extensions",
+      "-e", resolve("/workspace", "packages/pi/dist/extension.js"),
+      "-e", resolve("/workspace", "packages/pi/evidence/pi-evidence-echo.ts"),
+      "--no-skills",
+      "--no-prompt-templates",
+      "--no-context-files",
+      "--no-approve",
+      "--provider", "antigravity-guard",
+      "--model", "antigravity-gemini-3.8-flash",
+      "--thinking", "off",
+      "--tools", "pi_evidence_echo",
+      "Call pi_evidence_echo exactly once with value gemini-tool-loop. After it returns, reply with exactly PI_EVIDENCE_LOOP_OK and no other text or tool calls.",
+    ])
+  })
+
+  it("completes only when a JSON-mode session emitted one agent_end and the child exited", () => {
+    const ended = [{ type: "session" }, { type: "agent_end" }]
+    expect(isJsonProbeComplete(ended, "exit")).toBe(true)
+    expect(isJsonProbeComplete(ended, "timeout")).toBe(false)
+    expect(isJsonProbeComplete([{ type: "agent_end" }, { type: "agent_end" }], "exit")).toBe(false)
+    expect(isJsonProbeComplete([{ type: "turn_end" }], "exit")).toBe(false)
   })
 
   it.each([
@@ -90,63 +113,58 @@ describe("Pi tool-loop probe evidence", () => {
     expect(sanitizeTerminalCategory([{ type: "message_end", message: { errorMessage: message } }])).toBe(category)
   })
 
-  it("emits only allowlisted replay and local failure facts", () => {
+  it("emits only allowlisted agent-end termination and message-role counts", () => {
     const secret = "CANARY-secret-text-and-arguments"
     const summary = summarizeTerminalMessages([{
-      type: "message_end",
-      message: {
-        role: "assistant",
-        content: [{ type: "text", text: secret }, { type: "toolCall", arguments: { secret } }],
-        diagnostics: [{ type: "antigravity-guard.tools", details: {
-          publicModelId: "antigravity-gemini-3.8-flash", reasoning: "off", capabilityState: "enabled", preflight: "accepted",
-          replayMode: "signed-function-response", recoveryCount: 1, userMessageCount: 1, assistantMessageCount: 1, toolResultMessageCount: 1, assistantToolCallBlockCount: 1, declaredToolCount: 1, preflightCategory: "history", preflightPath: "$.content[0]",
-          failure: { kind: "response", status: 400 }, terminal: "error",
-        } }],
-        headers: { authorization: secret }, providerPayload: { secret },
-      },
+      type: "agent_end",
+      toolExecutionTerminate: false,
+      messages: [
+        { role: "user", content: secret, id: secret },
+        { role: "assistant", content: [{ type: "text", text: secret }], diagnostics: [{ secret }] },
+        { role: "toolResult", content: secret, toolName: secret, args: { secret } },
+        { role: "system", content: secret },
+      ],
+      diagnostics: { secret },
+    }, {
+      type: "agent_end",
+      messages: [],
+    }, {
+      type: "agent_end",
+      toolExecutionTerminate: true,
+      messages: [{ role: "assistant" }],
     }])
-    expect(summary).toEqual([{
-      replayMode: "signed-function-response", recoveryCount: 1, userMessageCount: 1, assistantMessageCount: 1, toolResultMessageCount: 1, assistantToolCallBlockCount: 1, declaredToolCount: 1, capabilityState: "enabled",
-      preflightCategory: "history", preflightPath: "$.content[0]", failure: { kind: "response", status: 400 },
-    }])
+    expect(summary).toEqual([
+      { toolExecutionTerminate: false, userMessageCount: 1, assistantMessageCount: 1, toolResultMessageCount: 1 },
+      { userMessageCount: 0, assistantMessageCount: 0, toolResultMessageCount: 0 },
+      { toolExecutionTerminate: true, userMessageCount: 0, assistantMessageCount: 1, toolResultMessageCount: 0 },
+    ])
     expect(JSON.stringify(summary)).not.toContain(secret)
   })
 
-    it("rejects malformed diagnostic values and secret-bearing extras", () => {
-    const valid = {
-      publicModelId: "antigravity-gemini-3.8-flash", reasoning: "off", capabilityState: "enabled", preflight: "accepted",
-      replayMode: "unsigned-observation", recoveryCount: 0,
-      userMessageCount: 1, assistantMessageCount: 0, toolResultMessageCount: 0, assistantToolCallBlockCount: 0, declaredToolCount: 1,
-    }
+  it("rejects malformed agent-end termination and message inputs", () => {
     const summaries = [
-      { ...valid, secret: "CANARY-extra" },
-      { ...valid, replayMode: "forged" },
-      { ...valid, recoveryCount: -1 },
-      { ...valid, userMessageCount: Number.NaN },
-      { ...valid, assistantMessageCount: -1 },
-      { ...valid, toolResultMessageCount: 0.5 },
-      { ...valid, assistantToolCallBlockCount: Number.MAX_SAFE_INTEGER + 1 },
-      { ...valid, declaredToolCount: -1 },
-      { ...valid, preflightPath: "CANARY-path" },
-      { ...valid, failure: { kind: "response", status: 600 } },
-    ].map((details) => summarizeTerminalMessages([{ type: "turn_end", message: { role: "assistant", diagnostics: [{ type: "antigravity-guard.tools", details }] } }]))
-    expect(summaries).toEqual([[], [], [], [], [], [], [], [], [], []])
-    expect(JSON.stringify(summaries)).not.toContain("CANARY")
+      { type: "agent_end", toolExecutionTerminate: "false", messages: [] },
+      { type: "agent_end", toolExecutionTerminate: 0, messages: [] },
+      { type: "agent_end", messages: "not-an-array" },
+      { type: "agent_end", messages: [{ role: 1 }] },
+      { type: "message_end", messages: [] },
+    ].map((event) => summarizeTerminalMessages([event]))
+    expect(summaries).toEqual([[], [], [], [], []])
   })
 
-    it("recognizes only the local fail-closed capability rejection in the disabled control", () => {
+  it("recognizes only the local fail-closed capability rejection with no tool execution and one agent end", () => {
     expect(validateDisabledProbeEvents([
       { type: "message_end", message: { errorMessage: "PI_TOOL_CAPABILITY_NOT_ENABLED: antigravity-gemini-3.8-flash/off is disabled (missing-direct-evidence)." } },
-      { type: "agent_settled" },
+      { type: "agent_end" },
     ], route)).toEqual({
       passed: true,
       route,
-      assertions: ["capability-rejected", "no-tool-execution", "agent-settled"],
+      assertions: ["capability-rejected", "no-tool-execution", "agent-ended"],
     })
 
     expect(validateDisabledProbeEvents([
       { type: "message_end", message: { errorMessage: "credential failure" } },
-      { type: "agent_settled" },
+      { type: "agent_end" },
     ], route)).toMatchObject({ passed: false })
   })
 })

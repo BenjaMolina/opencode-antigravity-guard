@@ -32,7 +32,7 @@ Claude Sonnet and Claude Opus remain disabled until declaration, call, result re
 
 ## Opt-in direct tool-loop validation
 
-Maintainers can run `npm run build:pi` followed by `npx tsx scripts/pi-tool-loop-probe.ts --live --expect-disabled` to verify the fail-closed control. This first slice retains the deterministic `pi_evidence_echo` validator and its sanitized evidence shape, but does not wire a positive probe into the production provider or enable any route. Stage 2 will use a separate explicit probe provider path. The harness stores no credentials, headers, or raw provider output.
+Maintainers can run `npm run build:pi` followed by `npx tsx scripts/pi-tool-loop-probe.ts --live --expect-disabled` to verify the fail-closed control. The isolated runner invokes Pi in `--mode json`, passes the deterministic non-terminating `pi_evidence_echo` prompt positionally, drains its event stream, and completes after Pi emits `agent_end` and the child exits. On a terminal probe failure, it retains only an optional `toolExecutionTerminate` boolean and nonnegative `user`, `assistant`, and `toolResult` message-role counts from `agent_end`; it never stores message contents, tool details, names, IDs, arguments, credentials, headers, or raw provider output. This validation does not enable any production route.
 
 ## Tool preflight boundaries
 

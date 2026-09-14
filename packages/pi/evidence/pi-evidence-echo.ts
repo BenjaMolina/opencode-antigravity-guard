@@ -17,6 +17,7 @@ export default function extension(pi: ExtensionAPI): void {
       return {
         content: [{ type: "text", text: "PI_EVIDENCE_ECHO_OK" }],
         details: { value: ECHO_VALUE },
+        terminate: false,
       }
     },
   })
