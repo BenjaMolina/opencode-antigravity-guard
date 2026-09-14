@@ -29,6 +29,10 @@ export interface ToolStreamDiagnostics {
   readonly preflightCategory?: string
   readonly preflightPath?: string
   readonly recoveryCount?: number
+  readonly failure?: {
+    readonly kind: StreamErrorKind
+    readonly status?: number
+  }
 }
 
 type ToolDiagnosticSemantic = { type: "toolDiagnostics", details: ToolStreamDiagnostics }
@@ -91,7 +95,7 @@ export function createPiLifecycleStream(input: PiStreamLifecycleInput) {
   }
   let removeAbort: () => void = () => {}
 
-  const finalize = (reason: "stop" | "length" | "toolUse" | "error" | "aborted", errorMessage?: string, details?: ToolStreamDiagnostics) => {
+  const finalize = (reason: "stop" | "length" | "toolUse" | "error" | "aborted", errorMessage?: string, details?: ToolStreamDiagnostics, error?: StreamTransportError) => {
     if (complete) return
     complete = true
     removeAbort()
@@ -103,7 +107,8 @@ export function createPiLifecycleStream(input: PiStreamLifecycleInput) {
     }
     output.stopReason = reason
     const diagnostic = details ?? toolDiagnostics
-    if (sawToolCall || diagnostic) output.diagnostics = [{ type: "antigravity-guard.tools", timestamp: input.now(), details: { ...diagnostic, terminal: reason } }]
+    const failure = error && isLocalStreamError(error) ? diagnosticFailure(error) : undefined
+    if (sawToolCall || diagnostic) output.diagnostics = [{ type: "antigravity-guard.tools", timestamp: input.now(), details: { ...diagnostic, ...(failure ? { failure } : {}), terminal: reason } }]
     if (reason === "stop" || reason === "length" || reason === "toolUse") {
       closeBlock()
       stream.push({ type: "done", reason, message: output })
@@ -178,7 +183,7 @@ export function createPiLifecycleStream(input: PiStreamLifecycleInput) {
 
   stream.push({ type: "start", partial: output })
   if (input.signal) {
-    const abort = () => finalize("aborted")
+    const abort = () => finalize("aborted", undefined, undefined, streamError("aborted", "Generation was cancelled."))
     input.signal.addEventListener("abort", abort, { once: true })
     removeAbort = () => input.signal?.removeEventListener("abort", abort)
     if (input.signal.aborted) abort()
@@ -189,6 +194,7 @@ export function createPiLifecycleStream(input: PiStreamLifecycleInput) {
       signal.aborted || input.signal?.aborted ? "aborted" : "error",
       isLocalStreamError(error) ? error.message : undefined,
       isLocalStreamError(error) ? error.details : undefined,
+      isLocalStreamError(error) ? error : undefined,
     ),
   )
   return stream
@@ -367,6 +373,19 @@ function isSse(value: string | null): boolean { return value?.split(";", 1)[0]?.
 
 function inactivityTimeout(input: StreamTransportInput): number {
   return input.inactivityTimeoutMs === undefined ? INACTIVITY_TIMEOUT_MS : input.inactivityTimeoutMs > 0 && Number.isFinite(input.inactivityTimeoutMs) ? Math.min(input.inactivityTimeoutMs, INACTIVITY_TIMEOUT_MS) : 0
+}
+
+function diagnosticFailure(error: StreamTransportError): NonNullable<ToolStreamDiagnostics["failure"]> | undefined {
+  if (!isStreamErrorKind(error.kind)) return undefined
+  const status = error.status
+  return {
+    kind: error.kind,
+    ...(typeof status === "number" && Number.isInteger(status) && status >= 100 && status <= 599 ? { status } : {}),
+  }
+}
+
+function isStreamErrorKind(value: unknown): value is StreamErrorKind {
+  return value === "aborted" || value === "access" || value === "capability" || value === "model" || value === "quota" || value === "preflight" || value === "response" || value === "transport" || value === "callback"
 }
 
 function streamError(kind: StreamErrorKind, message: string, status?: number, details?: ToolStreamDiagnostics): StreamTransportError {

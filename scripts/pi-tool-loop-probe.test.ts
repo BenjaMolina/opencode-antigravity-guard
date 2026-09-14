@@ -66,6 +66,64 @@ describe("Pi tool-loop probe evidence", () => {
       expect(JSON.stringify(summary)).not.toContain(secret)
     })
 
+    it("extracts only allowlisted diagnostic failure facts", () => {
+      const secret = "CANARY-diagnostic-secret"
+      const summary = summarizeTerminalMessages([
+        {
+          type: "message_end",
+          message: {
+            role: "assistant",
+            stopReason: "error",
+            content: [],
+            diagnostics: [{
+              type: "antigravity-guard.tools",
+              details: {
+                failure: { kind: "response", status: 400, body: secret, headers: { authorization: secret }, cause: { secret } },
+                secret,
+              },
+            }, {
+              type: "antigravity-guard.tools",
+              details: { failure: { kind: "forged", status: 99, request: { secret } } },
+            }],
+          },
+        },
+      ])
+      expect(summary).toEqual([{
+        event: "message_end",
+        role: "assistant",
+        stopReason: "error",
+        contentTypes: [],
+        hasToolDiagnostics: true,
+        failure: { kind: "response", status: 400 },
+      }])
+      expect(JSON.stringify(summary)).not.toContain(secret)
+      expect(JSON.stringify(summary)).not.toContain("body")
+      expect(JSON.stringify(summary)).not.toContain("headers")
+      expect(JSON.stringify(summary)).not.toContain("cause")
+    })
+
+    it("drops malformed failure status while retaining an allowlisted kind", () => {
+      const summary = summarizeTerminalMessages([{
+        type: "turn_end",
+        message: {
+          role: "assistant",
+          stopReason: "error",
+          content: [],
+          diagnostics: [{ type: "antigravity-guard.tools", details: { failure: { kind: "transport", status: 600, request: "CANARY-request" } } }],
+        },
+      }])
+      expect(summary).toEqual([{
+        event: "turn_end",
+        role: "assistant",
+        stopReason: "error",
+        contentTypes: [],
+        hasToolDiagnostics: true,
+        failure: { kind: "transport" },
+      }])
+      expect(JSON.stringify(summary)).not.toContain("CANARY-request")
+      expect(JSON.stringify(summary)).not.toContain("status")
+    })
+
     it("recognizes only the local fail-closed capability rejection in the disabled control", () => {
     expect(validateDisabledProbeEvents([
       { type: "message_end", message: { errorMessage: "PI_TOOL_CAPABILITY_NOT_ENABLED: antigravity-gemini-3.8-flash/off is disabled (missing-direct-evidence)." } },

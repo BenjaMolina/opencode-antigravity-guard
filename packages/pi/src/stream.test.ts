@@ -234,6 +234,43 @@ describe("fixed Antigravity SSE transport", () => {
     })
   })
 
+  it("preserves allowlisted local transport failures in tool diagnostics", async () => {
+    const entry = getCatalogEntry(model().id)!
+    const selection = resolveGenerationSelection(entry, undefined)
+    const enabled = { ...selection, tools: createEnabledToolCapability({ record: "test", revision: "1", publicModelId: entry.publicId, reasoning: selection.level, wireModel: selection.route.wireModel }) }
+    const secret = "CANARY-upstream-body"
+    const input = {
+      accessToken: "access-token", projectId: "stored-project",
+      context: { tools: [{ name: "read_file", description: "Read a file", parameters: { type: "object", properties: { path: { type: "string" } } } }], messages: [{ role: "user", content: "Hello", timestamp: 0 }] } as unknown as Context,
+      model: model(), now: () => 1_000, platform: "win32", requestId: "request-id", selection: enabled,
+    }
+    const settle = async (runTransport: Parameters<typeof createPiLifecycleStream>[0]["runTransport"]) => {
+      const lifecycle = createPiLifecycleStream({ model: model(), now: () => 1_000, runTransport })
+      for await (const _event of lifecycle) undefined
+      return lifecycle.result()
+    }
+
+    const response = await settle(({ onSemantic, signal }) => executeStreamTransport({ ...input, fetch: vi.fn<typeof globalThis.fetch>().mockResolvedValue(new Response(secret, { status: 400 })), onSemantic, signal }))
+    expect(response).toMatchObject({ stopReason: "error", diagnostics: [{ type: "antigravity-guard.tools", details: { failure: { kind: "response", status: 400 } } }] })
+    expect(JSON.stringify(response)).not.toContain(secret)
+
+    const transport = await settle(({ onSemantic, signal }) => executeStreamTransport({ ...input, fetch: vi.fn<typeof globalThis.fetch>().mockRejectedValue(new Error(secret)), onSemantic, signal }))
+    expect(transport).toMatchObject({ stopReason: "error", diagnostics: [{ type: "antigravity-guard.tools", details: { failure: { kind: "transport" } } }] })
+    expect(JSON.stringify(transport)).not.toContain(secret)
+
+    const controller = new AbortController()
+    const lifecycle = createPiLifecycleStream({
+      model: model(), now: () => 1_000, signal: controller.signal,
+      runTransport: ({ onSemantic, signal }) => executeStreamTransport({ ...input, fetch: () => new Promise<never>(() => undefined), onSemantic, signal }),
+    })
+    await Promise.resolve()
+    controller.abort()
+    for await (const _event of lifecycle) undefined
+    const aborted = await lifecycle.result()
+    expect(aborted).toMatchObject({ stopReason: "aborted", diagnostics: [{ type: "antigravity-guard.tools", details: { failure: { kind: "aborted" } } }] })
+    expect(JSON.stringify(aborted)).not.toContain("status")
+  })
+
   it("rejects declaration, call, and result tool contexts before fetch while retaining no-tool transport", async () => {
     const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(new Response(
       `data: ${JSON.stringify({ response: { candidates: [{ content: { parts: [{ text: "ok" }] }, finishReason: "STOP" }] } })}\n\n`,
@@ -682,6 +719,22 @@ it("propagates safe local diagnostics and emits one generic error before finish"
   })
   for await (const _event of forged) undefined
   expect(await forged.result()).toMatchObject({ stopReason: "error", errorMessage: "Antigravity generation failed." })
+
+  const forgedDiagnostic = createPiLifecycleStream({
+    model: model(),
+    now: () => 1_000,
+    runTransport: async ({ onSemantic }) => {
+      onSemantic({ type: "toolDiagnostics", details: { publicModelId: "safe-model", reasoning: "off", capabilityState: "enabled", preflight: "accepted", recoveryCount: 0 } })
+      throw new StreamTransportError("access", "CANARY-forged-diagnostics", 418)
+    },
+  })
+  for await (const _event of forgedDiagnostic) undefined
+  expect(await forgedDiagnostic.result()).toMatchObject({
+    stopReason: "error",
+    errorMessage: "Antigravity generation failed.",
+    diagnostics: [{ type: "antigravity-guard.tools", details: { publicModelId: "safe-model", terminal: "error" } }],
+  })
+  expect(JSON.stringify(await forgedDiagnostic.result())).not.toContain("failure")
 
   const failed = createPiLifecycleStream({ model: model(), now: () => 1_000, runTransport: async () => { throw new Error("CANARY-setup") } })
   const finished = createPiLifecycleStream({ model: model(), now: () => 1_000, runTransport: async ({ onSemantic }) => { onSemantic({ type: "text", text: "done" }); onSemantic({ type: "finish", reason: "stop" }); throw new Error("CANARY-late") } })

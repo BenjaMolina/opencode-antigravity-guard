@@ -200,6 +200,7 @@ export function sanitizeTerminalCategory(events: readonly ProbeEvent[]): "capabi
 
 const TERMINAL_STOP_REASONS = new Set(["stop", "length", "toolUse", "error", "aborted", "pending"])
 const TERMINAL_CONTENT_TYPES = new Set(["text", "thinking", "toolCall"])
+type DiagnosticFailureKind = "aborted" | "access" | "capability" | "model" | "quota" | "preflight" | "response" | "transport" | "callback"
 
 export function summarizeTerminalMessages(events: readonly ProbeEvent[]): readonly {
   readonly event: "message_end" | "turn_end"
@@ -208,6 +209,7 @@ export function summarizeTerminalMessages(events: readonly ProbeEvent[]): readon
   readonly contentTypes: readonly ("text" | "thinking" | "toolCall" | "unknown")[]
   readonly hasToolDiagnostics: boolean
   readonly localError?: { readonly category: "capability", readonly code: "PI_TOOL_CAPABILITY_NOT_ENABLED" }
+  readonly failure?: { readonly kind: DiagnosticFailureKind, readonly status?: number }
 }[] {
   return events.flatMap((event) => {
     if (event.type !== "message_end" && event.type !== "turn_end") return []
@@ -224,8 +226,29 @@ export function summarizeTerminalMessages(events: readonly ProbeEvent[]): readon
     const localError = typeof message.errorMessage === "string" && message.errorMessage.includes("PI_TOOL_CAPABILITY_NOT_ENABLED")
       ? { category: "capability" as const, code: "PI_TOOL_CAPABILITY_NOT_ENABLED" as const }
       : undefined
-    return [{ event: event.type, role: "assistant" as const, ...(stopReason ? { stopReason } : {}), contentTypes, hasToolDiagnostics, ...(localError ? { localError } : {}) }]
+    const failure = diagnosticFailure(message.diagnostics)
+    return [{ event: event.type, role: "assistant" as const, ...(stopReason ? { stopReason } : {}), contentTypes, hasToolDiagnostics, ...(localError ? { localError } : {}), ...(failure ? { failure } : {}) }]
   })
+}
+
+function diagnosticFailure(value: unknown): { readonly kind: DiagnosticFailureKind, readonly status?: number } | undefined {
+  if (!Array.isArray(value)) return undefined
+  for (const item of value) {
+    const diagnostic = objectValue(item)
+    if (diagnostic?.type !== "antigravity-guard.tools") continue
+    const failure = objectValue(objectValue(diagnostic.details)?.failure)
+    if (!failure || !isDiagnosticFailureKind(failure.kind)) continue
+    const status = failure.status
+    return {
+      kind: failure.kind,
+      ...(typeof status === "number" && Number.isInteger(status) && status >= 100 && status <= 599 ? { status } : {}),
+    }
+  }
+  return undefined
+}
+
+function isDiagnosticFailureKind(value: unknown): value is DiagnosticFailureKind {
+  return value === "aborted" || value === "access" || value === "capability" || value === "model" || value === "quota" || value === "preflight" || value === "response" || value === "transport" || value === "callback"
 }
 
 async function writeEvidence(result: ProbeResult): Promise<void> {
