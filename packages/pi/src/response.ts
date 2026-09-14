@@ -115,9 +115,17 @@ function candidate(value: unknown, events: ResponseSemantic[], semantics: Respon
   if (content !== undefined) {
     const parts = field(content, "parts")
     if (!Array.isArray(parts)) throw new ResponseSemanticError("Antigravity returned invalid content.")
+    const explicitIds = new Set<string>()
+    for (const part of parts) {
+      const call = field(part, "functionCall")
+      if (call !== undefined) {
+        const id = field(call, "id")
+        if (typeof id === "string") explicitIds.add(id)
+      }
+    }
     for (const part of parts) {
       if (field(part, "functionCall") !== undefined) {
-        const call = toolCall(part, semantics, ids, callCount++)
+        const call = toolCall(part, semantics, ids, explicitIds, callCount++)
         ids.push(call.id)
         local.push(call)
       } else {
@@ -132,8 +140,8 @@ function candidate(value: unknown, events: ResponseSemantic[], semantics: Respon
   const finishReason = field(item, "finishReason")
   if (finishReason !== undefined) {
     const hasCalls = semantics.callIndex() + callCount > 0
-    const reason = finishReason === "STOP" ? "stop" : finishReason === "MAX_TOKENS" ? "length" : finishReason === "OTHER" && hasCalls ? "toolUse" : undefined
-    if (!reason || (hasCalls && reason !== "toolUse")) throw new ResponseSemanticError("Antigravity returned an unsupported finish reason.")
+    const reason = hasCalls ? "toolUse" : finishReason === "STOP" ? "stop" : finishReason === "MAX_TOKENS" ? "length" : undefined
+    if (!reason) throw new ResponseSemanticError("Antigravity returned an unsupported finish reason.")
     semantics.setFinish(reason)
   }
   for (const id of ids) semantics.addId(id)
@@ -145,11 +153,12 @@ function candidate(value: unknown, events: ResponseSemantic[], semantics: Respon
   }
 }
 
-function toolCall(part: unknown, semantics: ResponseSemantics, ids: readonly string[], offset: number): ToolCallSemantic {
+function toolCall(part: unknown, semantics: ResponseSemantics, ids: readonly string[], explicitIds: ReadonlySet<string>, offset: number): ToolCallSemantic {
   if (semantics.policy.kind !== "accept" || keys(part, ["functionCall", "thoughtSignature"])) throw new ResponseSemanticError("Antigravity returned unsupported content.")
   const call = field(part, "functionCall")
   if (keys(call, ["id", "name", "args"])) throw new ResponseSemanticError("Antigravity returned unsupported content.")
-  const id = field(call, "id")
+  const suppliedId = field(call, "id")
+  const id = suppliedId === undefined ? localCallId(semantics, ids, explicitIds, offset) : suppliedId
   const name = field(call, "name")
   const args = field(call, "args")
   if (typeof id !== "string" || !id.trim() || typeof name !== "string" || !semantics.policy.declaredNames.has(name) || semantics.hasId(id) || ids.includes(id)) throw new ResponseSemanticError("Antigravity returned invalid function call.")
@@ -163,6 +172,16 @@ function toolCall(part: unknown, semantics: ResponseSemantics, ids: readonly str
   if (new TextEncoder().encode(argumentsJson).byteLength > 1024 * 1024 || depth(argumentsValue) > 64) throw new ResponseSemanticError("Antigravity returned invalid function call.")
   const signature = validThoughtSignature(field(part, "thoughtSignature"))
   return { type: "toolCall", callIndex: semantics.callIndex() + offset, id, name, arguments: argumentsValue, argumentsJson, ...(signature ? { signature } : {}) }
+}
+
+function localCallId(semantics: ResponseSemantics, ids: readonly string[], explicitIds: ReadonlySet<string>, offset: number): string {
+  let suffix = semantics.callIndex() + offset + 1
+  let id = `pi-gemini-call-${suffix}`
+  while (semantics.hasId(id) || ids.includes(id) || explicitIds.has(id)) {
+    suffix++
+    id = `pi-gemini-call-${suffix}`
+  }
+  return id
 }
 
 function depth(value: JsonObject | readonly unknown[], level = 0): number {

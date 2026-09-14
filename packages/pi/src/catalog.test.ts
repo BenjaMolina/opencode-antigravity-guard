@@ -127,13 +127,23 @@ describe("Antigravity model catalog", () => {
     expect(readme).toContain("Unsupported levels are not advertised")
   })
 
-  it("keeps per-route frozen capability evidence fail-closed and independent", () => {
+  it("keeps per-route frozen capability evidence fail-closed except for the directly admitted route", () => {
     const catalog = listCatalogEntries()
     for (const entry of catalog) {
       for (const level of Object.keys(entry.routes)) {
         const selection = resolveGenerationSelection(entry, level)
         expect(Object.isFrozen(selection.tools)).toBe(true)
-        expect(selection.tools.state).toBe("disabled")
+        const isDirectlyAdmitted = entry.publicId === "antigravity-gemini-3.8-flash" && level === "off"
+        expect(selection.tools.state).toBe(isDirectlyAdmitted ? "enabled" : "disabled")
+        if (isDirectlyAdmitted) {
+          expect(selection.tools).toMatchObject({
+            state: "enabled",
+            contractRevision: 1,
+            fixtureEvidence: { record: "pi-json-tool-loop", revision: "gemini-3.8-flash-off-v1", publicModelId: entry.publicId, reasoning: "off", wireModel: "gemini-3.8-flash-tiered" },
+            directEvidence: { record: "pi-json-tool-loop", revision: "gemini-3.8-flash-off-v1", publicModelId: entry.publicId, reasoning: "off", wireModel: "gemini-3.8-flash-tiered" },
+          })
+          continue
+        }
         if (selection.tools.state !== "disabled") throw new Error("expected disabled capability")
         expect(selection.tools.reason).toBe(entry.response.family === "claude" ? "claude-continuity-unproven" : "missing-direct-evidence")
       }
@@ -148,13 +158,18 @@ describe("Antigravity model catalog", () => {
     expect(resolveToolCapability(stale, gemini.publicId, "low", low.route.wireModel)).toEqual({ state: "disabled", contractRevision: 1, reason: "stale-or-conflicting-evidence" })
   })
 
-  it("constructs enabled capability only as immutable test data without changing catalog literals", () => {
+  it("enables the directly admitted Gemini 3.8 Flash off route", () => {
+    const entry = getCatalogEntry("antigravity-gemini-3.8-flash")!
+    expect(resolveGenerationSelection(entry, "off").tools.state).toBe("enabled")
+  })
+
+    it("constructs immutable enabled fixture data independently from catalog admission", () => {
     const entry = getCatalogEntry("antigravity-gemini-3.8-flash")!
     const selection = resolveGenerationSelection(entry, "off")
     const enabled = createEnabledToolCapability({ record: "fixture", revision: "1", publicModelId: entry.publicId, reasoning: "off", wireModel: selection.route.wireModel })
     expect(Object.isFrozen(enabled)).toBe(true)
     expect(enabled.state).toBe("enabled")
-    expect(resolveGenerationSelection(entry, "off").tools.state).toBe("disabled")
+    expect(resolveGenerationSelection(entry, "off").tools.state).toBe("enabled")
   })
 
   it("contains only the evidence-admitted Gemini routes with literal budgets and omissions", () => {
