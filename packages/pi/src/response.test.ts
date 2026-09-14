@@ -40,8 +40,8 @@ describe("ResponseSemantics", () => {
       expect(semantics.push(record({ candidates: [{ content: { parts: [{ thought: true, text: "plan", thoughtSignature: "not base64" }] } }] }))).toEqual([
         { type: "thinking", thinking: "plan" },
       ])
-      expect(semantics.push(record({ candidates: [{ finishReason: "STOP" }] }))).toEqual([{ type: "finish", reason: "stop" }])
-      expect(() => semantics.finish()).not.toThrow()
+      expect(semantics.push(record({ candidates: [{ finishReason: "STOP" }] }))).toEqual([])
+      expect(semantics.finish()).toEqual({ type: "finish", reason: "stop" })
     })
 
     it("preserves repeated and whitespace deltas, maps MAX_TOKENS, and permits [DONE] after it", () => {
@@ -52,10 +52,62 @@ describe("ResponseSemantics", () => {
     ])
     expect(semantics.push(record({ candidates: [{ content: { parts: [{ text: "same" }] }, finishReason: "MAX_TOKENS" }] }))).toEqual([
       { type: "text", text: "same" },
-      { type: "finish", reason: "length" },
     ])
     expect(semantics.push("[DONE]")).toEqual([])
-    expect(() => semantics.finish()).not.toThrow()
+    expect(semantics.finish()).toEqual({ type: "finish", reason: "length" })
+  })
+
+  it("returns validated tool calls and commits toolUse only after clean completion", () => {
+    const semantics = new ResponseSemantics({ kind: "accept", declaredNames: new Set(["read_file"]) })
+
+    expect(semantics.push(record({ candidates: [{ content: { parts: [
+      { functionCall: { id: "call-1", name: "read_file", args: { z: 1, a: { y: true } } } },
+      { text: "after" },
+      { functionCall: { id: "call-2", name: "read_file", args: {} } },
+    ] }, finishReason: "OTHER" }] }))).toEqual([
+      { type: "toolCall", callIndex: 0, id: "call-1", name: "read_file", arguments: { a: { y: true }, z: 1 }, argumentsJson: "{\"a\":{\"y\":true},\"z\":1}" },
+      { type: "text", text: "after" },
+      { type: "toolCall", callIndex: 1, id: "call-2", name: "read_file", arguments: {}, argumentsJson: "{}" },
+    ])
+    expect(semantics.finish()).toEqual({ type: "finish", reason: "toolUse" })
+  })
+
+  it("rejects undeclared, malformed, duplicate, and terminally incompatible calls transactionally", () => {
+    const policy = { kind: "accept" as const, declaredNames: new Set(["read_file"]) }
+    const invalid = [
+      { functionCall: { id: "", name: "read_file", args: {} } },
+      { functionCall: { id: "call-1", name: "write_file", args: {} } },
+      { functionCall: { id: "call-1", name: "read_file", args: [] } },
+      { functionCall: { id: "call-1", name: "read_file", args: {}, extra: true } },
+    ]
+    for (const part of invalid) expect(() => new ResponseSemantics(policy).push(record({ candidates: [{ content: { parts: [part] } }] }))).toThrow(ResponseSemanticError)
+
+    const semantics = new ResponseSemantics(policy)
+    expect(() => semantics.push(record({ candidates: [{ content: { parts: [
+      { functionCall: { id: "call-1", name: "read_file", args: {} } },
+      { functionCall: { id: "call-1", name: "read_file", args: {} } },
+    ] } }] }))).toThrow(ResponseSemanticError)
+    expect(semantics.push(record({ candidates: [{ content: { parts: [{ text: "safe" }] }, finishReason: "STOP" }] }))).toEqual([{ type: "text", text: "safe" }])
+    expect(semantics.finish()).toEqual({ type: "finish", reason: "stop" })
+    expect(() => new ResponseSemantics(policy).push(record({ candidates: [{ finishReason: "OTHER" }] }))).toThrow(ResponseSemanticError)
+    expect(() => new ResponseSemantics(policy).push(record({ candidates: [{ content: { parts: [{ functionCall: { id: "call-1", name: "read_file", args: {} } }] }, finishReason: "STOP" }] }))).toThrow(ResponseSemanticError)
+  })
+
+  it("rejects a declared function call with MAX_TOKENS transactionally", () => {
+    const semantics = new ResponseSemantics({ kind: "accept", declaredNames: new Set(["read_file"]) })
+    expect(() => semantics.push(record({ candidates: [{ content: { parts: [{ functionCall: { id: "call-1", name: "read_file", args: {} } }] }, finishReason: "MAX_TOKENS" }] }))).toThrow(ResponseSemanticError)
+    expect(semantics.push(record({ candidates: [{ content: { parts: [{ text: "safe" }] }, finishReason: "STOP" }] }))).toEqual([{ type: "text", text: "safe" }])
+    expect(semantics.finish()).toEqual({ type: "finish", reason: "stop" })
+  })
+
+  it("rejects late terminal data and requires a complete terminal before committing", () => {
+    const complete = new ResponseSemantics()
+    complete.push(record({ candidates: [{ content: { parts: [{ text: "done" }] }, finishReason: "STOP" }] }))
+    complete.push("[DONE]")
+    expect(() => complete.push(record({ candidates: [{ content: { parts: [{ text: "late" }] } }] }))).toThrow(ResponseSemanticError)
+    expect(complete.finish()).toEqual({ type: "finish", reason: "stop" })
+    expect(() => new ResponseSemantics().finish()).toThrow(ResponseSemanticError)
+    expect(() => new ResponseSemantics().push(record({ candidates: [{ content: { parts: [{ functionCall: { id: "call-1", name: "read_file", args: {} } }] } }] }))).toThrow(ResponseSemanticError)
   })
 
   it("treats usage snapshots as cumulative and retains omitted counts", () => {
@@ -102,10 +154,9 @@ describe("ResponseSemantics", () => {
       { type: "thinking", thinking: "plan", signature: "c2ln" },
       { type: "text", text, signature: "dGV4dA==" },
       { type: "thinking", thinking: "check", signature: "Y2hlY2s=" },
-      { type: "finish", reason: "stop" },
       { type: "usage", input: 5, output: 7, cacheRead: 2, cacheWrite: 0, reasoning: 4, total: 14 },
     ])
-    expect(() => semantics.finish()).not.toThrow()
+    expect(semantics.finish()).toEqual({ type: "finish", reason: "stop" })
   })
 
   it("accepts the strict GPT-OSS thought/text/usage fixture and retains terminal semantics", () => {
@@ -120,10 +171,9 @@ describe("ResponseSemantics", () => {
       }))).toEqual([
         { type: "thinking", thinking: "plan", signature: "c2ln" },
         { type: "text", text: "answer", signature: "dGV4dA==" },
-        { type: "finish", reason: "stop" },
         { type: "usage", input: 5, output: 7, cacheRead: 2, cacheWrite: 0, reasoning: 4, total: 14 },
       ])
-      expect(() => semantics.finish()).not.toThrow()
+      expect(semantics.finish()).toEqual({ type: "finish", reason: "stop" })
     })
 
     it("rejects malformed records, unsupported output, invalid usage, and incomplete completion", () => {
