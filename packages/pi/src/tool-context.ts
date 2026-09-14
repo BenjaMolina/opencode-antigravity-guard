@@ -121,9 +121,12 @@ export function replayToolHistory(messages: unknown[], serializePart: (part: Rec
     }
     if (value(current, "stopReason") !== "toolUse") history("PI_TOOL_CALL_INVALID")
     const group: PendingCall[] = []
-    const parts: Array<WirePart | { call: PendingCall, signature: string | undefined, signaturePresent: boolean }> = content.map((item) => {
+    const parts: Array<WirePart | { call: PendingCall, signature: string | undefined, signaturePresent: boolean }> = content.flatMap((item) => {
       const part = record(item)
-      if (value(part, "type") !== "toolCall") return serializePart(part, current)
+      if (value(part, "type") !== "toolCall") {
+        if (isEmptyUnsignedText(part)) return []
+        return [serializePart(part, current)]
+      }
       shape.assistantToolCallBlockCount += 1
       const id = nonempty(value(part, "id"), "PI_TOOL_CALL_INVALID")
       const name = nonempty(value(part, "name"), "PI_TOOL_CALL_INVALID")
@@ -133,7 +136,7 @@ export function replayToolHistory(messages: unknown[], serializePart: (part: Rec
       calls.add(id)
       const call = { id, name, args }
       group.push(call)
-      return { call, signature: policy?.toolCallSignature(part, current), signaturePresent: value(part, "thoughtSignature") !== undefined }
+      return [{ call, signature: policy?.toolCallSignature(part, current), signaturePresent: value(part, "thoughtSignature") !== undefined }]
     })
     const toolParts = parts.filter((part): part is { call: PendingCall, signature: string | undefined, signaturePresent: boolean } => "call" in part)
     const callsAreSigned = policy?.requireSignedToolCalls === true && policy.isSameModel(current) && Boolean(toolParts[0]?.signature) && toolParts.every((part) => !part.signaturePresent || Boolean(part.signature))
@@ -188,6 +191,11 @@ function record(value: unknown): Record<string, unknown> {
 function dense(value: unknown): readonly unknown[] {
   if (!Array.isArray(value) || Object.keys(value).length !== value.length) history("PI_TOOL_CALL_INVALID")
   return value
+}
+
+function isEmptyUnsignedText(part: Record<string, unknown>): boolean {
+  const text = value(part, "text")
+  return value(part, "type") === "text" && typeof text === "string" && !text.trim() && value(part, "textSignature") === undefined
 }
 
 function nonempty(value: unknown, code: string): string {
