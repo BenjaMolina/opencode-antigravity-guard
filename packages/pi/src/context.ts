@@ -1,6 +1,7 @@
 import type { Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai"
 
-import { getCatalogEntry, resolveGenerationSelection, type ToolCapability } from "./catalog.ts"
+import { getCatalogEntry, resolveGenerationSelection, type GenerationSelection, type ToolCapability } from "./catalog.ts"
+import { hasToolContext, prepareToolContext, replayToolHistory } from "./tool-context.ts"
 
 const MAX_TEXT_BYTES = 8 * 1024 * 1024
 const PROVIDER = "antigravity-guard"
@@ -17,7 +18,7 @@ interface Part {
 
 interface Content {
   role: "user" | "model"
-  parts: Part[]
+  parts: object[]
 }
 
 export interface GenerationRequest {
@@ -26,6 +27,8 @@ export interface GenerationRequest {
   request: {
     contents: Content[]
     systemInstruction?: { parts: Part[] }
+    tools?: { functionDeclarations: unknown }[]
+    toolConfig?: { functionCallingConfig: { mode: "AUTO" | "NONE" } }
     generationConfig: {
       temperature: number
       maxOutputTokens: number
@@ -48,6 +51,30 @@ export interface SerializeTextContextInput {
 }
 
 export class ContextSerializationError extends Error {}
+
+export function serializeContext(input: SerializeTextContextInput, injectedSelection?: GenerationSelection, onRecovery?: (recoveryCount: number) => void): GenerationRequest {
+  const context = input.context as unknown
+  if (!hasToolContext(context)) return serializeTextContext(input)
+  const options = input.options as unknown
+  const entry = isRecord(input.model) ? getCatalogEntry(field(input.model, "id", true)) : undefined
+  if (!entry || !isRecord(context)) return serializeTextContext(input)
+  const selected = resolveGenerationSelection(entry, isRecord(options) ? option(options, "reasoning") : undefined)
+  const selection = injectedSelection ?? selected
+  if (selection.level !== selected.level || selection.route.wireModel !== selected.route.wireModel) fail("Invalid tool capability selection.")
+  if (selection.tools.state !== "enabled") fail(capabilityError(entry.publicId, selection.level, selection.tools))
+  const prepared = prepareToolContext(field(context, "tools") ?? [], isRecord(options) ? field(options, "toolChoice") : undefined)
+  const { tools: _tools, messages, ...textContext } = context
+  const { toolChoice: _choice, ...textOptions } = isRecord(options) ? options : {}
+  const text = serializeTextContext({ ...input, context: { ...textContext, messages: [{ role: "user", content: "placeholder", timestamp: 0 }] } as Context, options: textOptions as SimpleStreamOptions })
+  const contents = replayToolHistory(isDenseArray(messages), (part, message) => messagePart(part, field(message, "role") === "assistant", field(message, "role") === "assistant" && entry.replay.kind === "same-public-model" && isSameProviderAndModel(message, entry.publicId)), onRecovery)
+  const { systemInstruction, generationConfig } = text.request
+  return { ...text, request: {
+    contents,
+    ...(systemInstruction ? { systemInstruction } : {}),
+    ...(prepared ? { tools: [{ functionDeclarations: prepared.declarations }], toolConfig: { functionCallingConfig: { mode: prepared.mode } } } : {}),
+    generationConfig,
+  } }
+}
 
 export function serializeTextContext(input: SerializeTextContextInput): GenerationRequest {
   try {
@@ -121,30 +148,31 @@ function messageParts(content: unknown, assistant: boolean, sameProviderAndModel
   if (typeof content === "string") return content ? [{ text: content }] : fail("A text conversation is required.")
   const parts = isDenseArray(content)
   if (!parts.length) fail("A text conversation is required.")
-  return parts.map((part) => {
-    if (!isRecord(part)) fail("Only text context is supported by this provider.")
-    const type = field(part, "type", true)
-    if (type === "text") {
-      const text = field(part, "text", true)
-      if (typeof text !== "string") fail("Only text context is supported by this provider.")
-      const thoughtSignature = sameProviderAndModel ? validThoughtSignature(field(part, "textSignature")) : undefined
-      if (!text && !thoughtSignature) fail("Only text context is supported by this provider.")
-      return { text, ...(thoughtSignature ? { thoughtSignature } : {}) }
-    }
-    if (type === "thinking" && assistant && sameProviderAndModel) {
-      const text = field(part, "thinking", true)
-      if (typeof text !== "string") fail("Only text context is supported by this provider.")
-      const thoughtSignature = validThoughtSignature(field(part, "thinkingSignature"))
-      if (!text && !thoughtSignature) fail("Only text context is supported by this provider.")
-      return { thought: true, text, ...(thoughtSignature ? { thoughtSignature } : {}) }
-    }
-    if (type === "thinking" && assistant) {
-      const text = field(part, "thinking", true)
-      if (typeof text !== "string" || !text) fail("Only text context is supported by this provider.")
-      return { text }
-    }
-    fail("Only text context is supported by this provider.")
-  })
+  return parts.map((part) => messagePart(isRecord(part) ? part : fail("Only text context is supported by this provider."), assistant, sameProviderAndModel))
+}
+
+function messagePart(part: Record<string, unknown>, assistant: boolean, sameProviderAndModel: boolean): Part {
+  const type = field(part, "type", true)
+  if (type === "text") {
+    const text = field(part, "text", true)
+    if (typeof text !== "string") fail("Only text context is supported by this provider.")
+    const thoughtSignature = sameProviderAndModel ? validThoughtSignature(field(part, "textSignature")) : undefined
+    if (!text && !thoughtSignature) fail("Only text context is supported by this provider.")
+    return { text, ...(thoughtSignature ? { thoughtSignature } : {}) }
+  }
+  if (type === "thinking" && assistant && sameProviderAndModel) {
+    const text = field(part, "thinking", true)
+    if (typeof text !== "string") fail("Only text context is supported by this provider.")
+    const thoughtSignature = validThoughtSignature(field(part, "thinkingSignature"))
+    if (!text && !thoughtSignature) fail("Only text context is supported by this provider.")
+    return { thought: true, text, ...(thoughtSignature ? { thoughtSignature } : {}) }
+  }
+  if (type === "thinking" && assistant) {
+    const text = field(part, "thinking", true)
+    if (typeof text !== "string" || !text) fail("Only text context is supported by this provider.")
+    return { text }
+  }
+  fail("Only text context is supported by this provider.")
 }
 
 function isSameProviderAndModel(message: Record<string, unknown>, publicId: string): boolean {
