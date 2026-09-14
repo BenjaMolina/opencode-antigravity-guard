@@ -1,7 +1,7 @@
 import type { Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai"
 
 import { getCatalogEntry, resolveGenerationSelection, type GenerationSelection, type ToolCapability } from "./catalog.ts"
-import { hasToolContext, prepareToolContext, replayToolHistory } from "./tool-context.ts"
+import { hasToolContext, prepareToolContext, replayToolHistory, type ToolReplayDiagnostics } from "./tool-context.ts"
 
 const MAX_TEXT_BYTES = 8 * 1024 * 1024
 const PROVIDER = "antigravity-guard"
@@ -21,13 +21,19 @@ interface Content {
   parts: object[]
 }
 
+interface GeminiFunctionDeclaration {
+  readonly name: string
+  readonly description: string
+  readonly parametersJsonSchema: object
+}
+
 export interface GenerationRequest {
   project: string
   model: string
   request: {
     contents: Content[]
     systemInstruction?: { parts: Part[] }
-    tools?: { functionDeclarations: unknown }[]
+    tools?: { functionDeclarations: readonly GeminiFunctionDeclaration[] }[]
     toolConfig?: { functionCallingConfig: { mode: "AUTO" | "NONE" } }
     generationConfig: {
       temperature: number
@@ -52,7 +58,7 @@ export interface SerializeTextContextInput {
 
 export class ContextSerializationError extends Error {}
 
-export function serializeContext(input: SerializeTextContextInput, injectedSelection?: GenerationSelection, onRecovery?: (recoveryCount: number) => void): GenerationRequest {
+export function serializeContext(input: SerializeTextContextInput, injectedSelection?: GenerationSelection, onDiagnostics?: (diagnostics: ToolReplayDiagnostics) => void): GenerationRequest {
   const context = input.context as unknown
   if (!hasToolContext(context)) return serializeTextContext(input)
   const options = input.options as unknown
@@ -66,12 +72,27 @@ export function serializeContext(input: SerializeTextContextInput, injectedSelec
   const { tools: _tools, messages, ...textContext } = context
   const { toolChoice: _choice, ...textOptions } = isRecord(options) ? options : {}
   const text = serializeTextContext({ ...input, context: { ...textContext, messages: [{ role: "user", content: "placeholder", timestamp: 0 }] } as Context, options: textOptions as SimpleStreamOptions })
-  const contents = replayToolHistory(isDenseArray(messages), (part, message) => messagePart(part, field(message, "role") === "assistant", field(message, "role") === "assistant" && entry.replay.kind === "same-public-model" && isSameProviderAndModel(message, entry.publicId)), onRecovery)
+  const sameModel = (message: Record<string, unknown>) => field(message, "role") === "assistant" && entry.replay.kind === "same-public-model" && isSameProviderAndModel(message, entry.publicId)
+  const signedToolReplay = geminiRequiresSignedToolReplay(selection.route.wireModel) ? {
+    requireSignedToolCalls: true,
+    isSameModel: sameModel,
+    toolCallSignature: (part: Record<string, unknown>, message: Record<string, unknown>) => sameModel(message) ? validThoughtSignature(field(part, "thoughtSignature")) : undefined,
+  } : undefined
+  const contents = replayToolHistory(
+    isDenseArray(messages),
+    (part, message) => messagePart(part, field(message, "role") === "assistant", sameModel(message)),
+    onDiagnostics,
+    signedToolReplay,
+        prepared?.declarations.length ?? 0,
+  )
   const { systemInstruction, generationConfig } = text.request
   return { ...text, request: {
     contents,
     ...(systemInstruction ? { systemInstruction } : {}),
-    ...(prepared ? { tools: [{ functionDeclarations: prepared.declarations }], toolConfig: { functionCallingConfig: { mode: prepared.mode } } } : {}),
+    ...(prepared ? {
+      tools: [{ functionDeclarations: prepared.declarations.map(({ name, description, parameters }) => ({ name, description, parametersJsonSchema: parameters })) }],
+      ...(prepared.mode === "NONE" ? { toolConfig: { functionCallingConfig: { mode: "NONE" } } } : {}),
+    } : {}),
     generationConfig,
   } }
 }
@@ -195,6 +216,11 @@ function resolveOutputTokens(maxTokens: unknown, maxAllowed: number, thinking: R
     return maxTokens
   }
   return thinking.kind === "budget" && thinking.budget > 0 ? Math.max(4096, thinking.budget + 1024) : 4096
+}
+
+function geminiRequiresSignedToolReplay(wireModel: string): boolean {
+  const match = /^gemini-(\d+)(?:[.-])/.exec(wireModel)
+  return match !== null && Number(match[1]) >= 3
 }
 
 function validThoughtSignature(value: unknown): string | undefined {
