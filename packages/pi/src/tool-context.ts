@@ -34,15 +34,20 @@ type WirePart = object
 type WireContent = { role: "user" | "model", parts: WirePart[] }
 type PendingCall = { id: string, name: string }
 
-export function replayToolHistory(messages: unknown[], serializePart: (part: Record<string, unknown>, message: Record<string, unknown>) => WirePart): WireContent[] {
+export function replayToolHistory(messages: unknown[], serializePart: (part: Record<string, unknown>, message: Record<string, unknown>) => WirePart, onRecovery?: (recoveryCount: number) => void): WireContent[] {
   const output: WireContent[] = []
   const calls = new Set<string>()
   const results = new Set<string>()
+  const recoveryCount = { value: 0 }
   let pending: { calls: PendingCall[], results: Map<string, WirePart> } | undefined
   const finalize = () => {
     if (!pending) return
-    if (pending.results.size !== pending.calls.length) history("PI_TOOL_HISTORY_REPLAY_PENDING")
-    output.push({ role: "user", parts: pending.calls.map((call) => pending!.results.get(call.id)!) })
+    output.push({ role: "user", parts: pending.calls.map((call) => {
+      const actual = pending!.results.get(call.id)
+      if (actual) return actual
+      recoveryCount.value += 1
+      return missingResult(call)
+    }) })
     pending = undefined
   }
   for (const message of messages) {
@@ -98,7 +103,23 @@ export function replayToolHistory(messages: unknown[], serializePart: (part: Rec
     pending = { calls: group, results: new Map() }
   }
   finalize()
+  onRecovery?.(recoveryCount.value)
   return output
+}
+
+function missingResult(call: PendingCall): WirePart {
+  return {
+    functionResponse: {
+      name: call.name,
+      id: call.id,
+      response: {
+        error: {
+          code: "PI_TOOL_RESULT_MISSING",
+          message: "Tool execution did not complete or its result was not recorded. Treat the call as failed; do not assume it had no side effects and do not retry it automatically.",
+        },
+      },
+    },
+  }
 }
 
 function history(code: string): never {

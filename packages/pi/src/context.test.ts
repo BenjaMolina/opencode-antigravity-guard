@@ -267,11 +267,17 @@ describe("Pi text context serialization", () => {
       expect(serializeContext({ context, model, options: { toolChoice: "none" } as SimpleStreamOptions, project: "project", requestId: "agent-id" }, { ...selection, tools: enabled }).request.toolConfig).toEqual({ functionCallingConfig: { mode: "NONE" } })
     })
 
-    it("rejects enabled assistant tool-call history until Unit D replay is implemented", () => {
+    it("serializes a terminal orphan assistant call with its fixed synthetic failure", () => {
       const selection = resolveGenerationSelection(listCatalogEntries()[0]!, "off")
       const enabled = createEnabledToolCapability({ record: "fixture", revision: "1", publicModelId: "antigravity-gemini-3.8-flash", reasoning: "off", wireModel: "gemini-3.8-flash-tiered" })
       const context = { messages: [{ ...assistant([{ type: "toolCall", id: "call-1", name: "read_file", arguments: {} }]), stopReason: "toolUse" }] } as Context
-      expect(() => serializeContext({ context, model, project: "project", requestId: "agent-id" }, { ...selection, tools: enabled })).toThrow("PI_TOOL_HISTORY_REPLAY_PENDING")
+      expect(serializeContext({ context, model, project: "project", requestId: "agent-id" }, { ...selection, tools: enabled }).request.contents[1]).toEqual({
+        role: "user",
+        parts: [{ functionResponse: { name: "read_file", id: "call-1", response: { error: {
+          code: "PI_TOOL_RESULT_MISSING",
+          message: "Tool execution did not complete or its result was not recorded. Treat the call as failed; do not assume it had no side effects and do not retry it automatically.",
+        } } } }],
+      })
     })
 
     it("rejects enabled tool-result history until Unit D replay is implemented", () => {

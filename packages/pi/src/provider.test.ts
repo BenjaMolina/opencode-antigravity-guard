@@ -1,5 +1,8 @@
+import { readFileSync } from "node:fs"
+
 import { describe, expect, it, vi } from "vitest"
 
+import { listCatalogEntries, resolveGenerationSelection } from "./catalog.ts"
 import { parseProviderApiKey, registerAntigravityProvider } from "./provider.ts"
 
 function providerModel() {
@@ -38,6 +41,45 @@ describe("Antigravity Guard provider registration", () => {
     expect(typeof config.oauth.refreshToken).toBe("function")
     expect(typeof config.oauth.getApiKey).toBe("function")
     expect(typeof config.streamSimple).toBe("function")
+  })
+
+  it("documents every catalog row as text-registered but tool-disabled", () => {
+    const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8")
+
+    expect(readme).toContain("| Public ID | Exposed Pi levels | Tool state | Why tools are unavailable |")
+    for (const entry of listCatalogEntries()) {
+      const routes = Object.keys(entry.routes)
+      const state = resolveGenerationSelection(entry, routes[0]).tools
+      expect(state.state).toBe("disabled")
+      if (state.state !== "disabled") throw new Error("expected disabled catalog capability")
+      expect(readme).toContain(`| \`${entry.publicId}\` | ${routes.join(", ")} | Disabled | ${state.reason} |`)
+    }
+    expect(readme).toContain("`AUTO`")
+    expect(readme).toContain("`NONE`")
+    expect(readme).toContain("not enabled for tools")
+    expect(readme).toContain("`fixture-qualified` route remains disabled for ordinary tool use")
+  })
+
+  it("rejects tool-bearing contexts before fetch for each text registration", async () => {
+    const registerProvider = vi.fn()
+    const fetch = vi.fn<typeof globalThis.fetch>()
+
+    registerAntigravityProvider({ registerProvider })
+    const [, config] = registerProvider.mock.calls[0] ?? []
+    for (const model of config.models) {
+      const stream = config.streamSimple(
+        model,
+        {
+          messages: [{ role: "user", content: "Hello" }],
+          tools: [{ name: "read_file", description: "Read a file", parameters: { type: "object", properties: { path: { type: "string" } }, required: ["path"] } }],
+        },
+        { apiKey: '{"token":"stored-access","projectId":"stored-project"}', fetch },
+      )
+      const events = []
+      for await (const event of stream) events.push(event)
+      expect(events.map((event) => event.type)).toEqual(["start", "error"])
+    }
+    expect(fetch).not.toHaveBeenCalled()
   })
 
   it("keeps every registered descriptor text-only and zero-cost", () => {
