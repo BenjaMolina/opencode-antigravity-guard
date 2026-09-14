@@ -12,6 +12,19 @@ interface PackedArchive {
   files: PackedFile[]
 }
 
+const PI_RUNTIME_MODULES = [
+  "catalog",
+  "context",
+  "extension",
+  "oauth",
+  "provider",
+  "response",
+  "stream",
+  "tool-contract",
+  "tool-context",
+  "tool-schema",
+] as const
+
 const ROOT = process.cwd()
 const CORE_NAME = "@benjamolina/antigravity-guard-core"
 const ROOT_NAME = "@benjamolina/opencode-antigravity-guard"
@@ -62,6 +75,12 @@ function assertPackagedFile(archive: PackedArchive, filename: string): void {
   assert(archive.files.some((file) => file.path === filename), `${archive.filename} omits ${filename}`)
 }
 
+export function assertPiArchiveContents(archive: PackedArchive): void {
+  for (const module of PI_RUNTIME_MODULES) assertPackagedFile(archive, `dist/${module}.js`)
+  assert(!archive.files.some((file) => file.path.startsWith("src/")), "Pi archive contains source files")
+  assert(!archive.files.some((file) => /(?:^|\/)(?:fixtures|test)(?:\/|$)|\.test\.(?:js|d\.ts|d\.ts\.map)$/.test(file.path)), "Pi archive contains test or fixture artifacts")
+}
+
 function assertNoRepositoryImportsInEmittedFiles(directory: string): void {
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     const path = join(directory, entry.name)
@@ -97,10 +116,7 @@ function main(): void {
     assertPackagedFile(pi, "LICENSE")
     assertPackagedFile(pi, "package.json")
     assertPackagedFile(pi, "README.md")
-    assertPackagedFile(pi, "dist/extension.js")
-    assertPackagedFile(pi, "dist/provider.js")
-    assert(!pi.files.some((file) => file.path.startsWith("src/")), "Pi archive contains source files")
-    assert(!pi.files.some((file) => /\.test\.(?:js|d\.ts|d\.ts\.map)$/.test(file.path)), "Pi archive contains compiled test artifacts")
+    assertPiArchiveContents(pi)
 
     assertNoRepositoryImportsInEmittedFiles(join(ROOT, "packages", "core", "dist"))
     assertNoRepositoryImportsInEmittedFiles(join(ROOT, "packages", "pi", "dist"))
@@ -164,4 +180,4 @@ function main(): void {
   }
 }
 
-main()
+if (process.argv[1]?.endsWith("pack-consumer.ts")) main()
