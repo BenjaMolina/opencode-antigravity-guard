@@ -1,6 +1,7 @@
 import type { Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai"
 
-import { getCatalogEntry, resolveGenerationRoute } from "./catalog.ts"
+import { getCatalogEntry, resolveGenerationSelection, type GenerationSelection, type ToolCapability } from "./catalog.ts"
+import { hasToolContext, prepareToolContext, replayToolHistory } from "./tool-context.ts"
 
 const MAX_TEXT_BYTES = 8 * 1024 * 1024
 const PROVIDER = "antigravity-guard"
@@ -17,7 +18,7 @@ interface Part {
 
 interface Content {
   role: "user" | "model"
-  parts: Part[]
+  parts: object[]
 }
 
 export interface GenerationRequest {
@@ -26,6 +27,8 @@ export interface GenerationRequest {
   request: {
     contents: Content[]
     systemInstruction?: { parts: Part[] }
+    tools?: { functionDeclarations: unknown }[]
+    toolConfig?: { functionCallingConfig: { mode: "AUTO" | "NONE" } }
     generationConfig: {
       temperature: number
       maxOutputTokens: number
@@ -49,6 +52,30 @@ export interface SerializeTextContextInput {
 
 export class ContextSerializationError extends Error {}
 
+export function serializeContext(input: SerializeTextContextInput, injectedSelection?: GenerationSelection, onRecovery?: (recoveryCount: number) => void): GenerationRequest {
+  const context = input.context as unknown
+  if (!hasToolContext(context)) return serializeTextContext(input)
+  const options = input.options as unknown
+  const entry = isRecord(input.model) ? getCatalogEntry(field(input.model, "id", true)) : undefined
+  if (!entry || !isRecord(context)) return serializeTextContext(input)
+  const selected = resolveGenerationSelection(entry, isRecord(options) ? option(options, "reasoning") : undefined)
+  const selection = injectedSelection ?? selected
+  if (selection.level !== selected.level || selection.route.wireModel !== selected.route.wireModel) fail("Invalid tool capability selection.")
+  if (selection.tools.state !== "enabled") fail(capabilityError(entry.publicId, selection.level, selection.tools))
+  const prepared = prepareToolContext(field(context, "tools") ?? [], isRecord(options) ? field(options, "toolChoice") : undefined)
+  const { tools: _tools, messages, ...textContext } = context
+  const { toolChoice: _choice, ...textOptions } = isRecord(options) ? options : {}
+  const text = serializeTextContext({ ...input, context: { ...textContext, messages: [{ role: "user", content: "placeholder", timestamp: 0 }] } as Context, options: textOptions as SimpleStreamOptions })
+  const contents = replayToolHistory(isDenseArray(messages), (part, message) => messagePart(part, field(message, "role") === "assistant", field(message, "role") === "assistant" && entry.replay.kind === "same-public-model" && isSameProviderAndModel(message, entry.publicId)), onRecovery)
+  const { systemInstruction, generationConfig } = text.request
+  return { ...text, request: {
+    contents,
+    ...(systemInstruction ? { systemInstruction } : {}),
+    ...(prepared ? { tools: [{ functionDeclarations: prepared.declarations }], toolConfig: { functionCallingConfig: { mode: prepared.mode } } } : {}),
+    generationConfig,
+  } }
+}
+
 export function serializeTextContext(input: SerializeTextContextInput): GenerationRequest {
   try {
     if (!isRecord(input)) fail("Invalid text context.")
@@ -59,7 +86,9 @@ export function serializeTextContext(input: SerializeTextContextInput): Generati
     const requestId = field(input, "requestId", true)
     const entry = isRecord(model) ? getCatalogEntry(field(model, "id", true)) : undefined
     if (!isRecord(context) || !entry || typeof project !== "string" || typeof requestId !== "string") fail("Invalid text context.")
-    const route = resolveGenerationRoute(entry, option(options, "reasoning"))
+    const selection = resolveGenerationSelection(entry, option(options, "reasoning"))
+    const route = selection.route
+    if (isToolBearingContext(context) && selection.tools.state !== "enabled") fail(capabilityError(entry.publicId, selection.level, selection.tools))
     const systemPrompt = field(context, "systemPrompt")
     const tools = field(context, "tools")
     if (systemPrompt !== undefined && typeof systemPrompt !== "string") fail("Text-only context is required.")
@@ -96,41 +125,61 @@ export function serializeTextContext(input: SerializeTextContextInput): Generati
   }
 }
 
+function capabilityError(publicId: string, reasoning: string, capability: ToolCapability): string {
+  const reason = capability.state === "disabled" ? capability.reason : capability.state
+  return `PI_TOOL_CAPABILITY_NOT_ENABLED: ${publicId}/${reasoning} is ${capability.state} (${reason}).`
+}
+
+function isToolBearingContext(context: Record<string, unknown>): boolean {
+  const tools = field(context, "tools")
+  if (tools !== undefined && isDenseArray(tools).length > 0) return true
+  const messages = isDenseArray(field(context, "messages", true))
+  for (const message of messages) {
+    if (!isRecord(message)) continue
+    if (field(message, "role") === "toolResult") return true
+    const content = field(message, "content")
+    if (!Array.isArray(content)) continue
+    for (const part of content) if (isRecord(part) && field(part, "type") === "toolCall") return true
+  }
+  return false
+}
+
 function messageParts(content: unknown, assistant: boolean, sameProviderAndModel: boolean): Part[] {
   if (typeof content === "string") return content ? [{ text: content }] : fail("A text conversation is required.")
   const parts = isDenseArray(content)
   if (!parts.length) fail("A text conversation is required.")
-  return parts.map((part) => {
-    if (!isRecord(part)) fail("Only text context is supported by this provider.")
-    const type = field(part, "type", true)
-    if (type === "text") {
-      const text = field(part, "text", true)
-      if (typeof text !== "string") fail("Only text context is supported by this provider.")
-      const thoughtSignature = sameProviderAndModel ? validThoughtSignature(field(part, "textSignature")) : undefined
-      if (!text && !thoughtSignature) fail("Only text context is supported by this provider.")
-      return { text, ...(thoughtSignature ? { thoughtSignature } : {}) }
-    }
-    if (type === "thinking" && assistant && sameProviderAndModel) {
-      const text = field(part, "thinking", true)
-      if (typeof text !== "string") fail("Only text context is supported by this provider.")
-      const thoughtSignature = validThoughtSignature(field(part, "thinkingSignature"))
-      if (!text && !thoughtSignature) fail("Only text context is supported by this provider.")
-      return { thought: true, text, ...(thoughtSignature ? { thoughtSignature } : {}) }
-    }
-    if (type === "thinking" && assistant) {
-      const text = field(part, "thinking", true)
-      if (typeof text !== "string" || !text) fail("Only text context is supported by this provider.")
-      return { text }
-    }
-    fail("Only text context is supported by this provider.")
-  })
+  return parts.map((part) => messagePart(isRecord(part) ? part : fail("Only text context is supported by this provider."), assistant, sameProviderAndModel))
+}
+
+function messagePart(part: Record<string, unknown>, assistant: boolean, sameProviderAndModel: boolean): Part {
+  const type = field(part, "type", true)
+  if (type === "text") {
+    const text = field(part, "text", true)
+    if (typeof text !== "string") fail("Only text context is supported by this provider.")
+    const thoughtSignature = sameProviderAndModel ? validThoughtSignature(field(part, "textSignature")) : undefined
+    if (!text && !thoughtSignature) fail("Only text context is supported by this provider.")
+    return { text, ...(thoughtSignature ? { thoughtSignature } : {}) }
+  }
+  if (type === "thinking" && assistant && sameProviderAndModel) {
+    const text = field(part, "thinking", true)
+    if (typeof text !== "string") fail("Only text context is supported by this provider.")
+    const thoughtSignature = validThoughtSignature(field(part, "thinkingSignature"))
+    if (!text && !thoughtSignature) fail("Only text context is supported by this provider.")
+    return { thought: true, text, ...(thoughtSignature ? { thoughtSignature } : {}) }
+  }
+  if (type === "thinking" && assistant) {
+    const text = field(part, "thinking", true)
+    if (typeof text !== "string" || !text) fail("Only text context is supported by this provider.")
+    return { text }
+  }
+  fail("Only text context is supported by this provider.")
 }
 
 function isSameProviderAndModel(message: Record<string, unknown>, publicId: string): boolean {
   return field(message, "provider") === PROVIDER && field(message, "model") === publicId
 }
 
-function serializeThinkingConfig(thinking: ReturnType<typeof resolveGenerationRoute>["thinking"]):
+function serializeThinkingConfig(thinking: ReturnType<typeof resolveGenerationSelection>["route"]["thinking"]):
   | { thinkingLevel: "low" | "medium" | "high", includeThoughts: boolean }
   | { thinkingBudget: number, includeThoughts: boolean }
   | undefined {
@@ -139,7 +188,7 @@ function serializeThinkingConfig(thinking: ReturnType<typeof resolveGenerationRo
   return undefined
 }
 
-function resolveOutputTokens(maxTokens: unknown, maxAllowed: number, thinking: ReturnType<typeof resolveGenerationRoute>["thinking"]): number {
+function resolveOutputTokens(maxTokens: unknown, maxAllowed: number, thinking: ReturnType<typeof resolveGenerationSelection>["route"]["thinking"]): number {
   if (typeof maxTokens === "number") {
     if (maxTokens > maxAllowed) fail(`maxTokens must be a positive integer no greater than ${maxAllowed}.`)
     if (thinking.kind === "budget" && thinking.budget > 0 && maxTokens <= thinking.budget) fail("maxTokens must exceed the selected thinking budget.")
