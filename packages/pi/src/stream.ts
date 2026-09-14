@@ -73,13 +73,13 @@ export function createPiLifecycleStream(input: PiStreamLifecycleInput) {
   }
   let removeAbort: () => void = () => {}
 
-  const finalize = (reason: "stop" | "length" | "error" | "aborted", errorMessage?: string) => {
+  const finalize = (reason: "stop" | "length" | "toolUse" | "error" | "aborted", errorMessage?: string) => {
     if (complete) return
     complete = true
     removeAbort()
     if (reason === "error" || reason === "aborted") controller.abort()
     output.stopReason = reason
-    if (reason === "stop" || reason === "length") {
+    if (reason === "stop" || reason === "length" || reason === "toolUse") {
       closeBlock()
       stream.push({ type: "done", reason, message: output })
     } else {
@@ -225,7 +225,7 @@ async function consume(body: ReadableStream<Uint8Array>, signal: AbortSignal, on
       for (const record of framer.push(next.value)) for (const semantic of semantics.push(record)) await deliver(onSemantic, semantic)
     }
     for (const record of framer.finish()) for (const semantic of semantics.push(record)) await deliver(onSemantic, semantic)
-    semantics.finish()
+    await deliver(onSemantic, semantics.finish())
   } catch (error) {
     void reader.cancel().catch(() => undefined)
     throw error

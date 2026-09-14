@@ -103,11 +103,11 @@ The user selected `feature-branch-chain` after reviewing the 2,100–3,100-line 
 **Budget / commit candidate:** 320–400 lines; `feat(pi): parse validated Antigravity function calls`.  
 **Finish / rollback boundary:** Response parsing can produce validated tool-call semantics but does not itself emit Pi lifecycle events; reverting restores strict rejection of function calls and `OTHER` finishes.
 
-- [ ] **RED:** Add SSE/parser tests for single, parallel, and interleaved calls; declared-name policy; canonical argument JSON; call ordinals; `OTHER`/`STOP`/`MAX_TOKENS` finish matrix; and unchanged text/thinking/signature/usage fixtures. <!-- sdd-owner: implementation -->
-- [ ] **GREEN:** Add transactional `ToolCallSemantic`, strict complete `functionCall` validation, request-derived accept/reject response policy, and deferred finish emission until `[DONE]` or clean EOF validates terminal state. <!-- sdd-owner: implementation -->
-- [ ] **TRIANGULATE:** Add malformed/extra-field/blank-or-duplicate-ID/scalar-args/unknown-name tests plus same-record transactional failure, late frames, missing finish, empty/truncated stream, and usage placement tests. <!-- sdd-owner: implementation -->
-- [ ] **REFACTOR:** Share canonical JSON validation with the Pi-local contract and make parser state explicitly reject records after finish or `[DONE]` without changing existing text behavior. <!-- sdd-owner: implementation -->
-- [ ] Verify this unit with `npm test -- --run packages/pi/src/response.test.ts`, `npm run typecheck:pi`, and `npm test`; rollback by restoring function-call and `OTHER` rejection together. <!-- sdd-owner: implementation -->
+- [x] **RED:** Add SSE/parser tests for single, parallel, and interleaved calls; declared-name policy; canonical argument JSON; call ordinals; `OTHER`/`STOP`/`MAX_TOKENS` finish matrix; and unchanged text/thinking/signature/usage fixtures. <!-- sdd-owner: implementation -->
+- [x] **GREEN:** Add transactional `ToolCallSemantic`, strict complete `functionCall` validation, request-derived accept/reject response policy, and deferred finish emission until `[DONE]` or clean EOF validates terminal state. <!-- sdd-owner: implementation -->
+- [x] **TRIANGULATE:** Add malformed/extra-field/blank-or-duplicate-ID/scalar-args/unknown-name tests plus same-record transactional failure, late frames, missing finish, empty/truncated stream, and usage placement tests. <!-- sdd-owner: implementation -->
+- [x] **REFACTOR:** Share canonical JSON validation with the Pi-local contract and make parser state explicitly reject records after finish or `[DONE]` without changing existing text behavior. <!-- sdd-owner: implementation -->
+- [x] Verify this unit with `npm test -- --run packages/pi/src/response.test.ts`, `npm run typecheck:pi`, and `npm test`; rollback by restoring function-call and `OTHER` rejection together. <!-- sdd-owner: implementation -->
 
 ## G — Pi lifecycle events, terminal cleanup, diagnostics, and transport integration
 

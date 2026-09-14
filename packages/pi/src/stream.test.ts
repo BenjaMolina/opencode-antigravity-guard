@@ -94,8 +94,8 @@ describe("fixed Antigravity SSE transport", () => {
     expect(onSemantic.mock.calls.map(([semantic]) => semantic)).toEqual([
       { type: "thinking", thinking: "plan", signature: "c2ln" },
       { type: "text", text: "answer", signature: "dGV4dA==" },
-      { type: "finish", reason: "stop" },
       { type: "usage", input: 5, output: 7, cacheRead: 2, cacheWrite: 0, reasoning: 4, total: 14 },
+      { type: "finish", reason: "stop" },
     ])
   })
 
@@ -116,8 +116,8 @@ describe("fixed Antigravity SSE transport", () => {
     expect(onSemantic.mock.calls.map(([semantic]) => semantic)).toEqual([
       { type: "thinking", thinking: "plan", signature: "c2ln" },
       { type: "text", text: "answer", signature: "dGV4dA==" },
-      { type: "finish", reason: "stop" },
       { type: "usage", input: 5, output: 7, cacheRead: 2, cacheWrite: 0, reasoning: 4, total: 14 },
+      { type: "finish", reason: "stop" },
     ])
   })
 
@@ -331,6 +331,18 @@ describe("Pi-native stream lifecycle", () => {
 
     expect(events.map((event) => event.type)).toEqual(["start", "error"])
     expect(await lifecycle.result()).toMatchObject({ stopReason: "error", errorMessage: "Antigravity generation failed." })
+  })
+
+  it("hands an already validated toolUse finish to the terminal lifecycle", async () => {
+    const lifecycle = createPiLifecycleStream({
+      model: model(),
+      now: () => 1_000,
+      runTransport: async ({ onSemantic }) => { onSemantic({ type: "finish", reason: "toolUse" }) },
+    })
+    const events = []
+    for await (const event of lifecycle) events.push(event)
+    expect(events.map((event) => event.type)).toEqual(["start", "done"])
+    expect(await lifecycle.result()).toMatchObject({ stopReason: "toolUse" })
   })
 
   it("adapts G2a callbacks into ordered mutable partials with cumulative zero-cost usage", async () => {
