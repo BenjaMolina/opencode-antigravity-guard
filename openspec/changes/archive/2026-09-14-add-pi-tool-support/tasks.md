@@ -116,11 +116,11 @@ The user selected `feature-branch-chain` after reviewing the 2,100–3,100-line 
 **Budget / commit candidate:** 350–400 lines; `feat(pi): emit safe tool-call stream lifecycle`.  
 **Finish / rollback boundary:** Accepted semantics become Pi events with one terminal outcome; failure scrubs calls from shared partial state. Revert this unit together with F before any tool-capable route can be enabled.
 
-- [ ] **RED:** Add lifecycle tests for exact `start → toolcall_start → toolcall_delta → toolcall_end → done(toolUse)`, shared partial identity, complete canonical argument delta including `{}`, real content indexes versus call indexes, interleaved text/thinking, and multiple calls. <!-- sdd-owner: implementation -->
-- [ ] **GREEN:** Extend `stream.ts` to map validated tool-call semantics into indexed Pi blocks/events, set `stopReason: "toolUse"` only on committed success, attach safe tool-only diagnostics, and centralize `open | succeeded | failed` finalization. <!-- sdd-owner: implementation -->
-- [ ] **TRIANGULATE:** Add abort, timeout, malformed/late stream, callback failure, post-call response error, and concurrent-stream tests proving calls are scrubbed on failure and exactly one `done` or `error` occurs. <!-- sdd-owner: implementation -->
-- [ ] **REFACTOR:** Consolidate block-closing and terminal guards while preserving existing cancellation, body cancellation, HTTP/quota error, and no-tool terminal behavior. <!-- sdd-owner: implementation -->
-- [ ] Verify this unit with `npm test -- --run packages/pi/src/stream.test.ts`, `npm run typecheck:pi`, `npm test`, and `npm run build:pi`; rollback by reverting lifecycle and F response admission in dependency order. <!-- sdd-owner: implementation -->
+- [x] **RED:** Add lifecycle tests for exact `start → toolcall_start → toolcall_delta → toolcall_end → done(toolUse)`, shared partial identity, complete canonical argument delta including `{}`, real content indexes versus call indexes, interleaved text/thinking, and multiple calls. <!-- sdd-owner: implementation -->
+- [x] **GREEN:** Extend `stream.ts` to map validated tool-call semantics into indexed Pi blocks/events, set `stopReason: "toolUse"` only on committed success, attach safe tool-only diagnostics, and centralize `open | succeeded | failed` finalization. <!-- sdd-owner: implementation -->
+- [x] **TRIANGULATE:** Add abort, timeout, malformed/late stream, callback failure, post-call response error, and concurrent-stream tests proving calls are scrubbed on failure and exactly one `done` or `error` occurs. <!-- sdd-owner: implementation -->
+- [x] **REFACTOR:** Consolidate block-closing and terminal guards while preserving existing cancellation, body cancellation, HTTP/quota error, and no-tool terminal behavior. <!-- sdd-owner: implementation -->
+- [x] Verify this unit with `npm test -- --run packages/pi/src/stream.test.ts`, `npm run typecheck:pi`, `npm test`, and `npm run build:pi`; rollback by reverting lifecycle and F response admission in dependency order. <!-- sdd-owner: implementation -->
 
 ## H — Provider compatibility, documentation, package consumer, and cross-slice regression
 
@@ -129,11 +129,11 @@ The user selected `feature-branch-chain` after reviewing the 2,100–3,100-line 
 **Budget / commit candidate:** 220–320 lines; `docs(pi): document evidence-gated tool capability`.  
 **Finish / rollback boundary:** Public package wording and distribution checks match fail-closed catalog status; reverting docs/pack assertions does not alter runtime tool policy, and route activation remains out of scope.
 
-- [ ] **RED:** Add provider and pack-consumer tests asserting the legacy two-argument registration, unchanged seven descriptors/OAuth hooks, emitted runtime module availability, clean production install/load, and absence of source/tests/fixtures or repository-relative runtime imports from the archive. <!-- sdd-owner: implementation -->
-- [ ] **GREEN:** Update only necessary provider imports, pack assertions, and README/package wording; document route-level states, text-versus-tool distinction, preflight boundaries, `AUTO`/`NONE`, schema/result limits, and Claude’s disabled status without claiming enabled tools. <!-- sdd-owner: implementation -->
-- [ ] **TRIANGULATE:** Add documentation-to-catalog consistency assertions for disabled and fixture-qualified routes and run the full no-tool plus tool preflight/regression matrix against all seven text registrations. <!-- sdd-owner: implementation -->
-- [ ] **REFACTOR:** Remove duplicated status literals by deriving documentation test data from catalog-facing data where package boundaries permit, while keeping OpenSpec evidence out of runtime loading. <!-- sdd-owner: implementation -->
-- [ ] Verify this unit and the complete accepted change with `npm test`, `npm run typecheck:pi`, `npm run build:pi`, `npm run typecheck`, `npm run build`, and `npm run test:pack`; report any environment-dependent direct-validation gap as a blocker rather than enabling a route. <!-- sdd-owner: implementation -->
+- [x] **RED:** Add provider and pack-consumer tests asserting the legacy two-argument registration, unchanged seven descriptors/OAuth hooks, emitted runtime module availability, clean production install/load, and absence of source/tests/fixtures or repository-relative runtime imports from the archive. <!-- sdd-owner: implementation -->
+- [x] **GREEN:** Update only necessary provider imports, pack assertions, and README/package wording; document route-level states, text-versus-tool distinction, preflight boundaries, `AUTO`/`NONE`, schema/result limits, and Claude’s disabled status without claiming enabled tools. <!-- sdd-owner: implementation -->
+- [x] **TRIANGULATE:** Add documentation-to-catalog consistency assertions for disabled and fixture-qualified routes and run the full no-tool plus tool preflight/regression matrix against all seven text registrations. <!-- sdd-owner: implementation -->
+- [x] **REFACTOR:** Remove duplicated status literals by deriving documentation test data from catalog-facing data where package boundaries permit, while keeping OpenSpec evidence out of runtime loading. <!-- sdd-owner: implementation -->
+- [x] Verify this unit and the complete accepted change with `npm test`, `npm run typecheck:pi`, `npm run build:pi`, `npm run typecheck`, `npm run build`, and `npm run test:pack`; report any environment-dependent direct-validation gap as a blocker rather than enabling a route. <!-- sdd-owner: implementation -->
 
 ## Handoff conditions
 

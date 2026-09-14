@@ -1,6 +1,8 @@
 import type { Context, Model } from "@earendil-works/pi-ai"
 import { describe, expect, it, vi } from "vitest"
 
+import { createEnabledToolCapability, getCatalogEntry, resolveGenerationSelection } from "./catalog.ts"
+import type { ResponseSemantic } from "./response.ts"
 import { createPiLifecycleStream, executeStreamTransport, StreamTransportError } from "./stream.ts"
 
 const endpoint = "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:streamGenerateContent?alt=sse"
@@ -59,6 +61,45 @@ describe("fixed Antigravity SSE transport", () => {
     ])
     expect(onPayload).toHaveBeenCalledOnce()
     expect(onResponse).toHaveBeenCalledWith(expect.objectContaining({ status: 200 }), model())
+  })
+
+  it("maps admitted streamed function calls through transport with the matching response policy", async () => {
+      const entry = getCatalogEntry(model().id)!
+      const base = resolveGenerationSelection(entry, undefined)
+      const selection = { ...base, tools: createEnabledToolCapability({ record: "test", revision: "1", publicModelId: entry.publicId, reasoning: base.level, wireModel: base.route.wireModel }) }
+      const semantics: unknown[] = []
+      await executeStreamTransport({
+        accessToken: "access-token", projectId: "stored-project",
+        context: { tools: [{ name: "read_file", description: "Read a file", parameters: { type: "object", properties: { path: { type: "string" } } } }], messages: [{ role: "user", content: "Hello", timestamp: 0 }] } as unknown as Context,
+        fetch: vi.fn<typeof globalThis.fetch>().mockResolvedValue(new Response(`data: ${JSON.stringify({ response: { candidates: [{ content: { parts: [{ functionCall: { id: "call-1", name: "read_file", args: {} } }] }, finishReason: "OTHER" }] } })}\n\n`, { headers: { "Content-Type": "text/event-stream" } })),
+        model: model(), now: () => 1_000, onSemantic: (semantic) => { semantics.push(semantic) }, platform: "win32", requestId: "request-id", selection,
+      })
+      expect(semantics).toEqual([
+        { type: "toolDiagnostics", details: { publicModelId: entry.publicId, reasoning: base.level, capabilityState: "enabled", preflight: "accepted", recoveryCount: 0 } },
+        { type: "toolCall", callIndex: 0, id: "call-1", name: "read_file", arguments: {}, argumentsJson: "{}" },
+        { type: "finish", reason: "toolUse" },
+      ])
+    })
+
+    it("propagates enabled capability state and request-local recovery count into lifecycle diagnostics", async () => {
+    const entry = getCatalogEntry(model().id)!
+    const selection = resolveGenerationSelection(entry, undefined)
+    const enabled = { ...selection, tools: createEnabledToolCapability({ record: "test", revision: "1", publicModelId: entry.publicId, reasoning: selection.level, wireModel: selection.route.wireModel }) }
+    const lifecycle = createPiLifecycleStream({
+      model: model(),
+      now: () => 1_000,
+      runTransport: ({ onSemantic, signal }) => executeStreamTransport({
+        accessToken: "access-token", projectId: "stored-project",
+        context: { messages: [{ role: "assistant", content: [{ type: "toolCall", id: "call-1", name: "read_file", arguments: {} }], stopReason: "toolUse", timestamp: 0 }] } as unknown as Context,
+        fetch: vi.fn<typeof globalThis.fetch>().mockResolvedValue(new Response(`data: ${JSON.stringify({ response: { candidates: [{ content: { parts: [{ text: "done" }] }, finishReason: "STOP" }] } })}\n\n`, { headers: { "Content-Type": "text/event-stream" } })),
+        model: model(), now: () => 1_000, onSemantic, platform: "win32", requestId: "request-id", selection: enabled, signal,
+      }),
+    })
+    for await (const _event of lifecycle) undefined
+    expect(await lifecycle.result()).toMatchObject({
+      stopReason: "stop",
+      diagnostics: [{ type: "antigravity-guard.tools", details: { publicModelId: entry.publicId, reasoning: selection.level, capabilityState: "enabled", preflight: "accepted", recoveryCount: 1, terminal: "stop" } }],
+    })
   })
 
   it("serializes an omission-policy Gemini request through the fixed Antigravity transport", async () => {
@@ -147,6 +188,37 @@ describe("fixed Antigravity SSE transport", () => {
         "User-Agent": "antigravity/cli/1.1.23 (aidev_client; os_type=linux; arch=amd64; cl=974125021; auth_method=consumer)",
       },
     }))
+  })
+
+  it("preserves safe schema preflight diagnostics before fetch", async () => {
+    const entry = getCatalogEntry(model().id)!
+    const selection = resolveGenerationSelection(entry, undefined)
+    const enabled = { ...selection, tools: createEnabledToolCapability({ record: "test", revision: "1", publicModelId: entry.publicId, reasoning: selection.level, wireModel: selection.route.wireModel }) }
+    const fetch = vi.fn<typeof globalThis.fetch>()
+    await expect(executeStreamTransport({
+      accessToken: "access-token", projectId: "stored-project",
+      context: { tools: [{ name: "read_file", description: "Read a file", parameters: { type: "string" } }], messages: [{ role: "user", content: "Hello", timestamp: 0 }] } as unknown as Context,
+      fetch, model: model(), now: () => 1_000, onSemantic: vi.fn(), platform: "win32", requestId: "request-id", selection: enabled,
+    })).rejects.toMatchObject({
+      kind: "preflight",
+      details: { publicModelId: entry.publicId, reasoning: selection.level, capabilityState: "enabled", preflightCategory: "schema", preflightPath: "$.type" },
+    })
+    expect(fetch).not.toHaveBeenCalled()
+
+    const lifecycle = createPiLifecycleStream({
+      model: model(),
+      now: () => 1_000,
+      runTransport: ({ onSemantic, signal }) => executeStreamTransport({
+        accessToken: "access-token", projectId: "stored-project",
+        context: { tools: [{ name: "read_file", description: "Read a file", parameters: { type: "string" } }], messages: [{ role: "user", content: "Hello", timestamp: 0 }] } as unknown as Context,
+        fetch, model: model(), now: () => 1_000, onSemantic, platform: "win32", requestId: "request-id", selection: enabled, signal,
+      }),
+    })
+    for await (const _event of lifecycle) undefined
+    expect(await lifecycle.result()).toMatchObject({
+      stopReason: "error",
+      diagnostics: [{ type: "antigravity-guard.tools", details: { publicModelId: entry.publicId, reasoning: selection.level, capabilityState: "enabled", preflightCategory: "schema", preflightPath: "$.type", terminal: "error" } }],
+    })
   })
 
   it("rejects declaration, call, and result tool contexts before fetch while retaining no-tool transport", async () => {
@@ -345,7 +417,58 @@ describe("Pi-native stream lifecycle", () => {
     expect(await lifecycle.result()).toMatchObject({ stopReason: "toolUse" })
   })
 
-  it("adapts G2a callbacks into ordered mutable partials with cumulative zero-cost usage", async () => {
+  it("emits complete indexed tool-call lifecycles and scrubs calls after failure", async () => {
+      const lifecycle = createPiLifecycleStream({
+        model: model(),
+        now: () => 1_000,
+        runTransport: async ({ onSemantic }) => {
+          onSemantic({ type: "thinking", thinking: "plan" })
+          onSemantic({ type: "toolCall", callIndex: 0, id: "call-1", name: "read_file", arguments: {}, argumentsJson: "{}" })
+          onSemantic({ type: "text", text: "after" })
+          onSemantic({ type: "toolCall", callIndex: 1, id: "call-2", name: "read_file", arguments: { path: "README.md" }, argumentsJson: "{\"path\":\"README.md\"}" })
+          onSemantic({ type: "finish", reason: "toolUse" })
+        },
+      })
+      const events = []
+      for await (const event of lifecycle) events.push(event)
+      expect(events.map((event) => event.type)).toEqual([
+        "start", "thinking_start", "thinking_delta", "thinking_end", "toolcall_start", "toolcall_delta", "toolcall_end", "text_start", "text_delta", "text_end", "toolcall_start", "toolcall_delta", "toolcall_end", "done",
+      ])
+      expect(events.filter((event) => event.type.startsWith("toolcall")).map((event) => "contentIndex" in event ? event.contentIndex : undefined)).toEqual([1, 1, 1, 3, 3, 3])
+      const toolEnd = events.filter((event) => event.type === "toolcall_end")
+      expect(toolEnd[0]?.toolCall).toBe((events.find((event) => event.type === "toolcall_start") as { partial: { content: unknown[] } }).partial.content[1])
+      expect(await lifecycle.result()).toMatchObject({ stopReason: "toolUse", content: [{ type: "thinking" }, { type: "toolCall", id: "call-1", arguments: {} }, { type: "text" }, { type: "toolCall", id: "call-2" }], diagnostics: [{ type: "antigravity-guard.tools", details: { terminal: "toolUse" } }] })
+
+      const failed = createPiLifecycleStream({
+        model: model(), now: () => 1_000,
+        runTransport: async ({ onSemantic }) => { onSemantic({ type: "toolCall", callIndex: 0, id: "call", name: "read_file", arguments: {}, argumentsJson: "{}" }); throw new Error("late") },
+      })
+      const failedEvents = []
+      for await (const event of failed) failedEvents.push(event)
+      expect(failedEvents.map((event) => event.type)).toEqual(["start", "toolcall_start", "toolcall_delta", "toolcall_end", "error"])
+      expect(await failed.result()).toMatchObject({ stopReason: "error", content: [], diagnostics: [{ type: "antigravity-guard.tools", details: { terminal: "error" } }] })
+    })
+
+    it("scrubs an emitted call on abort and ignores late semantic callbacks", async () => {
+      const controller = new AbortController()
+      let onSemantic!: (semantic: ResponseSemantic) => void
+      let release!: () => void
+      const blocked = new Promise<void>((resolve) => { release = resolve })
+      const lifecycle = createPiLifecycleStream({
+        model: model(), now: () => 1_000, signal: controller.signal,
+        runTransport: async (input) => { onSemantic = input.onSemantic; onSemantic({ type: "toolCall", callIndex: 0, id: "call", name: "read_file", arguments: {}, argumentsJson: "{}" }); await blocked },
+      })
+      await Promise.resolve()
+      controller.abort()
+      onSemantic({ type: "toolCall", callIndex: 1, id: "late", name: "read_file", arguments: {}, argumentsJson: "{}" })
+      release()
+      const events = []
+      for await (const event of lifecycle) events.push(event)
+      expect(events.map((event) => event.type)).toEqual(["start", "toolcall_start", "toolcall_delta", "toolcall_end", "error"])
+      expect(await lifecycle.result()).toMatchObject({ stopReason: "aborted", content: [] })
+    })
+
+    it("adapts G2a callbacks into ordered mutable partials with cumulative zero-cost usage", async () => {
     const lifecycle = createPiLifecycleStream({
       model: model(),
       now: () => 1_000,

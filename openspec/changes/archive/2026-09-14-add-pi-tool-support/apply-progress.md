@@ -574,3 +574,159 @@ This explicitly authorized fallback adds the missing transactional `MAX_TOKENS` 
 - Test correction: 7 additions, 0 deletions, 7 changed code/test lines.
 - Complete Unit F code/test working diff: 168 additions, 63 deletions, 231 changed lines across `response.ts`, `response.test.ts`, `stream.ts`, and `stream.test.ts`.
 - Focused Unit F response coverage now has 16 tests; response plus stream has 38 tests.
+
+---
+
+## Unit G completion: stream lifecycle and safe terminal cleanup
+
+### Structured status consumed
+
+- Change: `add-pi-tool-support`; parent-authoritative status: apply `ready`, Unit G only, branch `feat/pi-tool-support-g-lifecycle`, base/current HEAD `d8531bf`.
+- Action context: `repo-local`; every edit remained in `C:/Github/Ordico/opencode-antigravity-guard-pi-tools`, within the supplied Unit G surfaces.
+- Delivery: `auto-chain` / `feature-branch-chain`; strict TDD active with `npm test`. No commit, branch operation, push, publication, live call, capability activation, provider/auth/endpoint/header/timeout ownership, or Unit H change occurred.
+
+### Completed tasks and persisted checkbox updates
+
+All five Unit G implementation-owned rows are visibly marked `[x]` in `tasks.md`: RED, GREEN, TRIANGULATE, REFACTOR, and Verify. Unit H rows remain unchanged and unchecked.
+
+### Files changed
+
+- `packages/pi/src/stream.ts`
+- `packages/pi/src/stream.test.ts`
+- `openspec/changes/add-pi-tool-support/tasks.md`
+- `openspec/changes/add-pi-tool-support/apply-progress.md`
+
+### TDD Cycle Evidence
+
+| Task | Test file | RED | GREEN | TRIANGULATE | REFACTOR |
+|---|---|---|---|---|---|
+| G | `packages/pi/src/stream.test.ts` | New lifecycle/scrubbing scenario failed because no `toolcall_*` events were emitted. | Mapping complete validated calls into a shared indexed Pi block and scrubbing on failure made 24 focused tests pass. | Added admitted transport policy coverage and caller-abort/late-callback cleanup; 26 focused tests passed. | Central terminal guard continues to ignore late semantics, preserve existing text/thinking closure, and scrub every tool block before the sole error event. |
+
+### Verification evidence
+
+| Command | Result | Evidence |
+|---|---|---|
+| `npm test -- --run packages/pi/src/stream.test.ts` (RED) | Failed as expected | 23 passed, 1 new lifecycle test failed: expected `toolcall_start`, `toolcall_delta`, and `toolcall_end` events were absent. |
+| Same focused command (GREEN) | Passed | 24/24 tests passed. |
+| Same focused command (TRIANGULATE/REFACTOR) | Passed | 26/26 tests passed, including admitted transport policy, canonical `{}` delta, interleaving/indexing, post-call failure, abort, and late semantic cleanup. |
+| `npm run typecheck:pi` | Passed | Pi workspace `tsc -p tsconfig.json --noEmit` completed. |
+| `npm run build:pi` | Passed | Pi workspace `tsc -p tsconfig.json` completed. |
+| `npm test` | Accepted with inherited baseline only | 57/58 files passed, 1,325 passed, 25 todo; exactly the two supplied `scripts/release-manifest-check.test.ts` failures at lines 76 and 103, both `expected undefined to be defined`; no additional failures occurred. |
+| `git diff --check -- packages/pi/src/stream.ts packages/pi/src/stream.test.ts` | Passed | No whitespace errors. |
+
+### Implementation notes and remaining work
+
+- `executeStreamTransport()` now dispatches through the admitted context serializer and derives the matching declared-name response policy from the exact selected route; normal catalog routes remain disabled and no production route was enabled.
+- Each validated `toolCall` closes any active text/thinking block, appends one shared Pi block, emits start/delta/end at its real content index, and emits canonical JSON including `{}` before terminal `done(toolUse)`.
+- Central finalization retains one terminal event, scrubs all `toolCall` blocks before any error/aborted event, and records only a safe tool-only terminal diagnostic. Existing cancellation, body cancellation, HTTP/quota, no-tool, and late-callback behavior remains covered by the focused regression suite.
+- Unit G has no remaining unchecked implementation-owned rows. Unit H is the only remaining implementation work unit and is intentionally out of scope.
+
+### Workload / PR boundary
+
+Feature-branch-chain child G only. Exact authored code/test delta is **108 additions, 10 deletions, 118 changed lines** (`stream.ts` 36/8; `stream.test.ts` 72/2), excluding OpenSpec bookkeeping and below the 400-line budget. No size exception or commit was created.
+
+### Deviation and risk
+
+No design deviation occurred. The two full-suite release-manifest failures are inherited under the user-provided acceptance rule and are outside allowed surfaces. Tool capability remains fail-closed for every production route, so the injected enabled selection exists only for hermetic transport coverage.
+
+---
+
+## Unit H completion: provider compatibility, documentation, and package consumer
+
+### Structured status consumed
+
+- Change: `add-pi-tool-support`; parent-authoritative apply status `ready`, Unit H only on `feat/pi-tool-support-h-compat`, base/current HEAD `88d0683`.
+- Action context: `repo-local`; all edits stayed under `C:/Github/Ordico/opencode-antigravity-guard-pi-tools` and the supplied Unit H surfaces.
+- Delivery: `auto-chain` / `feature-branch-chain`; review budget 400 lines; strict TDD active with `npm test`. No commit, branch operation, push, publish, live call, capability activation, or production tool route was enabled.
+
+### Completed tasks and persisted checkbox updates
+
+All five Unit H implementation-owned rows are visibly marked `[x]` in `tasks.md`: RED, GREEN, TRIANGULATE, REFACTOR, and Verify. This completes all 40 implementation-owned tasks.
+
+### Files changed
+
+- `packages/pi/src/provider.test.ts`
+- `packages/pi/README.md`
+- `scripts/pack-consumer.ts`
+- `scripts/pack-consumer.test.ts`
+- `openspec/changes/add-pi-tool-support/tasks.md`
+- `openspec/changes/add-pi-tool-support/apply-progress.md`
+
+### TDD Cycle Evidence
+
+| Task | Test file | Layer | Safety net | RED | GREEN | TRIANGULATE | REFACTOR |
+|---|---|---|---|---|---|---|---|
+| H | `packages/pi/src/provider.test.ts`, `scripts/pack-consumer.test.ts` | Unit/integration | provider 6/6 and existing `npm run test:pack` passed | Provider README-status expectation failed; pack export contract was absent (2 failures) | provider 8/8 and pack unit 2/2 passed | 21 focused catalog/provider/pack assertions passed for seven preflight routes, fixture-qualified wording, and archive exclusions | Documentation assertions derive disabled state/reason from the catalog; archive checks use one runtime-module list; focused tests remain green |
+
+### Verification evidence
+
+| Command | Result | Evidence |
+|---|---|---|
+| `npm test -- --run packages/pi/src/provider.test.ts` (safety net) | Passed | 6/6 tests. |
+| `npm run test:pack` (safety net) | Passed | Clean production install/load and archive checks completed. |
+| `npm test -- --run packages/pi/src/provider.test.ts` (RED) | Failed as expected | README lacked the route-status table. |
+| `npm test -- --run scripts/pack-consumer.test.ts` (RED) | Failed as expected | `assertPiArchiveContents` was not exported; both new assertions failed. |
+| `npm test -- --run packages/pi/src/catalog.test.ts packages/pi/src/provider.test.ts scripts/pack-consumer.test.ts` | Passed | 3 files, 21 tests. |
+| `npm test` | Accepted inherited baseline only | 58/59 files passed, 1,330 tests passed, 25 todo; exactly the known failures at `scripts/release-manifest-check.test.ts:76` and `:103`, both `expected undefined to be defined`. |
+| `npm run typecheck:pi` | Passed | Pi package typecheck completed. |
+| `npm run build:pi` | Passed | Pi package build completed. |
+| `npm run typecheck` | Passed | Root/core typecheck completed. |
+| `npm run build` | Passed | Root/core build completed. |
+| `npm run test:pack` | Passed | Packed Node 20 root/core and Node 22 Pi clean-consumer load checks passed. |
+| `git diff --check -- packages/pi/src/provider.test.ts packages/pi/README.md scripts/pack-consumer.ts scripts/pack-consumer.test.ts` | Passed | No whitespace errors. |
+
+### Implementation notes, deviations, and remaining work
+
+- Provider registration remains the legacy two-argument `registerProvider(name, config)` call; seven descriptors and OAuth hooks are tested unchanged.
+- The README separates text registration from tool enablement, records every production route as disabled, documents `AUTO`/`NONE` and preflight/result/schema limits, and explicitly retains Claude's continuity gate. It claims no enabled tools.
+- The pack harness now requires all emitted Pi runtime modules, rejects source/test/fixture archive files, checks repository-relative emitted imports, and retains the clean production install/load check.
+- No design deviation occurred. Direct exact-route validation remains environment-dependent and unauthorized, so it is a capability blocker; no route was enabled.
+- No unchecked implementation-owned tasks remain. The next recommendation is `sdd-verify`.
+
+### Workload / PR boundary
+
+Feature-branch-chain child H only. Exact authored code/test/documentation delta is **129 additions, 15 deletions, 144 changed lines**: `provider.test.ts` 42/0, `README.md` 24/10, `pack-consumer.ts` 21/5, and `pack-consumer.test.ts` 42/0. OpenSpec bookkeeping is excluded. The slice remains below the 400-line budget; no size exception or commit was created.
+
+---
+
+## Corrective remediation: declaration-root and lifecycle diagnostics
+
+### Structured status consumed
+
+- Parent-authoritative remediation status selected `add-pi-tool-support` on `feat/pi-tool-support-h-compat`; no SDD status was queried or reconstructed.
+- Action context: `repo-local`; all edits stayed inside `C:/Github/Ordico/opencode-antigravity-guard-pi-tools` and the supplied allowed surfaces.
+- Strict TDD was active with `npm test`; budget was at most 400 lines. No task checkbox required updating because all 40 implementation-owned rows were already visibly `[x]`; no out-of-scope file, commit, branch operation, push, publication, durable state, or live call occurred.
+
+### Completed remediation
+
+- `tool-schema.ts` now requires each declaration `parameters` root to be a plain `{ type: "object" }` schema before recursively normalizing its nested schemas; nested primitive declarations remain accepted.
+- `context.ts` carries the existing request-local orphan recovery count from replay into `stream.ts` without adding persistent state or request payload fields.
+- `stream.ts` preserves safe preflight errors as `preflight` transport errors and carries only public model, reasoning, capability state, stable preflight category/path, and request-local recovery count into tool lifecycle diagnostics. It emits no schema, argument, result, prompt, or upstream body data.
+
+### TDD Cycle Evidence
+
+| Blocker | RED | GREEN | TRIANGULATE | REFACTOR |
+|---|---|---|---|---|
+| Object declaration root | Focused schema test failed because `{ type: "string" }` was accepted at the declaration root. | Root plain-object and `type: "object"` guard made the rejection pass. | Existing nested primitive, enum, depth, size, and fixture cases passed after root-only test fixtures were made valid roots. | Root enforcement occurs once before the existing recursive normalizer, retaining nested grammar behavior. |
+| Safe diagnostics lifecycle | Focused stream test failed because invalid schema preflight was collapsed to `transport` and had no details. | Typed safe diagnostics and `preflight` transport mapping made direct preflight assertions pass. | Lifecycle tests prove schema category/path/capability state on error and recovery count on admitted completion. | A private tool-diagnostic semantic keeps lifecycle collection request-local and terminal finalization remains the sole diagnostic writer. |
+
+### Verification evidence
+
+| Command | Result | Evidence |
+|---|---|---|
+| `npm test -- --run packages/pi/src/tool-schema.test.ts packages/pi/src/stream.test.ts` (RED) | Failed as expected | Primitive declaration root was accepted; schema preflight surfaced as generic `transport`. |
+| `npm test -- --run packages/pi/src/tool-schema.test.ts packages/pi/src/context.test.ts packages/pi/src/tool-context.test.ts packages/pi/src/stream.test.ts` | Passed | 4 files, 100 tests passed. |
+| `npm run typecheck:pi` | Passed | Pi TypeScript check completed. |
+| `npm run build:pi` | Passed | Pi TypeScript build completed. |
+| `npm test` | Accepted inherited baseline only | 58/59 files passed, 1,333 tests passed, 25 todo; exactly the two inherited `scripts/release-manifest-check.test.ts` failures at lines 76 and 103, both `expected undefined to be defined`. |
+| `git diff --check -- packages/pi/src/tool-schema.ts packages/pi/src/tool-schema.test.ts packages/pi/src/context.ts packages/pi/src/stream.ts packages/pi/src/stream.test.ts` | Passed | No whitespace errors. |
+
+### Files, persisted task state, and workload
+
+- Changed: `packages/pi/src/tool-schema.ts`, `packages/pi/src/tool-schema.test.ts`, `packages/pi/src/context.ts`, `packages/pi/src/stream.ts`, and `packages/pi/src/stream.test.ts`.
+- Re-read persisted `tasks.md`: all 40 implementation-owned task rows remain visibly `[x]`; no task artifact was edited in this bounded remediation.
+- This remediation is **132 additions and 19 deletions (151 changed lines)**, excluding this OpenSpec progress update, and is below the 400-line budget.
+
+### Verification-blocker outcome and risk
+
+Both original final-verification blockers are closed: primitive declaration roots fail locally at `$.type`, and lifecycle diagnostics retain safe preflight category/path, capability state, recovery count, and terminal state. The only full-suite failures remain the two user-approved inherited release-manifest failures. No design deviation, raw schema/result diagnostic, or durable state was introduced; production capabilities remain disabled.

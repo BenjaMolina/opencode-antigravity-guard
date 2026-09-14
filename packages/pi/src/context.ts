@@ -52,7 +52,7 @@ export interface SerializeTextContextInput {
 
 export class ContextSerializationError extends Error {}
 
-export function serializeContext(input: SerializeTextContextInput, injectedSelection?: GenerationSelection): GenerationRequest {
+export function serializeContext(input: SerializeTextContextInput, injectedSelection?: GenerationSelection, onRecovery?: (recoveryCount: number) => void): GenerationRequest {
   const context = input.context as unknown
   if (!hasToolContext(context)) return serializeTextContext(input)
   const options = input.options as unknown
@@ -66,7 +66,7 @@ export function serializeContext(input: SerializeTextContextInput, injectedSelec
   const { tools: _tools, messages, ...textContext } = context
   const { toolChoice: _choice, ...textOptions } = isRecord(options) ? options : {}
   const text = serializeTextContext({ ...input, context: { ...textContext, messages: [{ role: "user", content: "placeholder", timestamp: 0 }] } as Context, options: textOptions as SimpleStreamOptions })
-  const contents = replayToolHistory(isDenseArray(messages), (part, message) => messagePart(part, field(message, "role") === "assistant", field(message, "role") === "assistant" && entry.replay.kind === "same-public-model" && isSameProviderAndModel(message, entry.publicId)))
+  const contents = replayToolHistory(isDenseArray(messages), (part, message) => messagePart(part, field(message, "role") === "assistant", field(message, "role") === "assistant" && entry.replay.kind === "same-public-model" && isSameProviderAndModel(message, entry.publicId)), onRecovery)
   const { systemInstruction, generationConfig } = text.request
   return { ...text, request: {
     contents,
