@@ -83,6 +83,7 @@ export function serializeContext(input: SerializeTextContextInput, injectedSelec
     (part, message) => messagePart(part, field(message, "role") === "assistant", sameModel(message)),
     onDiagnostics,
     signedToolReplay,
+        prepared?.declarations.length ?? 0,
   )
   const { systemInstruction, generationConfig } = text.request
   return { ...text, request: {

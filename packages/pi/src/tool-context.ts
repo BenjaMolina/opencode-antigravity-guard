@@ -38,6 +38,11 @@ export type ToolReplayMode = "none" | "signed-function-response" | "unsigned-obs
 export interface ToolReplayDiagnostics {
   readonly replayMode: ToolReplayMode
   readonly recoveryCount: number
+  readonly userMessageCount: number
+  readonly assistantMessageCount: number
+  readonly toolResultMessageCount: number
+  readonly assistantToolCallBlockCount: number
+  readonly declaredToolCount: number
 }
 
 export interface ToolReplayPolicy {
@@ -46,11 +51,18 @@ export interface ToolReplayPolicy {
   readonly toolCallSignature: (part: Record<string, unknown>, message: Record<string, unknown>) => string | undefined
 }
 
-export function replayToolHistory(messages: unknown[], serializePart: (part: Record<string, unknown>, message: Record<string, unknown>) => WirePart, onDiagnostics?: (diagnostics: ToolReplayDiagnostics) => void, policy?: ToolReplayPolicy): WireContent[] {
+export function replayToolHistory(messages: unknown[], serializePart: (part: Record<string, unknown>, message: Record<string, unknown>) => WirePart, onDiagnostics?: (diagnostics: ToolReplayDiagnostics) => void, policy?: ToolReplayPolicy, declaredToolCount = 0): WireContent[] {
   const output: WireContent[] = []
   const calls = new Set<string>()
   const results = new Set<string>()
   const recoveryCount = { value: 0 }
+  const shape = {
+    userMessageCount: 0,
+    assistantMessageCount: 0,
+    toolResultMessageCount: 0,
+    assistantToolCallBlockCount: 0,
+    declaredToolCount: safeCount(declaredToolCount),
+  }
   let replayMode: ToolReplayMode = "none"
   let pending: { calls: PendingCall[], results: Map<string, WirePart>, observations: boolean } | undefined
   const appendTurn = (role: WireContent["role"], parts: WirePart[]) => {
@@ -72,6 +84,7 @@ export function replayToolHistory(messages: unknown[], serializePart: (part: Rec
   for (const message of messages) {
     const current = record(message)
     if (value(current, "role") === "toolResult") {
+      shape.toolResultMessageCount += 1
       const id = nonempty(value(current, "toolCallId"), "PI_TOOL_RESULT_FOREIGN")
       if (results.has(id)) history("PI_TOOL_RESULT_DUPLICATE")
       if (!pending) history(calls.has(id) ? "PI_TOOL_RESULT_SEPARATED" : "PI_TOOL_RESULT_FOREIGN")
@@ -92,6 +105,8 @@ export function replayToolHistory(messages: unknown[], serializePart: (part: Rec
     finalize()
     const role = value(current, "role")
     if (role !== "user" && role !== "assistant") history("PI_TOOL_CALL_INVALID")
+    if (role === "user") shape.userMessageCount += 1
+    else shape.assistantMessageCount += 1
     const rawContent = value(current, "content")
     if (typeof rawContent === "string") {
       if (!rawContent) history("PI_TOOL_CALL_INVALID")
@@ -106,9 +121,13 @@ export function replayToolHistory(messages: unknown[], serializePart: (part: Rec
     }
     if (value(current, "stopReason") !== "toolUse") history("PI_TOOL_CALL_INVALID")
     const group: PendingCall[] = []
-    const parts: Array<WirePart | { call: PendingCall, signature: string | undefined, signaturePresent: boolean }> = content.map((item) => {
+    const parts: Array<WirePart | { call: PendingCall, signature: string | undefined, signaturePresent: boolean }> = content.flatMap((item) => {
       const part = record(item)
-      if (value(part, "type") !== "toolCall") return serializePart(part, current)
+      if (value(part, "type") !== "toolCall") {
+        if (isEmptyUnsignedText(part)) return []
+        return [serializePart(part, current)]
+      }
+      shape.assistantToolCallBlockCount += 1
       const id = nonempty(value(part, "id"), "PI_TOOL_CALL_INVALID")
       const name = nonempty(value(part, "name"), "PI_TOOL_CALL_INVALID")
       if (!/^[A-Za-z_][A-Za-z0-9_.:-]*$/.test(name) || calls.has(id)) history(calls.has(id) ? "PI_TOOL_CALL_DUPLICATE" : "PI_TOOL_CALL_INVALID")
@@ -117,7 +136,7 @@ export function replayToolHistory(messages: unknown[], serializePart: (part: Rec
       calls.add(id)
       const call = { id, name, args }
       group.push(call)
-      return { call, signature: policy?.toolCallSignature(part, current), signaturePresent: value(part, "thoughtSignature") !== undefined }
+      return [{ call, signature: policy?.toolCallSignature(part, current), signaturePresent: value(part, "thoughtSignature") !== undefined }]
     })
     const toolParts = parts.filter((part): part is { call: PendingCall, signature: string | undefined, signaturePresent: boolean } => "call" in part)
     const callsAreSigned = policy?.requireSignedToolCalls === true && policy.isSameModel(current) && Boolean(toolParts[0]?.signature) && toolParts.every((part) => !part.signaturePresent || Boolean(part.signature))
@@ -132,7 +151,7 @@ export function replayToolHistory(messages: unknown[], serializePart: (part: Rec
     pending = { calls: group, results: new Map(), observations }
   }
   finalize()
-  onDiagnostics?.({ replayMode, recoveryCount: recoveryCount.value })
+  onDiagnostics?.({ replayMode, recoveryCount: recoveryCount.value, ...shape })
   return output
 }
 
@@ -174,9 +193,18 @@ function dense(value: unknown): readonly unknown[] {
   return value
 }
 
+function isEmptyUnsignedText(part: Record<string, unknown>): boolean {
+  const text = value(part, "text")
+  return value(part, "type") === "text" && typeof text === "string" && !text.trim() && value(part, "textSignature") === undefined
+}
+
 function nonempty(value: unknown, code: string): string {
   if (typeof value !== "string" || !value.trim()) history(code)
   return value
+}
+
+function safeCount(value: number): number {
+  return Number.isSafeInteger(value) && value >= 0 ? value : 0
 }
 
 function unsupportedChoice(): never {
