@@ -8,8 +8,8 @@ const coreName = "@benjamolina/antigravity-guard-core"
 const piName = "@benjamolina/pi-antigravity-guard"
 const rootName = "@benjamolina/opencode-antigravity-guard"
 const repositoryUrl = "git+https://github.com/BenjaMolina/opencode-antigravity-guard.git"
-const piVersion = "0.3.0"
-const rootVersion = "1.1.13"
+const piVersion = "0.4.0"
+const rootVersion = "1.1.14"
 
 function repository(directory?: string) {
   return {
