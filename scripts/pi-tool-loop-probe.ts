@@ -15,6 +15,39 @@ const ECHO_VALUE = "gemini-tool-loop"
 const TIMEOUT_MS = 90_000
 const EVIDENCE_PATH = "packages/pi/evidence/gemini-3.8-flash-off-tool-loop.json"
 const EVIDENCE_PROMPT = "Call pi_evidence_echo exactly once with value gemini-tool-loop. After it returns, reply with exactly PI_EVIDENCE_LOOP_OK and no other text or tool calls."
+const STOP_REASONS = new Set(["stop", "length", "toolUse", "error", "aborted", "pending"])
+const REPLAY_MODES = new Set(["none", "signed-function-response", "unsigned-observation"])
+const CAPABILITY_STATES = new Set(["enabled", "disabled"])
+const PREFLIGHT_CATEGORIES = new Set(["schema", "tool-choice", "declaration", "history", "capability"])
+const FAILURE_KINDS = new Set(["aborted", "access", "capability", "model", "quota", "preflight", "response", "transport", "callback"])
+const CREDENTIAL_ERROR_MESSAGES = new Set([
+  "Antigravity credentials are invalid. Run /login antigravity-guard.",
+  "An Antigravity login is already in progress.",
+  "Antigravity login failed.",
+  "Antigravity token exchange failed after authorization.",
+  "Antigravity credential refresh failed.",
+  "Antigravity authorization was denied.",
+  "Paste the full callback URL from Antigravity login.",
+  "Antigravity login was cancelled.",
+])
+const PREFLIGHT_ERROR_MESSAGES = new Set(["Tool history is not supported by this text-only provider."])
+const MODEL_ERROR_MESSAGES = new Set(["The selected Antigravity model or API is unsupported.", "The requested Antigravity model is unavailable."])
+const TRANSPORT_ERROR_MESSAGES = new Set([
+  "Antigravity generation failed.", "Antigravity generation request failed.", "Antigravity generation request was rejected.",
+  "Antigravity access was denied. Check your entitlement.", "Antigravity quota or rate limit was reached.",
+  "Antigravity did not return an SSE response.", "Antigravity returned an invalid stream.",
+  "SSE stream ended with an unterminated record.", "SSE stream contains invalid UTF-8.", "SSE record is too large.",
+  "Antigravity returned an error response.", "Antigravity returned an invalid response.", "Antigravity returned invalid usage.",
+  "Antigravity returned invalid candidates.", "Antigravity returned invalid content.", "Antigravity returned unsupported content.",
+  "Antigravity returned an unsupported finish reason.", "Antigravity returned invalid function call.", "Antigravity returned invalid metadata.", "Antigravity returned invalid JSON.",
+])
+const CONTEXT_CONVERSION_ERROR_MESSAGES = new Set([
+  "Invalid text context.", "Text-only context is required.", "Tools are not supported by this text-only provider.",
+  "Unsupported context role for this text-only provider.", "Text context is too large.", "A text conversation is required.",
+  "Only text context is supported by this provider.", "Invalid generation options.", "Unsupported reasoning level.",
+  "Thinking budgets are not supported.", "Deferred requests are not supported.", "Custom generation options are not supported.",
+  "Temperature must be finite and between 0 and 2.", "Custom headers cannot replace protected request headers.",
+])
 
 type Route = typeof PROBE_ROUTE
 type ProbeEvent = Record<string, unknown>
@@ -27,6 +60,37 @@ type ProbeTermination = "exit" | "spawn-error" | "timeout"
 type ProbeRun = {
   readonly events: readonly ProbeEvent[]
   readonly termination: ProbeTermination
+}
+type StopReason = "stop" | "length" | "toolUse" | "error" | "aborted" | "pending"
+type AssistantErrorCategory = "capability" | "credentials" | "preflight" | "model" | "transport" | "context-conversion" | "unknown"
+type ContentBlockCounts = {
+  readonly text: number
+  readonly thinking: number
+  readonly toolCall: number
+}
+type ToolTerminalDiagnostics = {
+  readonly capabilityState?: "enabled" | "disabled"
+  readonly replayMode?: "none" | "signed-function-response" | "unsigned-observation"
+  readonly recoveryCount?: number
+  readonly userMessageCount?: number
+  readonly assistantMessageCount?: number
+  readonly toolResultMessageCount?: number
+  readonly assistantToolCallBlockCount?: number
+  readonly declaredToolCount?: number
+  readonly preflightCategory?: "schema" | "tool-choice" | "declaration" | "history" | "capability"
+  readonly preflightPath?: string
+  readonly failure?: {
+    readonly kind: "aborted" | "access" | "capability" | "model" | "quota" | "preflight" | "response" | "transport" | "callback"
+    readonly status?: number
+  }
+  readonly terminal?: StopReason
+}
+type AssistantTerminalSummary = {
+  readonly ordinal: number
+  readonly stopReason?: StopReason
+  readonly content: ContentBlockCounts
+  readonly errorCategory?: AssistantErrorCategory
+  readonly toolDiagnostics?: ToolTerminalDiagnostics
 }
 
 export function validateProbeEvents(events: readonly ProbeEvent[], route: Route): ProbeResult {
@@ -217,6 +281,7 @@ type TerminalDiagnostics = {
   readonly userMessageCount: number
   readonly assistantMessageCount: number
   readonly toolResultMessageCount: number
+  readonly assistantMessages: readonly AssistantTerminalSummary[]
 }
 
 export function summarizeTerminalMessages(events: readonly ProbeEvent[]): readonly TerminalDiagnostics[] {
@@ -234,11 +299,15 @@ function summarizeAgentEnd(event: ProbeEvent): TerminalDiagnostics | undefined {
   let userMessageCount = 0
   let assistantMessageCount = 0
   let toolResultMessageCount = 0
+  const assistantMessages: AssistantTerminalSummary[] = []
   for (const message of event.messages) {
     const value = objectValue(message)
     if (!value || typeof value.role !== "string") return undefined
     if (value.role === "user") userMessageCount += 1
-    if (value.role === "assistant") assistantMessageCount += 1
+    if (value.role === "assistant") {
+      assistantMessageCount += 1
+      assistantMessages.push(summarizeAssistantTerminal(value, assistantMessageCount))
+    }
     if (value.role === "toolResult") toolResultMessageCount += 1
   }
 
@@ -247,6 +316,110 @@ function summarizeAgentEnd(event: ProbeEvent): TerminalDiagnostics | undefined {
     userMessageCount,
     assistantMessageCount,
     toolResultMessageCount,
+    assistantMessages,
+  }
+}
+
+function summarizeAssistantTerminal(message: ProbeEvent, ordinal: number): AssistantTerminalSummary {
+  const stopReason = allowedStopReason(message.stopReason)
+  const toolDiagnostics = sanitizeToolDiagnostics(message.diagnostics)
+  return {
+    ordinal,
+    ...(stopReason ? { stopReason } : {}),
+    content: summarizeContentBlocks(message.content),
+    ...(stopReason === "error" ? { errorCategory: classifyAssistantError(message.errorMessage) } : {}),
+    ...(toolDiagnostics ? { toolDiagnostics } : {}),
+  }
+}
+
+function classifyAssistantError(value: unknown): AssistantErrorCategory {
+  if (typeof value !== "string") return "unknown"
+  if (value.startsWith("PI_TOOL_CAPABILITY_NOT_ENABLED")) return "capability"
+  if (CREDENTIAL_ERROR_MESSAGES.has(value)) return "credentials"
+  if (value.startsWith("PI_TOOL_") || PREFLIGHT_ERROR_MESSAGES.has(value)) return "preflight"
+  if (MODEL_ERROR_MESSAGES.has(value)) return "model"
+  if (TRANSPORT_ERROR_MESSAGES.has(value)) return "transport"
+  return CONTEXT_CONVERSION_ERROR_MESSAGES.has(value) ? "context-conversion" : "unknown"
+}
+
+function summarizeContentBlocks(content: unknown): ContentBlockCounts {
+  const counts = { text: 0, thinking: 0, toolCall: 0 }
+  if (!Array.isArray(content)) return counts
+  for (const item of content) {
+    const block = objectValue(item)
+    if (block?.type === "text") counts.text += 1
+    if (block?.type === "thinking") counts.thinking += 1
+    if (block?.type === "toolCall") counts.toolCall += 1
+  }
+  return counts
+}
+
+function sanitizeToolDiagnostics(value: unknown): ToolTerminalDiagnostics | undefined {
+  if (!Array.isArray(value)) return undefined
+  const diagnostic = value.find((item) => {
+    const entry = objectValue(item)
+    return entry?.type === "antigravity-guard.tools" && objectValue(entry.details) !== undefined
+  })
+  const details = objectValue(diagnostic)
+  const source = details && objectValue(details.details)
+  if (!source) return undefined
+
+  const output: { -readonly [Name in keyof ToolTerminalDiagnostics]?: ToolTerminalDiagnostics[Name] } = {}
+  const capabilityState = allowedCapabilityState(source.capabilityState)
+  const replayMode = allowedReplayMode(source.replayMode)
+  const recoveryCount = safeCount(source.recoveryCount)
+  const userMessageCount = safeCount(source.userMessageCount)
+  const assistantMessageCount = safeCount(source.assistantMessageCount)
+  const toolResultMessageCount = safeCount(source.toolResultMessageCount)
+  const assistantToolCallBlockCount = safeCount(source.assistantToolCallBlockCount)
+  const declaredToolCount = safeCount(source.declaredToolCount)
+  const preflightCategory = allowedPreflightCategory(source.preflightCategory)
+  const preflightPath = typeof source.preflightPath === "string" ? source.preflightPath : undefined
+  const failure = sanitizeFailure(source.failure)
+  const terminal = allowedStopReason(source.terminal)
+
+  if (capabilityState) output.capabilityState = capabilityState
+  if (replayMode) output.replayMode = replayMode
+  if (recoveryCount !== undefined) output.recoveryCount = recoveryCount
+  if (userMessageCount !== undefined) output.userMessageCount = userMessageCount
+  if (assistantMessageCount !== undefined) output.assistantMessageCount = assistantMessageCount
+  if (toolResultMessageCount !== undefined) output.toolResultMessageCount = toolResultMessageCount
+  if (assistantToolCallBlockCount !== undefined) output.assistantToolCallBlockCount = assistantToolCallBlockCount
+  if (declaredToolCount !== undefined) output.declaredToolCount = declaredToolCount
+  if (preflightCategory) output.preflightCategory = preflightCategory
+  if (preflightPath !== undefined) output.preflightPath = preflightPath
+  if (failure) output.failure = failure
+  if (terminal) output.terminal = terminal
+  return Object.keys(output).length ? output : undefined
+}
+
+function allowedStopReason(value: unknown): StopReason | undefined {
+  return typeof value === "string" && STOP_REASONS.has(value) ? value as StopReason : undefined
+}
+
+function allowedCapabilityState(value: unknown): ToolTerminalDiagnostics["capabilityState"] {
+  return typeof value === "string" && CAPABILITY_STATES.has(value) ? value as ToolTerminalDiagnostics["capabilityState"] : undefined
+}
+
+function allowedReplayMode(value: unknown): ToolTerminalDiagnostics["replayMode"] {
+  return typeof value === "string" && REPLAY_MODES.has(value) ? value as ToolTerminalDiagnostics["replayMode"] : undefined
+}
+
+function allowedPreflightCategory(value: unknown): ToolTerminalDiagnostics["preflightCategory"] {
+  return typeof value === "string" && PREFLIGHT_CATEGORIES.has(value) ? value as ToolTerminalDiagnostics["preflightCategory"] : undefined
+}
+
+function safeCount(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined
+}
+
+function sanitizeFailure(value: unknown): ToolTerminalDiagnostics["failure"] {
+  const failure = objectValue(value)
+  if (!failure || typeof failure.kind !== "string" || !FAILURE_KINDS.has(failure.kind)) return undefined
+  const status = failure.status
+  return {
+    kind: failure.kind as NonNullable<ToolTerminalDiagnostics["failure"]>["kind"],
+    ...(typeof status === "number" && Number.isInteger(status) && status >= 100 && status <= 599 ? { status } : {}),
   }
 }
 

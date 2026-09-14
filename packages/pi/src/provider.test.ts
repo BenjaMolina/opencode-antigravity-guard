@@ -43,13 +43,18 @@ describe("Antigravity Guard provider registration", () => {
     expect(typeof config.streamSimple).toBe("function")
   })
 
-  it("documents every catalog row as text-registered but tool-disabled", () => {
+  it("documents the exact tool admission while keeping every other catalog row disabled", () => {
     const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8")
 
-    expect(readme).toContain("| Public ID | Exposed Pi levels | Tool state | Why tools are unavailable |")
+    expect(readme).toContain("| Public ID | Exposed Pi levels | Tool state | Admission |")
     for (const entry of listCatalogEntries()) {
       const routes = Object.keys(entry.routes)
       const state = resolveGenerationSelection(entry, routes[0]).tools
+      if (entry.publicId === "antigravity-gemini-3.8-flash") {
+        expect(state.state).toBe("enabled")
+        expect(readme).toContain(`| \`${entry.publicId}\` | ${routes.join(", ")} | Enabled (off) | pi-json-tool-loop/gemini-3.8-flash-off-v1 |`)
+        continue
+      }
       expect(state.state).toBe("disabled")
       if (state.state !== "disabled") throw new Error("expected disabled catalog capability")
       expect(readme).toContain(`| \`${entry.publicId}\` | ${routes.join(", ")} | Disabled | ${state.reason} |`)
@@ -60,13 +65,13 @@ describe("Antigravity Guard provider registration", () => {
     expect(readme).toContain("`fixture-qualified` route remains disabled for ordinary tool use")
   })
 
-  it("rejects tool-bearing contexts before fetch for each text registration", async () => {
+  it("rejects tool-bearing contexts before fetch for each tool-disabled registration", async () => {
     const registerProvider = vi.fn()
     const fetch = vi.fn<typeof globalThis.fetch>()
 
     registerAntigravityProvider({ registerProvider })
     const [, config] = registerProvider.mock.calls[0] ?? []
-    for (const model of config.models) {
+    for (const model of config.models.filter((item: { id: string }) => item.id !== "antigravity-gemini-3.8-flash")) {
       const stream = config.streamSimple(
         model,
         {

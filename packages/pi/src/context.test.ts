@@ -320,7 +320,42 @@ describe("Pi text context serialization", () => {
   })
 
 
-  it("preserves assistant text and thinking around a replayed call", () => {
+  it("skips empty unsigned text only within assistant tool-call replay groups", () => {
+        const selection = resolveGenerationSelection(listCatalogEntries()[0]!, "off")
+        const enabled = createEnabledToolCapability({ record: "fixture", revision: "1", publicModelId: "antigravity-gemini-3.8-flash", reasoning: "off", wireModel: "gemini-3.8-flash-tiered" })
+        const serialize = (content: unknown[]) => serializeContext({
+          context: { messages: [
+            { ...assistant(content), provider: "antigravity-guard", model: "antigravity-gemini-3.8-flash", stopReason: "toolUse" },
+            { role: "toolResult", toolCallId: "call-1", toolName: "read_file", content: [{ type: "text", text: "done" }], isError: false, timestamp: 0 },
+          ] } as Context,
+          model,
+          project: "project",
+          requestId: "agent-id",
+        }, { ...selection, tools: enabled }).request.contents
+
+        expect(serialize([
+          { type: "text", text: "" },
+          { type: "toolCall", id: "call-1", name: "read_file", arguments: {}, thoughtSignature: "c2ln" },
+          { type: "text", text: "  " },
+        ])).toEqual([
+          { role: "model", parts: [{ functionCall: { name: "read_file", args: {} }, thoughtSignature: "c2ln" }] },
+          { role: "user", parts: [{ functionResponse: { name: "read_file", response: { output: "done" } } }] },
+        ])
+        expect(serialize([
+          { type: "text", text: "", textSignature: "c2ln" },
+          { type: "text", text: "before" },
+          { type: "toolCall", id: "call-1", name: "read_file", arguments: {} },
+          { type: "text", text: "after" },
+        ])).toEqual([
+          { role: "model", parts: [{ text: "", thoughtSignature: "c2ln" }, { text: "before" }, { text: "after" }] },
+          { role: "user", parts: [{ text: "[Observation from `read_file`:\ndone]" }] },
+        ])
+
+        expect(() => serializeTextContext({ context: { messages: [{ role: "user", content: [{ type: "text", text: "" }], timestamp: 0 }] } as Context, model, project: "project", requestId: "agent-id" })).toThrow(ContextSerializationError)
+        expect(() => serializeTextContext({ context: { messages: [assistant([{ type: "text", text: "" }])] } as Context, model, project: "project", requestId: "agent-id" })).toThrow(ContextSerializationError)
+      })
+
+      it("preserves assistant text and thinking around a replayed call", () => {
     const selection = resolveGenerationSelection(listCatalogEntries()[0]!, "off")
     const enabled = createEnabledToolCapability({ record: "fixture", revision: "1", publicModelId: "antigravity-gemini-3.8-flash", reasoning: "off", wireModel: "gemini-3.8-flash-tiered" })
     const call = { ...assistant([{ type: "thinking", thinking: "plan", thinkingSignature: "c2ln" }, { type: "toolCall", id: "call-1", name: "read_file", arguments: {} }, { type: "text", text: "after" }]), provider: "antigravity-guard", model: "antigravity-gemini-3.8-flash", stopReason: "toolUse" }
