@@ -148,7 +148,12 @@ describe("Antigravity model catalog", () => {
     expect(resolveToolCapability(stale, gemini.publicId, "low", low.route.wireModel)).toEqual({ state: "disabled", contractRevision: 1, reason: "stale-or-conflicting-evidence" })
   })
 
-  it("constructs enabled capability only as immutable test data without changing catalog literals", () => {
+  it("keeps production capabilities disabled", () => {
+    const entry = getCatalogEntry("antigravity-gemini-3.8-flash")!
+    expect(resolveGenerationSelection(entry, "off").tools.state).toBe("disabled")
+  })
+
+    it("constructs enabled capability only as immutable test data without changing catalog literals", () => {
     const entry = getCatalogEntry("antigravity-gemini-3.8-flash")!
     const selection = resolveGenerationSelection(entry, "off")
     const enabled = createEnabledToolCapability({ record: "fixture", revision: "1", publicModelId: entry.publicId, reasoning: "off", wireModel: selection.route.wireModel })

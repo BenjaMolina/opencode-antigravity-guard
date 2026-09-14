@@ -30,6 +30,10 @@ All seven rows below are registered for text. Every production route is currentl
 
 Claude Sonnet and Claude Opus remain disabled until declaration, call, result replay, thinking-signature, resume, interruption, and continuation evidence is recorded for each exact route. No route is enabled by this package release.
 
+## Opt-in direct tool-loop validation
+
+Maintainers can run `npm run build:pi` followed by `npx tsx scripts/pi-tool-loop-probe.ts --live --expect-disabled` to verify the fail-closed control. This first slice retains the deterministic `pi_evidence_echo` validator and its sanitized evidence shape, but does not wire a positive probe into the production provider or enable any route. Stage 2 will use a separate explicit probe provider path. The harness stores no credentials, headers, or raw provider output.
+
 ## Tool preflight boundaries
 
 Tool-bearing requests are never silently downgraded to text. When an exact route is eventually enabled, declarations are retained in order and omitted or `auto` choice serializes as `AUTO`; explicit `none` serializes as `NONE`. Forced, required, named, unknown, and constrained-sampling choices are rejected before transport.
