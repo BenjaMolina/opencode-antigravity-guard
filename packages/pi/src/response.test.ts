@@ -72,7 +72,31 @@ describe("ResponseSemantics", () => {
     expect(semantics.finish()).toEqual({ type: "finish", reason: "toolUse" })
   })
 
-  it("rejects undeclared, malformed, duplicate, and terminally incompatible calls transactionally", () => {
+  it("synthesizes deterministic request-local IDs for missing Gemini IDs while preserving explicit IDs", () => {
+      const policy = { kind: "accept" as const, declaredNames: new Set(["read_file"]) }
+      const semantics = new ResponseSemantics(policy)
+
+      expect(semantics.push(record({ candidates: [{ content: { parts: [
+        { functionCall: { name: "read_file", args: {} } },
+        { functionCall: { id: "provider-id", name: "read_file", args: {} } },
+        { functionCall: { name: "read_file", args: {} } },
+      ] }, finishReason: "STOP" }] }))).toEqual([
+        { type: "toolCall", callIndex: 0, id: "pi-gemini-call-1", name: "read_file", arguments: {}, argumentsJson: "{}" },
+        { type: "toolCall", callIndex: 1, id: "provider-id", name: "read_file", arguments: {}, argumentsJson: "{}" },
+        { type: "toolCall", callIndex: 2, id: "pi-gemini-call-3", name: "read_file", arguments: {}, argumentsJson: "{}" },
+      ])
+      expect(semantics.finish()).toEqual({ type: "finish", reason: "toolUse" })
+    })
+
+    it.each(["STOP", "OTHER", "MAX_TOKENS"] as const)("maps %s to toolUse when valid calls are present", (finishReason) => {
+      const semantics = new ResponseSemantics({ kind: "accept", declaredNames: new Set(["read_file"]) })
+      expect(semantics.push(record({ candidates: [{ content: { parts: [{ functionCall: { name: "read_file", args: {} } }] }, finishReason }] }))).toMatchObject([
+        { type: "toolCall", id: "pi-gemini-call-1", name: "read_file" },
+      ])
+      expect(semantics.finish()).toEqual({ type: "finish", reason: "toolUse" })
+    })
+
+    it("rejects undeclared, malformed, duplicate, and terminally incompatible calls transactionally", () => {
     const policy = { kind: "accept" as const, declaredNames: new Set(["read_file"]) }
     const invalid = [
       { functionCall: { id: "", name: "read_file", args: {} } },
@@ -90,12 +114,12 @@ describe("ResponseSemantics", () => {
     expect(semantics.push(record({ candidates: [{ content: { parts: [{ text: "safe" }] }, finishReason: "STOP" }] }))).toEqual([{ type: "text", text: "safe" }])
     expect(semantics.finish()).toEqual({ type: "finish", reason: "stop" })
     expect(() => new ResponseSemantics(policy).push(record({ candidates: [{ finishReason: "OTHER" }] }))).toThrow(ResponseSemanticError)
-    expect(() => new ResponseSemantics(policy).push(record({ candidates: [{ content: { parts: [{ functionCall: { id: "call-1", name: "read_file", args: {} } }] }, finishReason: "STOP" }] }))).toThrow(ResponseSemanticError)
+    expect(() => new ResponseSemantics(policy).push(record({ candidates: [{ content: { parts: [{ functionCall: { id: "call-1", name: "read_file", args: {} } }] }, finishReason: "STOP" }] }))).not.toThrow()
   })
 
-  it("rejects a declared function call with MAX_TOKENS transactionally", () => {
+  it("maps MAX_TOKENS calls to toolUse", () => {
     const semantics = new ResponseSemantics({ kind: "accept", declaredNames: new Set(["read_file"]) })
-    expect(() => semantics.push(record({ candidates: [{ content: { parts: [{ functionCall: { id: "call-1", name: "read_file", args: {} } }] }, finishReason: "MAX_TOKENS" }] }))).toThrow(ResponseSemanticError)
+    return expect(semantics.push(record({ candidates: [{ content: { parts: [{ functionCall: { id: "call-1", name: "read_file", args: {} } }] }, finishReason: "MAX_TOKENS" }] }))).toHaveLength(1)
     expect(semantics.push(record({ candidates: [{ content: { parts: [{ text: "safe" }] }, finishReason: "STOP" }] }))).toEqual([{ type: "text", text: "safe" }])
     expect(semantics.finish()).toEqual({ type: "finish", reason: "stop" })
   })

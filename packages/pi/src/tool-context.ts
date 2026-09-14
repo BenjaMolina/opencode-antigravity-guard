@@ -32,22 +32,41 @@ export function prepareToolContext(tools: unknown, choice: unknown): PreparedToo
 
 type WirePart = object
 type WireContent = { role: "user" | "model", parts: WirePart[] }
-type PendingCall = { id: string, name: string }
+type PendingCall = { id: string, name: string, args: object }
+export type ToolReplayMode = "none" | "signed-function-response" | "unsigned-observation"
 
-export function replayToolHistory(messages: unknown[], serializePart: (part: Record<string, unknown>, message: Record<string, unknown>) => WirePart, onRecovery?: (recoveryCount: number) => void): WireContent[] {
+export interface ToolReplayDiagnostics {
+  readonly replayMode: ToolReplayMode
+  readonly recoveryCount: number
+}
+
+export interface ToolReplayPolicy {
+  readonly requireSignedToolCalls: boolean
+  readonly isSameModel: (message: Record<string, unknown>) => boolean
+  readonly toolCallSignature: (part: Record<string, unknown>, message: Record<string, unknown>) => string | undefined
+}
+
+export function replayToolHistory(messages: unknown[], serializePart: (part: Record<string, unknown>, message: Record<string, unknown>) => WirePart, onDiagnostics?: (diagnostics: ToolReplayDiagnostics) => void, policy?: ToolReplayPolicy): WireContent[] {
   const output: WireContent[] = []
   const calls = new Set<string>()
   const results = new Set<string>()
   const recoveryCount = { value: 0 }
-  let pending: { calls: PendingCall[], results: Map<string, WirePart> } | undefined
+  let replayMode: ToolReplayMode = "none"
+  let pending: { calls: PendingCall[], results: Map<string, WirePart>, observations: boolean } | undefined
+  const appendTurn = (role: WireContent["role"], parts: WirePart[]) => {
+    if (!parts.length) return
+    const last = output.at(-1)
+    if (last?.role === role) last.parts.push(...parts)
+    else output.push({ role, parts })
+  }
   const finalize = () => {
     if (!pending) return
-    output.push({ role: "user", parts: pending.calls.map((call) => {
+    appendTurn("user", pending.calls.map((call) => {
       const actual = pending!.results.get(call.id)
       if (actual) return actual
       recoveryCount.value += 1
-      return missingResult(call)
-    }) })
+      return pending!.observations ? observation(call, missingResultText()) : missingResult(call)
+    }))
     pending = undefined
   }
   for (const message of messages) {
@@ -65,8 +84,8 @@ export function replayToolHistory(messages: unknown[], serializePart: (part: Rec
         if (value(part, "type") !== "text" || typeof value(part, "text") !== "string") history("PI_TOOL_RESULT_MEDIA_UNSUPPORTED")
         return value(part, "text") as string
       }).join("\n\n")
-      const response = value(current, "isError") === true ? { error: text } : { result: text }
-      pending.results.set(id, { functionResponse: { name: call.name, id, response } })
+      const response = value(current, "isError") === true ? { error: text } : { output: text }
+      pending.results.set(id, pending.observations ? observation(call, text) : { functionResponse: { name: call.name, response } })
       results.add(id)
       continue
     }
@@ -76,46 +95,65 @@ export function replayToolHistory(messages: unknown[], serializePart: (part: Rec
     const rawContent = value(current, "content")
     if (typeof rawContent === "string") {
       if (!rawContent) history("PI_TOOL_CALL_INVALID")
-      output.push({ role: role === "assistant" ? "model" : "user", parts: [{ text: rawContent }] })
+      appendTurn(role === "assistant" ? "model" : "user", [{ text: rawContent }])
       continue
     }
     const content = dense(rawContent)
     const hasCalls = role === "assistant" && content.some((part) => value(record(part), "type") === "toolCall")
     if (!hasCalls) {
-      output.push({ role: role === "assistant" ? "model" : "user", parts: content.map((part) => serializePart(record(part), current)) })
+      appendTurn(role === "assistant" ? "model" : "user", content.map((part) => serializePart(record(part), current)))
       continue
     }
     if (value(current, "stopReason") !== "toolUse") history("PI_TOOL_CALL_INVALID")
     const group: PendingCall[] = []
-    const parts = content.map((item) => {
+    const parts: Array<WirePart | { call: PendingCall, signature: string | undefined, signaturePresent: boolean }> = content.map((item) => {
       const part = record(item)
       if (value(part, "type") !== "toolCall") return serializePart(part, current)
       const id = nonempty(value(part, "id"), "PI_TOOL_CALL_INVALID")
       const name = nonempty(value(part, "name"), "PI_TOOL_CALL_INVALID")
       if (!/^[A-Za-z_][A-Za-z0-9_.:-]*$/.test(name) || calls.has(id)) history(calls.has(id) ? "PI_TOOL_CALL_DUPLICATE" : "PI_TOOL_CALL_INVALID")
       const args = canonicalJson(value(part, "arguments"), name, "$.arguments")
-      if (Array.isArray(args) || args === null) history("PI_TOOL_CALL_INVALID")
+      if (typeof args !== "object" || Array.isArray(args) || args === null) history("PI_TOOL_CALL_INVALID")
       calls.add(id)
-      group.push({ id, name })
-      return { functionCall: { name, args, id } }
+      const call = { id, name, args }
+      group.push(call)
+      return { call, signature: policy?.toolCallSignature(part, current), signaturePresent: value(part, "thoughtSignature") !== undefined }
     })
-    output.push({ role: "model", parts })
-    pending = { calls: group, results: new Map() }
+    const toolParts = parts.filter((part): part is { call: PendingCall, signature: string | undefined, signaturePresent: boolean } => "call" in part)
+    const callsAreSigned = policy?.requireSignedToolCalls === true && policy.isSameModel(current) && Boolean(toolParts[0]?.signature) && toolParts.every((part) => !part.signaturePresent || Boolean(part.signature))
+    const observations = policy?.requireSignedToolCalls === true && !callsAreSigned
+    if (observations) replayMode = "unsigned-observation"
+    else if (replayMode === "none" && callsAreSigned) replayMode = "signed-function-response"
+    appendTurn("model", parts.flatMap((part) => {
+      if (!("call" in part)) return [part]
+      if (observations) return []
+      return [{ functionCall: { name: part.call.name, args: part.call.args }, ...(part.signature ? { thoughtSignature: part.signature } : {}) }]
+    }))
+    pending = { calls: group, results: new Map(), observations }
   }
   finalize()
-  onRecovery?.(recoveryCount.value)
+  onDiagnostics?.({ replayMode, recoveryCount: recoveryCount.value })
   return output
+}
+
+function observation(call: PendingCall, text: string): WirePart {
+  const args = JSON.stringify(call.args)
+  const label = args === "{}" ? `\`${call.name}\`` : `\`${call.name}\` (${args})`
+  return { text: `[Observation from ${label}:\n${text}]` }
+}
+
+function missingResultText(): string {
+  return "Tool execution did not complete or its result was not recorded. Treat the call as failed; do not assume it had no side effects and do not retry it automatically."
 }
 
 function missingResult(call: PendingCall): WirePart {
   return {
     functionResponse: {
       name: call.name,
-      id: call.id,
       response: {
         error: {
           code: "PI_TOOL_RESULT_MISSING",
-          message: "Tool execution did not complete or its result was not recorded. Treat the call as failed; do not assume it had no side effects and do not retry it automatically.",
+          message: missingResultText(),
         },
       },
     },

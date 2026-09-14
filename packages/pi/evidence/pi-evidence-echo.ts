@@ -9,7 +9,7 @@ export default function extension(pi: ExtensionAPI): void {
     label: "Pi evidence echo",
     description: "Return the fixed Pi tool-loop evidence value. Call only with value gemini-tool-loop.",
     parameters: Type.Object({
-      value: Type.String({ minLength: 1, maxLength: 64 }),
+      value: Type.String(),
     }),
     async execute(_toolCallId, params, signal) {
       signal?.throwIfAborted()
