@@ -1,6 +1,22 @@
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
 import { describe, expect, it } from "vitest"
 
+import { normalizeToolDeclarations } from "../packages/pi/src/tool-schema.ts"
+import extension from "../packages/pi/evidence/pi-evidence-echo.ts"
 import { hasPromptRunSettled, sanitizeTerminalCategory, summarizeTerminalMessages, validateDisabledProbeEvents, validateProbeEvents } from "./pi-tool-loop-probe.ts"
+
+type RegisteredTool = Parameters<ExtensionAPI["registerTool"]>[0]
+
+function registerEvidenceEcho(): RegisteredTool {
+  const registrations: RegisteredTool[] = []
+  extension({
+    registerTool(tool) {
+      registrations.push(tool)
+    },
+  } as ExtensionAPI)
+  expect(registrations).toHaveLength(1)
+  return registrations[0]!
+}
 
 const route = {
   publicModelId: "antigravity-gemini-3.8-flash",
@@ -9,6 +25,28 @@ const route = {
 } as const
 
 describe("Pi tool-loop probe evidence", () => {
+  it("registers a declaration that Pi's request preflight preserves", () => {
+    const tool = registerEvidenceEcho()
+
+    expect(normalizeToolDeclarations([tool])).toEqual([{
+      name: "pi_evidence_echo",
+      description: "Return the fixed Pi tool-loop evidence value. Call only with value gemini-tool-loop.",
+      parameters: {
+        type: "object",
+        properties: {
+          value: { type: "string" },
+        },
+        required: ["value"],
+      },
+    }])
+  })
+
+  it("retains exact-value runtime validation", async () => {
+    const tool = registerEvidenceEcho()
+
+    await expect(tool.execute("test-call", { value: "other" }, undefined)).rejects.toThrow("pi_evidence_echo requires the fixed evidence value.")
+  })
+
   it("admits exactly one completed pi_evidence_echo call followed by the completion marker", () => {
     expect(validateProbeEvents([
       { type: "tool_execution_start", toolName: "pi_evidence_echo", args: { value: "gemini-tool-loop" } },
@@ -52,77 +90,49 @@ describe("Pi tool-loop probe evidence", () => {
     expect(sanitizeTerminalCategory([{ type: "message_end", message: { errorMessage: message } }])).toBe(category)
   })
 
-  it("retains only allowlisted terminal assistant facts", () => {
-      const secret = "CANARY-secret-text-and-arguments"
-      const summary = summarizeTerminalMessages([
-        { type: "message_end", message: { role: "assistant", stopReason: "error", content: [{ type: "text", text: secret }, { type: "toolCall", arguments: { secret } }, { type: "provider-block", body: secret }], diagnostics: [{ type: "antigravity-guard.tools", details: { secret } }], errorMessage: `PI_TOOL_CAPABILITY_NOT_ENABLED: ${secret}`, headers: { authorization: secret }, credentials: secret, signature: secret, providerPayload: { body: secret } } },
-        { type: "turn_end", message: { role: "assistant", stopReason: "toolUse", content: [{ type: "thinking", thinking: secret }] } },
-        { type: "message_end", message: { role: "user", stopReason: "stop", content: [{ type: "text", text: secret }] } },
-      ])
-      expect(summary).toEqual([
-        { event: "message_end", role: "assistant", stopReason: "error", contentTypes: ["text", "toolCall", "unknown"], hasToolDiagnostics: true, localError: { category: "capability", code: "PI_TOOL_CAPABILITY_NOT_ENABLED" } },
-        { event: "turn_end", role: "assistant", stopReason: "toolUse", contentTypes: ["thinking"], hasToolDiagnostics: false },
-      ])
-      expect(JSON.stringify(summary)).not.toContain(secret)
-    })
-
-    it("extracts only allowlisted diagnostic failure facts", () => {
-      const secret = "CANARY-diagnostic-secret"
-      const summary = summarizeTerminalMessages([
-        {
-          type: "message_end",
-          message: {
-            role: "assistant",
-            stopReason: "error",
-            content: [],
-            diagnostics: [{
-              type: "antigravity-guard.tools",
-              details: {
-                failure: { kind: "response", status: 400, body: secret, headers: { authorization: secret }, cause: { secret } },
-                secret,
-              },
-            }, {
-              type: "antigravity-guard.tools",
-              details: { failure: { kind: "forged", status: 99, request: { secret } } },
-            }],
-          },
-        },
-      ])
-      expect(summary).toEqual([{
-        event: "message_end",
+  it("emits only allowlisted replay and local failure facts", () => {
+    const secret = "CANARY-secret-text-and-arguments"
+    const summary = summarizeTerminalMessages([{
+      type: "message_end",
+      message: {
         role: "assistant",
-        stopReason: "error",
-        contentTypes: [],
-        hasToolDiagnostics: true,
-        failure: { kind: "response", status: 400 },
-      }])
-      expect(JSON.stringify(summary)).not.toContain(secret)
-      expect(JSON.stringify(summary)).not.toContain("body")
-      expect(JSON.stringify(summary)).not.toContain("headers")
-      expect(JSON.stringify(summary)).not.toContain("cause")
-    })
+        content: [{ type: "text", text: secret }, { type: "toolCall", arguments: { secret } }],
+        diagnostics: [{ type: "antigravity-guard.tools", details: {
+          publicModelId: "antigravity-gemini-3.8-flash", reasoning: "off", capabilityState: "enabled", preflight: "accepted",
+          replayMode: "signed-function-response", recoveryCount: 1, userMessageCount: 1, assistantMessageCount: 1, toolResultMessageCount: 1, assistantToolCallBlockCount: 1, declaredToolCount: 1, preflightCategory: "history", preflightPath: "$.content[0]",
+          failure: { kind: "response", status: 400 }, terminal: "error",
+        } }],
+        headers: { authorization: secret }, providerPayload: { secret },
+      },
+    }])
+    expect(summary).toEqual([{
+      replayMode: "signed-function-response", recoveryCount: 1, userMessageCount: 1, assistantMessageCount: 1, toolResultMessageCount: 1, assistantToolCallBlockCount: 1, declaredToolCount: 1, capabilityState: "enabled",
+      preflightCategory: "history", preflightPath: "$.content[0]", failure: { kind: "response", status: 400 },
+    }])
+    expect(JSON.stringify(summary)).not.toContain(secret)
+  })
 
-    it("drops malformed failure status while retaining an allowlisted kind", () => {
-      const summary = summarizeTerminalMessages([{
-        type: "turn_end",
-        message: {
-          role: "assistant",
-          stopReason: "error",
-          content: [],
-          diagnostics: [{ type: "antigravity-guard.tools", details: { failure: { kind: "transport", status: 600, request: "CANARY-request" } } }],
-        },
-      }])
-      expect(summary).toEqual([{
-        event: "turn_end",
-        role: "assistant",
-        stopReason: "error",
-        contentTypes: [],
-        hasToolDiagnostics: true,
-        failure: { kind: "transport" },
-      }])
-      expect(JSON.stringify(summary)).not.toContain("CANARY-request")
-      expect(JSON.stringify(summary)).not.toContain("status")
-    })
+    it("rejects malformed diagnostic values and secret-bearing extras", () => {
+    const valid = {
+      publicModelId: "antigravity-gemini-3.8-flash", reasoning: "off", capabilityState: "enabled", preflight: "accepted",
+      replayMode: "unsigned-observation", recoveryCount: 0,
+      userMessageCount: 1, assistantMessageCount: 0, toolResultMessageCount: 0, assistantToolCallBlockCount: 0, declaredToolCount: 1,
+    }
+    const summaries = [
+      { ...valid, secret: "CANARY-extra" },
+      { ...valid, replayMode: "forged" },
+      { ...valid, recoveryCount: -1 },
+      { ...valid, userMessageCount: Number.NaN },
+      { ...valid, assistantMessageCount: -1 },
+      { ...valid, toolResultMessageCount: 0.5 },
+      { ...valid, assistantToolCallBlockCount: Number.MAX_SAFE_INTEGER + 1 },
+      { ...valid, declaredToolCount: -1 },
+      { ...valid, preflightPath: "CANARY-path" },
+      { ...valid, failure: { kind: "response", status: 600 } },
+    ].map((details) => summarizeTerminalMessages([{ type: "turn_end", message: { role: "assistant", diagnostics: [{ type: "antigravity-guard.tools", details }] } }]))
+    expect(summaries).toEqual([[], [], [], [], [], [], [], [], [], []])
+    expect(JSON.stringify(summaries)).not.toContain("CANARY")
+  })
 
     it("recognizes only the local fail-closed capability rejection in the disabled control", () => {
     expect(validateDisabledProbeEvents([

@@ -80,7 +80,7 @@ describe("Pi tool history replay", () => {
         { functionResponse: { name: "read_file", response: missing } },
       ],
     })
-    expect(recoveryCounts).toEqual([{ replayMode: "none", recoveryCount: 2 }])
+    expect(recoveryCounts).toEqual([{ replayMode: "none", recoveryCount: 2, userMessageCount: 0, assistantMessageCount: 1, toolResultMessageCount: 0, assistantToolCallBlockCount: 2, declaredToolCount: 0 }])
     expect(replayToolHistory([assistant([call("one"), call("two")]), result("two", ["complete"])], part)[1]).toEqual({
       role: "user",
       parts: [
@@ -158,7 +158,7 @@ describe("Pi tool history replay", () => {
         { text: "[Observation from `read_file` ({\"path\":\"two\"}):\nTool execution did not complete or its result was not recorded. Treat the call as failed; do not assume it had no side effects and do not retry it automatically.]" },
       ] },
     ])
-    expect(recoveries).toEqual([{ replayMode: "unsigned-observation", recoveryCount: 1 }])
+    expect(recoveries).toEqual([{ replayMode: "unsigned-observation", recoveryCount: 1, userMessageCount: 0, assistantMessageCount: 1, toolResultMessageCount: 1, assistantToolCallBlockCount: 2, declaredToolCount: 0 }])
   })
 
   it("reports only allowlisted request-local replay diagnostics", () => {
@@ -170,9 +170,9 @@ describe("Pi tool history replay", () => {
     replayToolHistory([{ ...sameModelAssistant([call(secret, secret, { secret }, "invalid")]), provider: "foreign" }, { ...result(secret, [secret]), toolName: secret }], part, capture, signedReplay)
 
     expect(diagnostics).toEqual([
-      { replayMode: "none", recoveryCount: 0 },
-      { replayMode: "signed-function-response", recoveryCount: 0 },
-      { replayMode: "unsigned-observation", recoveryCount: 0 },
+      { replayMode: "none", recoveryCount: 0, userMessageCount: 1, assistantMessageCount: 0, toolResultMessageCount: 0, assistantToolCallBlockCount: 0, declaredToolCount: 0 },
+      { replayMode: "signed-function-response", recoveryCount: 0, userMessageCount: 0, assistantMessageCount: 1, toolResultMessageCount: 1, assistantToolCallBlockCount: 1, declaredToolCount: 0 },
+      { replayMode: "unsigned-observation", recoveryCount: 0, userMessageCount: 0, assistantMessageCount: 1, toolResultMessageCount: 1, assistantToolCallBlockCount: 1, declaredToolCount: 0 },
     ])
     expect(JSON.stringify(diagnostics)).not.toContain(secret)
   })

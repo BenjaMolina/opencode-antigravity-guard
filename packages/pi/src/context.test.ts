@@ -260,9 +260,21 @@ describe("Pi text context serialization", () => {
       const context = { tools: [{ name: "read_file", description: "Read one file", parameters: { type: "object", properties: { path: { type: "string" } }, required: ["path"] } }], messages: [{ role: "user", content: "x", timestamp: 0 }] } as Context
       const selection = resolveGenerationSelection(listCatalogEntries()[0]!, "off")
       const enabled = createEnabledToolCapability({ record: "fixture", revision: "1", publicModelId: "antigravity-gemini-3.8-flash", reasoning: "off", wireModel: "gemini-3.8-flash-tiered" })
-      const request = serializeContext({ context, model, project: "project", requestId: "agent-id" }, { ...selection, tools: enabled })
+      const diagnostics: unknown[] = []
+      const request = serializeContext({ context, model, project: "project", requestId: "agent-id" }, { ...selection, tools: enabled }, (diagnostic) => diagnostics.push(diagnostic))
+      const withoutDiagnostics = serializeContext({ context, model, project: "project", requestId: "agent-id" }, { ...selection, tools: enabled })
+      expect(JSON.stringify(request)).toBe(JSON.stringify(withoutDiagnostics))
       expect(JSON.stringify(serializeContext({ context: { messages: [{ role: "user", content: "x", timestamp: 0 }] } as Context, model, project: "project", requestId: "agent-id" }))).toBe(JSON.stringify(serializeTextContext({ context: { messages: [{ role: "user", content: "x", timestamp: 0 }] } as Context, model, project: "project", requestId: "agent-id" })))
       expect(JSON.stringify(request.request)).toBe(JSON.stringify({ contents: [{ role: "user", parts: [{ text: "x" }] }], tools: [{ functionDeclarations: [{ name: "read_file", description: "Read one file", parametersJsonSchema: { type: "object", properties: { path: { type: "string" } }, required: ["path"] } }] }], generationConfig: { temperature: 1, maxOutputTokens: 4096, thinkingConfig: { thinkingLevel: "low", includeThoughts: false } } }))
+      expect(diagnostics).toEqual([{
+        replayMode: "none",
+        recoveryCount: 0,
+        userMessageCount: 1,
+        assistantMessageCount: 0,
+        toolResultMessageCount: 0,
+        assistantToolCallBlockCount: 0,
+        declaredToolCount: 1,
+      }])
       const declaration = request.request.tools?.[0]?.functionDeclarations[0]
       expect(declaration).not.toHaveProperty("parameters")
       expect(JSON.stringify(declaration?.parametersJsonSchema)).toBe(JSON.stringify({ type: "object", properties: { path: { type: "string" } }, required: ["path"] }))

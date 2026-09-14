@@ -75,7 +75,7 @@ describe("fixed Antigravity SSE transport", () => {
         model: model(), now: () => 1_000, onSemantic: (semantic) => { semantics.push(semantic) }, platform: "win32", requestId: "request-id", selection,
       })
       expect(semantics).toEqual([
-        { type: "toolDiagnostics", details: { publicModelId: entry.publicId, reasoning: base.level, capabilityState: "enabled", preflight: "accepted", recoveryCount: 0 } },
+        { type: "toolDiagnostics", details: { publicModelId: entry.publicId, reasoning: base.level, capabilityState: "enabled", preflight: "accepted", replayMode: "none", recoveryCount: 0, userMessageCount: 1, assistantMessageCount: 0, toolResultMessageCount: 0, assistantToolCallBlockCount: 0, declaredToolCount: 1 } },
         { type: "toolCall", callIndex: 0, id: "call-1", name: "read_file", arguments: {}, argumentsJson: "{}" },
         { type: "finish", reason: "toolUse" },
       ])
@@ -111,7 +111,7 @@ describe("fixed Antigravity SSE transport", () => {
     for await (const _event of lifecycle) undefined
     expect(await lifecycle.result()).toMatchObject({
       stopReason: "stop",
-      diagnostics: [{ type: "antigravity-guard.tools", details: { publicModelId: entry.publicId, reasoning: selection.level, capabilityState: "enabled", preflight: "accepted", recoveryCount: 1, terminal: "stop" } }],
+      diagnostics: [{ type: "antigravity-guard.tools", details: { publicModelId: entry.publicId, reasoning: selection.level, capabilityState: "enabled", preflight: "accepted", replayMode: "unsigned-observation", recoveryCount: 1, userMessageCount: 0, assistantMessageCount: 1, toolResultMessageCount: 0, assistantToolCallBlockCount: 1, declaredToolCount: 0, terminal: "stop" } }],
     })
   })
 
@@ -724,7 +724,7 @@ it("propagates safe local diagnostics and emits one generic error before finish"
     model: model(),
     now: () => 1_000,
     runTransport: async ({ onSemantic }) => {
-      onSemantic({ type: "toolDiagnostics", details: { publicModelId: "safe-model", reasoning: "off", capabilityState: "enabled", preflight: "accepted", recoveryCount: 0 } })
+      onSemantic({ type: "toolDiagnostics", details: { publicModelId: "safe-model", reasoning: "off", capabilityState: "enabled", preflight: "accepted", replayMode: "none", recoveryCount: 0, userMessageCount: 0, assistantMessageCount: 0, toolResultMessageCount: 0, assistantToolCallBlockCount: 0, declaredToolCount: 0 } })
       throw new StreamTransportError("access", "CANARY-forged-diagnostics", 418)
     },
   })

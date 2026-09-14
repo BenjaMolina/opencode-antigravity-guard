@@ -198,53 +198,85 @@ export function sanitizeTerminalCategory(events: readonly ProbeEvent[]): "capabi
   return events.some((event) => containsText(event, "generation request") || containsText(event, "SSE") || containsText(event, "stream")) ? "transport" : "process"
 }
 
-const TERMINAL_STOP_REASONS = new Set(["stop", "length", "toolUse", "error", "aborted", "pending"])
-const TERMINAL_CONTENT_TYPES = new Set(["text", "thinking", "toolCall"])
 type DiagnosticFailureKind = "aborted" | "access" | "capability" | "model" | "quota" | "preflight" | "response" | "transport" | "callback"
-
-export function summarizeTerminalMessages(events: readonly ProbeEvent[]): readonly {
-  readonly event: "message_end" | "turn_end"
-  readonly role: "assistant"
-  readonly stopReason?: string
-  readonly contentTypes: readonly ("text" | "thinking" | "toolCall" | "unknown")[]
-  readonly hasToolDiagnostics: boolean
-  readonly localError?: { readonly category: "capability", readonly code: "PI_TOOL_CAPABILITY_NOT_ENABLED" }
+type ReplayMode = "none" | "signed-function-response" | "unsigned-observation"
+type CapabilityState = "disabled" | "fixture-qualified" | "enabled"
+type PreflightCategory = "schema" | "tool-choice" | "declaration" | "history" | "capability"
+type TerminalDiagnostics = {
+  readonly replayMode: ReplayMode
+  readonly recoveryCount: number
+  readonly userMessageCount: number
+  readonly assistantMessageCount: number
+  readonly toolResultMessageCount: number
+  readonly assistantToolCallBlockCount: number
+  readonly declaredToolCount: number
+  readonly capabilityState: CapabilityState
+  readonly preflightCategory?: PreflightCategory
+  readonly preflightPath?: string
   readonly failure?: { readonly kind: DiagnosticFailureKind, readonly status?: number }
-}[] {
+}
+
+const TOOL_DIAGNOSTIC_KEYS = new Set(["publicModelId", "reasoning", "capabilityState", "preflight", "preflightCategory", "preflightPath", "replayMode", "recoveryCount", "userMessageCount", "assistantMessageCount", "toolResultMessageCount", "assistantToolCallBlockCount", "declaredToolCount", "failure", "terminal"])
+
+export function summarizeTerminalMessages(events: readonly ProbeEvent[]): readonly TerminalDiagnostics[] {
   return events.flatMap((event) => {
     if (event.type !== "message_end" && event.type !== "turn_end") return []
     const message = objectValue(event.message)
-    if (message?.role !== "assistant") return []
-    const contentTypes = Array.isArray(message.content)
-      ? message.content.map((part) => {
-        const type = objectValue(part)?.type
-        return typeof type === "string" && TERMINAL_CONTENT_TYPES.has(type) ? type as "text" | "thinking" | "toolCall" : "unknown"
-      })
-      : []
-    const stopReason = typeof message.stopReason === "string" && TERMINAL_STOP_REASONS.has(message.stopReason) ? message.stopReason : undefined
-    const hasToolDiagnostics = Array.isArray(message.diagnostics) && message.diagnostics.some((item) => objectValue(item)?.type === "antigravity-guard.tools")
-    const localError = typeof message.errorMessage === "string" && message.errorMessage.includes("PI_TOOL_CAPABILITY_NOT_ENABLED")
-      ? { category: "capability" as const, code: "PI_TOOL_CAPABILITY_NOT_ENABLED" as const }
-      : undefined
-    const failure = diagnosticFailure(message.diagnostics)
-    return [{ event: event.type, role: "assistant" as const, ...(stopReason ? { stopReason } : {}), contentTypes, hasToolDiagnostics, ...(localError ? { localError } : {}), ...(failure ? { failure } : {}) }]
+    if (message?.role !== "assistant" || !Array.isArray(message.diagnostics)) return []
+    for (const item of message.diagnostics) {
+      const diagnostic = objectValue(item)
+      if (diagnostic?.type !== "antigravity-guard.tools") continue
+      const summary = sanitizeToolDiagnostics(objectValue(diagnostic.details))
+      if (summary) return [summary]
+    }
+    return []
   })
 }
 
-function diagnosticFailure(value: unknown): { readonly kind: DiagnosticFailureKind, readonly status?: number } | undefined {
-  if (!Array.isArray(value)) return undefined
-  for (const item of value) {
-    const diagnostic = objectValue(item)
-    if (diagnostic?.type !== "antigravity-guard.tools") continue
-    const failure = objectValue(objectValue(diagnostic.details)?.failure)
-    if (!failure || !isDiagnosticFailureKind(failure.kind)) continue
-    const status = failure.status
-    return {
-      kind: failure.kind,
-      ...(typeof status === "number" && Number.isInteger(status) && status >= 100 && status <= 599 ? { status } : {}),
-    }
+function sanitizeToolDiagnostics(details: ProbeEvent | undefined): TerminalDiagnostics | undefined {
+  if (!details || Object.keys(details).some((key) => !TOOL_DIAGNOSTIC_KEYS.has(key))) return undefined
+  if (typeof details.publicModelId !== "string" || typeof details.reasoning !== "string" || typeof details.preflight !== "string") return undefined
+  if (!isReplayMode(details.replayMode) || !isNonnegativeSafeInteger(details.recoveryCount) || !isNonnegativeSafeInteger(details.userMessageCount) || !isNonnegativeSafeInteger(details.assistantMessageCount) || !isNonnegativeSafeInteger(details.toolResultMessageCount) || !isNonnegativeSafeInteger(details.assistantToolCallBlockCount) || !isNonnegativeSafeInteger(details.declaredToolCount) || !isCapabilityState(details.capabilityState)) return undefined
+  if (details.preflightCategory !== undefined && !isPreflightCategory(details.preflightCategory)) return undefined
+  if (details.preflightPath !== undefined && (typeof details.preflightPath !== "string" || !/^\$(?:\.[A-Za-z_][A-Za-z0-9_]*|\[\d+\])*$/.test(details.preflightPath))) return undefined
+  const failure = diagnosticFailure(details.failure)
+  if (details.failure !== undefined && !failure) return undefined
+  return {
+    replayMode: details.replayMode,
+    recoveryCount: details.recoveryCount,
+    userMessageCount: details.userMessageCount,
+    assistantMessageCount: details.assistantMessageCount,
+    toolResultMessageCount: details.toolResultMessageCount,
+    assistantToolCallBlockCount: details.assistantToolCallBlockCount,
+    declaredToolCount: details.declaredToolCount,
+    capabilityState: details.capabilityState,
+    ...(details.preflightCategory ? { preflightCategory: details.preflightCategory } : {}),
+    ...(details.preflightPath ? { preflightPath: details.preflightPath } : {}),
+    ...(failure ? { failure } : {}),
   }
-  return undefined
+}
+
+function diagnosticFailure(value: unknown): { readonly kind: DiagnosticFailureKind, readonly status?: number } | undefined {
+  const failure = objectValue(value)
+  if (!failure || Object.keys(failure).some((key) => key !== "kind" && key !== "status") || !isDiagnosticFailureKind(failure.kind)) return undefined
+  if (failure.status !== undefined && (typeof failure.status !== "number" || !Number.isInteger(failure.status) || failure.status < 100 || failure.status > 599)) return undefined
+  return { kind: failure.kind, ...(failure.status === undefined ? {} : { status: failure.status }) }
+}
+
+function isNonnegativeSafeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0
+}
+
+function isReplayMode(value: unknown): value is ReplayMode {
+  return value === "none" || value === "signed-function-response" || value === "unsigned-observation"
+}
+
+function isCapabilityState(value: unknown): value is CapabilityState {
+  return value === "disabled" || value === "fixture-qualified" || value === "enabled"
+}
+
+function isPreflightCategory(value: unknown): value is PreflightCategory {
+  return value === "schema" || value === "tool-choice" || value === "declaration" || value === "history" || value === "capability"
 }
 
 function isDiagnosticFailureKind(value: unknown): value is DiagnosticFailureKind {
