@@ -50,7 +50,7 @@ const CATALOG = freeze(defineCatalog([{
     maxTokens: 65_536,
   },
   routes: {
-    off: { wireModel: "gemini-3.8-flash-tiered", thinking: { kind: "native-level", thinkingLevel: "low", includeThoughts: false }, tools: disabled("missing-direct-evidence") },
+    off: { wireModel: "gemini-3.8-flash-tiered", thinking: { kind: "native-level", thinkingLevel: "low", includeThoughts: false }, tools: enabled({ record: "pi-json-tool-loop", revision: "gemini-3.8-flash-off-v1", publicModelId: "antigravity-gemini-3.8-flash", reasoning: "off", wireModel: "gemini-3.8-flash-tiered" }) },
     low: { wireModel: "gemini-3.8-flash-tiered", thinking: { kind: "native-level", thinkingLevel: "low", includeThoughts: true }, tools: disabled("missing-direct-evidence") },
     medium: { wireModel: "gemini-3.8-flash-tiered", thinking: { kind: "native-level", thinkingLevel: "medium", includeThoughts: true }, tools: disabled("missing-direct-evidence") },
     high: { wireModel: "gemini-3.8-flash-tiered", thinking: { kind: "native-level", thinkingLevel: "high", includeThoughts: true }, tools: disabled("missing-direct-evidence") },
@@ -156,6 +156,10 @@ const lookup = new Map<string, CatalogEntry>(CATALOG.map((entry) => [entry.publi
 
 function disabled(reason: Extract<ToolCapability, { readonly state: "disabled" }>["reason"]): ToolCapability {
   return { state: "disabled", contractRevision: 1, reason }
+}
+
+function enabled(evidence: ToolEvidenceRef): ToolCapability {
+  return { state: "enabled", contractRevision: 1, fixtureEvidence: evidence, directEvidence: evidence }
 }
 
 /** Constructs deterministic capability data for hermetic serializer tests only. */
