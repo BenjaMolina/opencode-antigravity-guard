@@ -59,10 +59,11 @@ describe("Pi tool schema normalization", () => {
   })
 
   it.each([
+    ["primitive declaration root", { type: "string" }, "$.type"],
     ["unknown keyword", { type: "object", properties: { value: { type: "string", minLength: 1 } } }, "$.properties.value.minLength"],
     ["union", { type: ["string", "null"] }, "$.type"],
     ["empty object", { type: "object", properties: {} }, "$.properties"],
-    ["invalid enum", { type: "string", enum: ["ok", 1] }, "$.enum[1]"],
+    ["invalid enum", { type: "object", properties: { value: { type: "string", enum: ["ok", 1] } } }, "$.properties.value.enum[1]"],
   ])("rejects %s without repairing the schema", (_label, parameters, path) => {
     try {
       normalizeToolDeclarations([{ name: "tool", description: "A tool", parameters }])
@@ -81,6 +82,7 @@ describe("Pi tool schema normalization", () => {
   it("enforces schema depth and serialized-size limits", () => {
     let deep: unknown = { type: "string" }
     for (let index = 0; index < 33; index += 1) deep = { type: "array", items: deep }
+    deep = { type: "object", properties: { value: deep } }
     const tooLarge = "x".repeat(256 * 1024 + 1)
     for (const parameters of [deep, { type: "object", properties: { value: { type: "string", description: tooLarge } } }]) {
       expect(() => normalizeToolDeclarations([{ name: "tool", description: "A tool", parameters }])).toThrow(/PI_TOOL_SCHEMA_LIMIT/)
