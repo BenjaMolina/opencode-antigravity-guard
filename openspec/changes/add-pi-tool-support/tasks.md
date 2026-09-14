@@ -116,11 +116,11 @@ The user selected `feature-branch-chain` after reviewing the 2,100–3,100-line 
 **Budget / commit candidate:** 350–400 lines; `feat(pi): emit safe tool-call stream lifecycle`.  
 **Finish / rollback boundary:** Accepted semantics become Pi events with one terminal outcome; failure scrubs calls from shared partial state. Revert this unit together with F before any tool-capable route can be enabled.
 
-- [ ] **RED:** Add lifecycle tests for exact `start → toolcall_start → toolcall_delta → toolcall_end → done(toolUse)`, shared partial identity, complete canonical argument delta including `{}`, real content indexes versus call indexes, interleaved text/thinking, and multiple calls. <!-- sdd-owner: implementation -->
-- [ ] **GREEN:** Extend `stream.ts` to map validated tool-call semantics into indexed Pi blocks/events, set `stopReason: "toolUse"` only on committed success, attach safe tool-only diagnostics, and centralize `open | succeeded | failed` finalization. <!-- sdd-owner: implementation -->
-- [ ] **TRIANGULATE:** Add abort, timeout, malformed/late stream, callback failure, post-call response error, and concurrent-stream tests proving calls are scrubbed on failure and exactly one `done` or `error` occurs. <!-- sdd-owner: implementation -->
-- [ ] **REFACTOR:** Consolidate block-closing and terminal guards while preserving existing cancellation, body cancellation, HTTP/quota error, and no-tool terminal behavior. <!-- sdd-owner: implementation -->
-- [ ] Verify this unit with `npm test -- --run packages/pi/src/stream.test.ts`, `npm run typecheck:pi`, `npm test`, and `npm run build:pi`; rollback by reverting lifecycle and F response admission in dependency order. <!-- sdd-owner: implementation -->
+- [x] **RED:** Add lifecycle tests for exact `start → toolcall_start → toolcall_delta → toolcall_end → done(toolUse)`, shared partial identity, complete canonical argument delta including `{}`, real content indexes versus call indexes, interleaved text/thinking, and multiple calls. <!-- sdd-owner: implementation -->
+- [x] **GREEN:** Extend `stream.ts` to map validated tool-call semantics into indexed Pi blocks/events, set `stopReason: "toolUse"` only on committed success, attach safe tool-only diagnostics, and centralize `open | succeeded | failed` finalization. <!-- sdd-owner: implementation -->
+- [x] **TRIANGULATE:** Add abort, timeout, malformed/late stream, callback failure, post-call response error, and concurrent-stream tests proving calls are scrubbed on failure and exactly one `done` or `error` occurs. <!-- sdd-owner: implementation -->
+- [x] **REFACTOR:** Consolidate block-closing and terminal guards while preserving existing cancellation, body cancellation, HTTP/quota error, and no-tool terminal behavior. <!-- sdd-owner: implementation -->
+- [x] Verify this unit with `npm test -- --run packages/pi/src/stream.test.ts`, `npm run typecheck:pi`, `npm test`, and `npm run build:pi`; rollback by reverting lifecycle and F response admission in dependency order. <!-- sdd-owner: implementation -->
 
 ## H — Provider compatibility, documentation, package consumer, and cross-slice regression
 

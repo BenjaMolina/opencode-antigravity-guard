@@ -574,3 +574,57 @@ This explicitly authorized fallback adds the missing transactional `MAX_TOKENS` 
 - Test correction: 7 additions, 0 deletions, 7 changed code/test lines.
 - Complete Unit F code/test working diff: 168 additions, 63 deletions, 231 changed lines across `response.ts`, `response.test.ts`, `stream.ts`, and `stream.test.ts`.
 - Focused Unit F response coverage now has 16 tests; response plus stream has 38 tests.
+
+---
+
+## Unit G completion: stream lifecycle and safe terminal cleanup
+
+### Structured status consumed
+
+- Change: `add-pi-tool-support`; parent-authoritative status: apply `ready`, Unit G only, branch `feat/pi-tool-support-g-lifecycle`, base/current HEAD `d8531bf`.
+- Action context: `repo-local`; every edit remained in `C:/Github/Ordico/opencode-antigravity-guard-pi-tools`, within the supplied Unit G surfaces.
+- Delivery: `auto-chain` / `feature-branch-chain`; strict TDD active with `npm test`. No commit, branch operation, push, publication, live call, capability activation, provider/auth/endpoint/header/timeout ownership, or Unit H change occurred.
+
+### Completed tasks and persisted checkbox updates
+
+All five Unit G implementation-owned rows are visibly marked `[x]` in `tasks.md`: RED, GREEN, TRIANGULATE, REFACTOR, and Verify. Unit H rows remain unchanged and unchecked.
+
+### Files changed
+
+- `packages/pi/src/stream.ts`
+- `packages/pi/src/stream.test.ts`
+- `openspec/changes/add-pi-tool-support/tasks.md`
+- `openspec/changes/add-pi-tool-support/apply-progress.md`
+
+### TDD Cycle Evidence
+
+| Task | Test file | RED | GREEN | TRIANGULATE | REFACTOR |
+|---|---|---|---|---|---|
+| G | `packages/pi/src/stream.test.ts` | New lifecycle/scrubbing scenario failed because no `toolcall_*` events were emitted. | Mapping complete validated calls into a shared indexed Pi block and scrubbing on failure made 24 focused tests pass. | Added admitted transport policy coverage and caller-abort/late-callback cleanup; 26 focused tests passed. | Central terminal guard continues to ignore late semantics, preserve existing text/thinking closure, and scrub every tool block before the sole error event. |
+
+### Verification evidence
+
+| Command | Result | Evidence |
+|---|---|---|
+| `npm test -- --run packages/pi/src/stream.test.ts` (RED) | Failed as expected | 23 passed, 1 new lifecycle test failed: expected `toolcall_start`, `toolcall_delta`, and `toolcall_end` events were absent. |
+| Same focused command (GREEN) | Passed | 24/24 tests passed. |
+| Same focused command (TRIANGULATE/REFACTOR) | Passed | 26/26 tests passed, including admitted transport policy, canonical `{}` delta, interleaving/indexing, post-call failure, abort, and late semantic cleanup. |
+| `npm run typecheck:pi` | Passed | Pi workspace `tsc -p tsconfig.json --noEmit` completed. |
+| `npm run build:pi` | Passed | Pi workspace `tsc -p tsconfig.json` completed. |
+| `npm test` | Accepted with inherited baseline only | 57/58 files passed, 1,325 passed, 25 todo; exactly the two supplied `scripts/release-manifest-check.test.ts` failures at lines 76 and 103, both `expected undefined to be defined`; no additional failures occurred. |
+| `git diff --check -- packages/pi/src/stream.ts packages/pi/src/stream.test.ts` | Passed | No whitespace errors. |
+
+### Implementation notes and remaining work
+
+- `executeStreamTransport()` now dispatches through the admitted context serializer and derives the matching declared-name response policy from the exact selected route; normal catalog routes remain disabled and no production route was enabled.
+- Each validated `toolCall` closes any active text/thinking block, appends one shared Pi block, emits start/delta/end at its real content index, and emits canonical JSON including `{}` before terminal `done(toolUse)`.
+- Central finalization retains one terminal event, scrubs all `toolCall` blocks before any error/aborted event, and records only a safe tool-only terminal diagnostic. Existing cancellation, body cancellation, HTTP/quota, no-tool, and late-callback behavior remains covered by the focused regression suite.
+- Unit G has no remaining unchecked implementation-owned rows. Unit H is the only remaining implementation work unit and is intentionally out of scope.
+
+### Workload / PR boundary
+
+Feature-branch-chain child G only. Exact authored code/test delta is **108 additions, 10 deletions, 118 changed lines** (`stream.ts` 36/8; `stream.test.ts` 72/2), excluding OpenSpec bookkeeping and below the 400-line budget. No size exception or commit was created.
+
+### Deviation and risk
+
+No design deviation occurred. The two full-suite release-manifest failures are inherited under the user-provided acceptance rule and are outside allowed surfaces. Tool capability remains fail-closed for every production route, so the injected enabled selection exists only for hermetic transport coverage.

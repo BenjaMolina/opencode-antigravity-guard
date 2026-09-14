@@ -2,9 +2,9 @@ import { calculateCost, createAssistantMessageEventStream } from "@earendil-work
 import type { AssistantMessage, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai"
 import { ANTIGRAVITY_ENDPOINTS } from "@benjamolina/antigravity-guard-core"
 
-import { getCatalogEntry } from "./catalog.ts"
-import { ContextSerializationError, serializeTextContext } from "./context.ts"
-import type { ResponseSemantic } from "./response.ts"
+import { getCatalogEntry, resolveGenerationSelection, type GenerationSelection } from "./catalog.ts"
+import { ContextSerializationError, serializeContext } from "./context.ts"
+import type { ResponseSemantic, ToolResponsePolicy } from "./response.ts"
 import { ResponseSemanticError, ResponseSemantics } from "./response.ts"
 import { SseFrameError, SseFramer } from "./sse.ts"
 
@@ -36,6 +36,7 @@ export interface StreamTransportInput {
   onSemantic: (semantic: ResponseSemantic) => void | Promise<void>
   platform: string
   requestId: string
+  selection?: GenerationSelection
   signal?: AbortSignal
   timeoutMs?: number
 }
@@ -62,6 +63,7 @@ export function createPiLifecycleStream(input: PiStreamLifecycleInput) {
     timestamp: input.now(),
   }
   let complete = false
+  let sawToolCall = false
   let textStarted = false
       let currentBlock: { type: "text", text: string, textSignature?: string } | { type: "thinking", thinking: string, thinkingSignature?: string } | undefined
   const closeBlock = () => {
@@ -77,8 +79,14 @@ export function createPiLifecycleStream(input: PiStreamLifecycleInput) {
     if (complete) return
     complete = true
     removeAbort()
-    if (reason === "error" || reason === "aborted") controller.abort()
+    if (reason === "error" || reason === "aborted") {
+      controller.abort()
+      for (let index = output.content.length - 1; index >= 0; index--) {
+        if (output.content[index]?.type === "toolCall") output.content.splice(index, 1)
+      }
+    }
     output.stopReason = reason
+    if (sawToolCall) output.diagnostics = [{ type: "antigravity-guard.tools", timestamp: input.now(), details: { terminal: reason } }]
     if (reason === "stop" || reason === "length" || reason === "toolUse") {
       closeBlock()
       stream.push({ type: "done", reason, message: output })
@@ -91,6 +99,17 @@ export function createPiLifecycleStream(input: PiStreamLifecycleInput) {
 
   const onSemantic = (semantic: ResponseSemantic) => {
     if (complete) return
+    if (semantic.type === "toolCall") {
+      sawToolCall = true
+      closeBlock()
+      const toolCall = { type: "toolCall" as const, id: semantic.id, name: semantic.name, arguments: semantic.arguments, ...(semantic.signature ? { thoughtSignature: semantic.signature } : {}) }
+      output.content.push(toolCall)
+      const contentIndex = output.content.length - 1
+      stream.push({ type: "toolcall_start", contentIndex, partial: output })
+      stream.push({ type: "toolcall_delta", contentIndex, delta: semantic.argumentsJson, partial: output })
+      stream.push({ type: "toolcall_end", contentIndex, toolCall, partial: output })
+      return
+    }
     if (isContentSemantic(semantic)) {
           if (!currentBlock || currentBlock.type !== semantic.type) {
             closeBlock()
@@ -160,7 +179,9 @@ export async function executeStreamTransport(input: StreamTransportInput): Promi
   const headers = requestHeaders(input)
   let responseBody: ReadableStream<Uint8Array> | null = null
   try {
-    const original = serializeTextContext({ context: input.context, model: input.model, options: input.generationOptions, project: input.projectId, requestId: input.requestId })
+    const entry = getCatalogEntry(input.model.id)!
+    const selection = input.selection ?? resolveGenerationSelection(entry, input.generationOptions?.reasoning)
+    const original = serializeContext({ context: input.context, model: input.model, options: input.generationOptions, project: input.projectId, requestId: input.requestId }, selection)
     const payload = await payloadHook(input, original, signal)
     const response = await abortable(input.fetch(ENDPOINT, { method: "POST", redirect: "error", headers, body: JSON.stringify(payload), signal }), signal)
     await responseHook(input, response, signal)
@@ -170,7 +191,7 @@ export async function executeStreamTransport(input: StreamTransportInput): Promi
       await boundedBody(response.body, signal)
       throw streamError("response", "Antigravity did not return an SSE response.")
     }
-    await consume(response.body, signal, input.onSemantic, inactivityTimeout(input))
+    await consume(response.body, signal, input.onSemantic, inactivityTimeout(input), responsePolicy(original, selection))
   } catch (error) {
     void responseBody?.cancel().catch(() => undefined)
     if (isLocalStreamError(error)) throw error
@@ -183,6 +204,13 @@ export async function executeStreamTransport(input: StreamTransportInput): Promi
 
 function validateInput(input: StreamTransportInput): void {
   if (!getCatalogEntry(input.model.id) || input.model.api !== API) throw streamError("response", "The selected Antigravity model or API is unsupported.")
+}
+
+function responsePolicy(payload: { request: { tools?: { functionDeclarations: unknown }[], toolConfig?: { functionCallingConfig: { mode: "AUTO" | "NONE" } } } }, selection: GenerationSelection): ToolResponsePolicy {
+  const declarations = payload.request.tools?.[0]?.functionDeclarations
+  if (selection.tools.state !== "enabled" || payload.request.toolConfig?.functionCallingConfig.mode !== "AUTO" || !Array.isArray(declarations)) return { kind: "reject" }
+  const names = declarations.map((item) => typeof item === "object" && item !== null ? Object.getOwnPropertyDescriptor(item, "name")?.value : undefined)
+  return names.every((name): name is string => typeof name === "string") ? { kind: "accept", declaredNames: new Set(names) } : { kind: "reject" }
 }
 
 async function payloadHook(input: StreamTransportInput, payload: unknown, signal: AbortSignal): Promise<unknown> {
@@ -214,10 +242,10 @@ function requestHeaders(input: StreamTransportInput): Record<string, string> {
   }
 }
 
-async function consume(body: ReadableStream<Uint8Array>, signal: AbortSignal, onSemantic: StreamTransportInput["onSemantic"], inactivityMs: number): Promise<void> {
+async function consume(body: ReadableStream<Uint8Array>, signal: AbortSignal, onSemantic: StreamTransportInput["onSemantic"], inactivityMs: number, policy: ToolResponsePolicy): Promise<void> {
   const reader = body.getReader()
   const framer = new SseFramer()
-  const semantics = new ResponseSemantics()
+  const semantics = new ResponseSemantics(policy)
   try {
     while (true) {
       const next = await abortable(reader.read(), AbortSignal.any([signal, AbortSignal.timeout(inactivityMs)]))
