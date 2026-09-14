@@ -14,11 +14,11 @@ Choose browser login, or choose manual login and paste the complete callback URL
 
 ## Text registration is not tool enablement
 
-All seven rows below are registered for text. Every production route is currently **not enabled for tools**, so a context with a declaration, assistant tool call, or tool result fails locally before any network request. Text-only requests retain their released behavior.
+All seven rows below are registered for text. The exact `antigravity-gemini-3.8-flash` `off` route is enabled for tools from recorded direct evidence; every other production route is **not enabled for tools**, so its context with a declaration, assistant tool call, or tool result fails locally before any network request. Text-only requests retain their released behavior.
 
-| Public ID | Exposed Pi levels | Tool state | Why tools are unavailable |
+| Public ID | Exposed Pi levels | Tool state | Admission |
 |---|---|---|---|
-| `antigravity-gemini-3.8-flash` | off, low, medium, high | Disabled | missing-direct-evidence |
+| `antigravity-gemini-3.8-flash` | off, low, medium, high | Enabled (off) | pi-json-tool-loop/gemini-3.8-flash-off-v1 |
 | `antigravity-gemini-3.7-flash` | off, low, medium, high | Disabled | missing-direct-evidence |
 | `antigravity-gemini-3.6-flash` | off, low, medium, high | Disabled | missing-direct-evidence |
 | `antigravity-gemini-3.1-pro` | off, low, high | Disabled | missing-direct-evidence |
@@ -28,11 +28,11 @@ All seven rows below are registered for text. Every production route is currentl
 
 `off` is available for every row even though it is omitted from Pi's level map; omitted reasoning also selects that row's `off` route. Unsupported levels are not advertised and are rejected before transport. `antigravity-gemini-3.5-flash` is not registered or advertised as supported because its recorded HTTP-200 response lacks the strict terminal metadata required for admission. A future `fixture-qualified` route remains disabled for ordinary tool use; only separately authorized direct validation for the exact route may make it enabled.
 
-Claude Sonnet and Claude Opus remain disabled until declaration, call, result replay, thinking-signature, resume, interruption, and continuation evidence is recorded for each exact route. No route is enabled by this package release.
+Claude Sonnet and Claude Opus remain disabled until declaration, call, result replay, thinking-signature, resume, interruption, and continuation evidence is recorded for each exact route. Only Gemini 3.8 Flash `off` is enabled by this package release.
 
 ## Opt-in direct tool-loop validation
 
-Maintainers can run `npm run build:pi` followed by `npx tsx scripts/pi-tool-loop-probe.ts --live --expect-disabled` to verify the fail-closed control. The isolated runner invokes Pi in `--mode json`, passes the deterministic non-terminating `pi_evidence_echo` prompt positionally, drains its event stream, and completes after Pi emits `agent_end` and the child exits. On a terminal probe failure, it retains only an optional `toolExecutionTerminate` boolean and nonnegative `user`, `assistant`, and `toolResult` message-role counts from `agent_end`; it never stores message contents, tool details, names, IDs, arguments, credentials, headers, or raw provider output. This validation does not enable any production route.
+Maintainers can run `npm run build:pi` followed by `npx tsx scripts/pi-tool-loop-probe.ts --live --expect-enabled` to verify the directly admitted Gemini 3.8 Flash `off` route. The isolated runner invokes Pi in `--mode json`, passes the deterministic non-terminating `pi_evidence_echo` prompt positionally, drains its event stream, and completes after Pi emits `agent_end` and the child exits. It stores only the passing route and sanitized assertions; it never stores message contents, tool details, names, IDs, arguments, credentials, headers, or raw provider output. Other routes remain fail-closed.
 
 ## Tool preflight boundaries
 
@@ -56,6 +56,6 @@ An explicit `maxTokens` must be a positive integer no greater than the row's out
 
 - Costs are reported as zero because subscription usage is unpriced, not because access is free.
 - The catalog is static: it performs no startup or runtime model discovery, catalog synchronization, or dynamic registration.
-- It has no account rotation, quota fallback, model substitution, image support, or enabled tools.
+- It has no account rotation, quota fallback, model substitution, image support, or enabled tools beyond the directly admitted Gemini 3.8 Flash `off` route.
 
 To remove it, disable or uninstall `@benjamolina/pi-antigravity-guard` and reload Pi. Removal does not delete Pi-managed credentials or revoke tokens.

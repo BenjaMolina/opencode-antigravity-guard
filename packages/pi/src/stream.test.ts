@@ -276,7 +276,7 @@ describe("fixed Antigravity SSE transport", () => {
       `data: ${JSON.stringify({ response: { candidates: [{ content: { parts: [{ text: "ok" }] }, finishReason: "STOP" }] } })}\n\n`,
       { headers: { "Content-Type": "text/event-stream" } },
     ))
-    const input = { accessToken: "access-token", projectId: "stored-project", fetch, model: model(), now: () => 1_000, onSemantic: vi.fn(), platform: "win32", requestId: "request-id" }
+    const input = { accessToken: "access-token", projectId: "stored-project", fetch, generationOptions: { reasoning: "high" as const }, model: model(), now: () => 1_000, onSemantic: vi.fn(), platform: "win32", requestId: "request-id" }
     const contexts = [
       { tools: [{ name: "read_file" }], messages: [{ role: "user", content: "Hello" }] },
       { messages: [{ role: "assistant", content: [{ type: "toolCall", id: "call-1", name: "read_file", arguments: {} }] }] },

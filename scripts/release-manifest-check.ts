@@ -9,12 +9,12 @@ const CORE = {
 } as const
 const PI = {
   name: "@benjamolina/pi-antigravity-guard",
-  version: "0.4.0",
+  version: "0.4.1",
   workspace: "packages/pi",
 } as const
 const ROOT = {
   name: "@benjamolina/opencode-antigravity-guard",
-  version: "1.1.14",
+  version: "1.1.15",
   workspace: undefined,
 } as const
 
