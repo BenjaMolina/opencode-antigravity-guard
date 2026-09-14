@@ -3,9 +3,9 @@ import type { AssistantMessage, Context, Model, SimpleStreamOptions } from "@ear
 import { ANTIGRAVITY_ENDPOINTS } from "@benjamolina/antigravity-guard-core"
 
 import { getCatalogEntry, resolveGenerationSelection, type GenerationSelection } from "./catalog.ts"
-import { ContextSerializationError, serializeContext } from "./context.ts"
+import { ContextSerializationError, serializeContext, type GenerationRequest } from "./context.ts"
 import { ToolPreflightError } from "./tool-contract.ts"
-import { hasToolContext } from "./tool-context.ts"
+import { hasToolContext, type ToolReplayDiagnostics, type ToolReplayMode } from "./tool-context.ts"
 import type { ResponseSemantic, ToolResponsePolicy } from "./response.ts"
 import { ResponseSemanticError, ResponseSemantics } from "./response.ts"
 import { SseFrameError, SseFramer } from "./sse.ts"
@@ -28,7 +28,17 @@ export interface ToolStreamDiagnostics {
   readonly preflight?: "accepted" | string
   readonly preflightCategory?: string
   readonly preflightPath?: string
-  readonly recoveryCount?: number
+  readonly replayMode: ToolReplayMode
+  readonly recoveryCount: number
+  readonly userMessageCount: number
+  readonly assistantMessageCount: number
+  readonly toolResultMessageCount: number
+  readonly assistantToolCallBlockCount: number
+  readonly declaredToolCount: number
+  readonly failure?: {
+    readonly kind: StreamErrorKind
+    readonly status?: number
+  }
 }
 
 type ToolDiagnosticSemantic = { type: "toolDiagnostics", details: ToolStreamDiagnostics }
@@ -91,7 +101,7 @@ export function createPiLifecycleStream(input: PiStreamLifecycleInput) {
   }
   let removeAbort: () => void = () => {}
 
-  const finalize = (reason: "stop" | "length" | "toolUse" | "error" | "aborted", errorMessage?: string, details?: ToolStreamDiagnostics) => {
+  const finalize = (reason: "stop" | "length" | "toolUse" | "error" | "aborted", errorMessage?: string, details?: ToolStreamDiagnostics, error?: StreamTransportError) => {
     if (complete) return
     complete = true
     removeAbort()
@@ -103,7 +113,8 @@ export function createPiLifecycleStream(input: PiStreamLifecycleInput) {
     }
     output.stopReason = reason
     const diagnostic = details ?? toolDiagnostics
-    if (sawToolCall || diagnostic) output.diagnostics = [{ type: "antigravity-guard.tools", timestamp: input.now(), details: { ...diagnostic, terminal: reason } }]
+    const failure = error && isLocalStreamError(error) ? diagnosticFailure(error) : undefined
+    if (sawToolCall || diagnostic) output.diagnostics = [{ type: "antigravity-guard.tools", timestamp: input.now(), details: { ...diagnostic, ...(failure ? { failure } : {}), terminal: reason } }]
     if (reason === "stop" || reason === "length" || reason === "toolUse") {
       closeBlock()
       stream.push({ type: "done", reason, message: output })
@@ -178,7 +189,7 @@ export function createPiLifecycleStream(input: PiStreamLifecycleInput) {
 
   stream.push({ type: "start", partial: output })
   if (input.signal) {
-    const abort = () => finalize("aborted")
+    const abort = () => finalize("aborted", undefined, undefined, streamError("aborted", "Generation was cancelled."))
     input.signal.addEventListener("abort", abort, { once: true })
     removeAbort = () => input.signal?.removeEventListener("abort", abort)
     if (input.signal.aborted) abort()
@@ -189,6 +200,7 @@ export function createPiLifecycleStream(input: PiStreamLifecycleInput) {
       signal.aborted || input.signal?.aborted ? "aborted" : "error",
       isLocalStreamError(error) ? error.message : undefined,
       isLocalStreamError(error) ? error.details : undefined,
+      isLocalStreamError(error) ? error : undefined,
     ),
   )
   return stream
@@ -204,16 +216,16 @@ export async function executeStreamTransport(input: StreamTransportInput): Promi
   const headers = requestHeaders(input)
   let responseBody: ReadableStream<Uint8Array> | null = null
   let selection: GenerationSelection | undefined
-  let recoveryCount = 0
+  let replayDiagnostics: ToolReplayDiagnostics = emptyReplayDiagnostics()
   try {
     const entry = getCatalogEntry(input.model.id)!
     selection = input.selection ?? resolveGenerationSelection(entry, input.generationOptions?.reasoning)
     const original = serializeContext(
       { context: input.context, model: input.model, options: input.generationOptions, project: input.projectId, requestId: input.requestId },
       selection,
-      (count) => { recoveryCount = count },
+      (diagnostics) => { replayDiagnostics = diagnostics },
     )
-    if (hasToolContext(input.context)) await deliver(input.onSemantic, { type: "toolDiagnostics", details: toolDiagnostics(entry.publicId, selection, recoveryCount, "accepted") })
+    if (hasToolContext(input.context)) await deliver(input.onSemantic, { type: "toolDiagnostics", details: toolDiagnostics(entry.publicId, selection, replayDiagnostics, "accepted") })
     const payload = await payloadHook(input, original, signal)
     const response = await abortable(input.fetch(ENDPOINT, { method: "POST", redirect: "error", headers, body: JSON.stringify(payload), signal }), signal)
     await responseHook(input, response, signal)
@@ -229,11 +241,11 @@ export async function executeStreamTransport(input: StreamTransportInput): Promi
     if (isLocalStreamError(error)) throw error
     if (signal.aborted) throw streamError("aborted", "Generation was cancelled.")
     if (error instanceof ToolPreflightError && selection) {
-      const details = toolDiagnostics(getCatalogEntry(input.model.id)!.publicId, selection, recoveryCount, error.code, error.path)
+      const details = toolDiagnostics(getCatalogEntry(input.model.id)!.publicId, selection, replayDiagnostics, error.code, error.path)
       throw streamError("preflight", error.message, undefined, details)
     }
     if (error instanceof ContextSerializationError && error.message.startsWith("PI_TOOL_CAPABILITY_NOT_ENABLED") && selection) {
-      throw streamError("capability", error.message, undefined, toolDiagnostics(getCatalogEntry(input.model.id)!.publicId, selection, recoveryCount, "PI_TOOL_CAPABILITY_NOT_ENABLED"))
+      throw streamError("capability", error.message, undefined, toolDiagnostics(getCatalogEntry(input.model.id)!.publicId, selection, replayDiagnostics, "PI_TOOL_CAPABILITY_NOT_ENABLED"))
     }
     if (error instanceof SseFrameError || error instanceof ResponseSemanticError) throw streamError("response", "Antigravity returned an invalid stream.")
     throw streamError("transport", "Antigravity generation request failed.")
@@ -244,13 +256,32 @@ function validateInput(input: StreamTransportInput): void {
   if (!getCatalogEntry(input.model.id) || input.model.api !== API) throw streamError("response", "The selected Antigravity model or API is unsupported.")
 }
 
-function toolDiagnostics(publicModelId: string, selection: GenerationSelection, recoveryCount: number, preflight: "accepted" | string, preflightPath?: string): ToolStreamDiagnostics {
+function toolDiagnostics(publicModelId: string, selection: GenerationSelection, replayDiagnostics: ToolReplayDiagnostics, preflight: "accepted" | string, preflightPath?: string): ToolStreamDiagnostics {
   return {
     publicModelId,
     reasoning: selection.level,
     capabilityState: selection.tools.state,
+    replayMode: replayDiagnostics.replayMode,
+    recoveryCount: replayDiagnostics.recoveryCount,
+    userMessageCount: replayDiagnostics.userMessageCount,
+    assistantMessageCount: replayDiagnostics.assistantMessageCount,
+    toolResultMessageCount: replayDiagnostics.toolResultMessageCount,
+    assistantToolCallBlockCount: replayDiagnostics.assistantToolCallBlockCount,
+    declaredToolCount: replayDiagnostics.declaredToolCount,
     preflight,
-    ...(preflight === "accepted" ? { recoveryCount } : { preflightCategory: preflightCategory(preflight), ...(preflightPath ? { preflightPath } : {}) }),
+    ...(preflight === "accepted" ? {} : { preflightCategory: preflightCategory(preflight), ...(preflightPath ? { preflightPath } : {}) }),
+  }
+}
+
+function emptyReplayDiagnostics(): ToolReplayDiagnostics {
+  return {
+    replayMode: "none",
+    recoveryCount: 0,
+    userMessageCount: 0,
+    assistantMessageCount: 0,
+    toolResultMessageCount: 0,
+    assistantToolCallBlockCount: 0,
+    declaredToolCount: 0,
   }
 }
 
@@ -262,10 +293,10 @@ function preflightCategory(code: string): string {
   return "capability"
 }
 
-function responsePolicy(payload: { request: { tools?: { functionDeclarations: unknown }[], toolConfig?: { functionCallingConfig: { mode: "AUTO" | "NONE" } } } }, selection: GenerationSelection): ToolResponsePolicy {
+function responsePolicy(payload: GenerationRequest, selection: GenerationSelection): ToolResponsePolicy {
   const declarations = payload.request.tools?.[0]?.functionDeclarations
-  if (selection.tools.state !== "enabled" || payload.request.toolConfig?.functionCallingConfig.mode !== "AUTO" || !Array.isArray(declarations)) return { kind: "reject" }
-  const names = declarations.map((item) => typeof item === "object" && item !== null ? Object.getOwnPropertyDescriptor(item, "name")?.value : undefined)
+  if (selection.tools.state !== "enabled" || payload.request.toolConfig?.functionCallingConfig.mode === "NONE" || !Array.isArray(declarations)) return { kind: "reject" }
+  const names = declarations.map((declaration) => Object.getOwnPropertyDescriptor(declaration, "name")?.value)
   return names.every((name): name is string => typeof name === "string") ? { kind: "accept", declaredNames: new Set(names) } : { kind: "reject" }
 }
 
@@ -367,6 +398,19 @@ function isSse(value: string | null): boolean { return value?.split(";", 1)[0]?.
 
 function inactivityTimeout(input: StreamTransportInput): number {
   return input.inactivityTimeoutMs === undefined ? INACTIVITY_TIMEOUT_MS : input.inactivityTimeoutMs > 0 && Number.isFinite(input.inactivityTimeoutMs) ? Math.min(input.inactivityTimeoutMs, INACTIVITY_TIMEOUT_MS) : 0
+}
+
+function diagnosticFailure(error: StreamTransportError): NonNullable<ToolStreamDiagnostics["failure"]> | undefined {
+  if (!isStreamErrorKind(error.kind)) return undefined
+  const status = error.status
+  return {
+    kind: error.kind,
+    ...(typeof status === "number" && Number.isInteger(status) && status >= 100 && status <= 599 ? { status } : {}),
+  }
+}
+
+function isStreamErrorKind(value: unknown): value is StreamErrorKind {
+  return value === "aborted" || value === "access" || value === "capability" || value === "model" || value === "quota" || value === "preflight" || value === "response" || value === "transport" || value === "callback"
 }
 
 function streamError(kind: StreamErrorKind, message: string, status?: number, details?: ToolStreamDiagnostics): StreamTransportError {

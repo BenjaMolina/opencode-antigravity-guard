@@ -4,6 +4,8 @@
 
 ### Added
 
+- **Pi Gemini tool loop** - Gemini 3.8 Flash with reasoning disabled is the only tool-enabled route; all other routes remain gated.
+
 - **Gemini 3.5 Flash** - Added `gemini-3.5-flash` across both quota pools: Antigravity (`antigravity-gemini-3.5-flash`) and Gemini CLI (bare `gemini-3.5-flash`). Flash exposes `minimal`/`low`/`medium`/`high` thinking levels. Rollout-dependent.
 
 ### Changed

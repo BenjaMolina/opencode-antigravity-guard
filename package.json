@@ -1,6 +1,6 @@
 {
     "name": "@benjamolina/opencode-antigravity-guard",
-    "version": "1.1.14",
+    "version": "1.1.15",
     "description": "Google Antigravity OAuth plugin for OpenCode with strict reset-time quota locking",
     "main": "./dist/index.js",
     "types": "./dist/index.d.ts",
@@ -60,7 +60,9 @@
         "prepack": "npm run build:opencode",
         "prepublishOnly": "npm run build",
         "test:e2e:models": "npx tsx script/test-models.ts",
-        "test:e2e:regression": "npx tsx script/test-regression.ts"
+        "test:e2e:regression": "npx tsx script/test-regression.ts",
+        "test:pi-tool-loop-probe": "vitest run scripts/pi-tool-loop-probe.test.ts",
+        "probe:pi-tool-loop": "tsx scripts/pi-tool-loop-probe.ts --live"
     },
     "peerDependencies": {
         "typescript": "^5"
