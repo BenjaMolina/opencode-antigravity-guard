@@ -1,23 +1,9 @@
 import { resolve } from "node:path"
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
 import { describe, expect, it } from "vitest"
 
+import { evidenceEchoTool } from "../packages/pi/evidence/pi-evidence-echo.ts"
 import { normalizeToolDeclarations } from "../packages/pi/src/tool-schema.ts"
-import extension from "../packages/pi/evidence/pi-evidence-echo.ts"
 import { isJsonProbeComplete, jsonProbeArgs, sanitizeTerminalCategory, summarizeTerminalMessages, validateDisabledProbeEvents, validateProbeEvents } from "./pi-tool-loop-probe.ts"
-
-type RegisteredTool = Parameters<ExtensionAPI["registerTool"]>[0]
-
-function registerEvidenceEcho(): RegisteredTool {
-  const registrations: RegisteredTool[] = []
-  extension({
-    registerTool(tool) {
-      registrations.push(tool)
-    },
-  } as ExtensionAPI)
-  expect(registrations).toHaveLength(1)
-  return registrations[0]!
-}
 
 const route = {
   publicModelId: "antigravity-gemini-3.8-flash",
@@ -27,7 +13,7 @@ const route = {
 
 describe("Pi tool-loop probe evidence", () => {
   it("registers a declaration that Pi's request preflight preserves", () => {
-    const tool = registerEvidenceEcho()
+    const tool = evidenceEchoTool
 
     expect(normalizeToolDeclarations([tool])).toEqual([{
       name: "pi_evidence_echo",
@@ -43,7 +29,7 @@ describe("Pi tool-loop probe evidence", () => {
   })
 
   it("returns the exact non-terminating valid execution result and retains exact-value runtime validation", async () => {
-    const tool = registerEvidenceEcho()
+    const tool = evidenceEchoTool
 
     await expect(tool.execute("test-call", { value: "gemini-tool-loop" }, undefined)).resolves.toEqual({ content: [{ type: "text", text: "PI_EVIDENCE_ECHO_OK" }], details: { value: "gemini-tool-loop" }, terminate: false })
     await expect(tool.execute("test-call", { value: "other" }, undefined)).rejects.toThrow("pi_evidence_echo requires the fixed evidence value.")
