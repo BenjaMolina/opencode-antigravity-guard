@@ -12,10 +12,13 @@ export interface ToolEvidenceRef {
   readonly wireModel: string
 }
 
+export const GEMINI_PARAMETERS_JSON_SCHEMA_PROFILE = "gemini-parameters-json-schema" as const
+export type ToolSchemaProfile = typeof GEMINI_PARAMETERS_JSON_SCHEMA_PROFILE
+
 export type ToolCapability =
   | { readonly state: "disabled", readonly contractRevision: 1, readonly reason: "missing-direct-evidence" | "stale-or-conflicting-evidence" | "claude-continuity-unproven" }
   | { readonly state: "fixture-qualified", readonly contractRevision: 1, readonly fixtureEvidence: ToolEvidenceRef }
-  | { readonly state: "enabled", readonly contractRevision: 1, readonly fixtureEvidence: ToolEvidenceRef, readonly directEvidence: ToolEvidenceRef }
+  | { readonly state: "enabled", readonly contractRevision: 1, readonly schemaProfile: ToolSchemaProfile, readonly fixtureEvidence: ToolEvidenceRef, readonly directEvidence: ToolEvidenceRef }
 
 type NativeRoute = {
   readonly wireModel: string
@@ -50,7 +53,7 @@ const CATALOG = freeze(defineCatalog([{
     maxTokens: 65_536,
   },
   routes: {
-    off: { wireModel: "gemini-3.8-flash-tiered", thinking: { kind: "native-level", thinkingLevel: "low", includeThoughts: false }, tools: enabled({ record: "pi-json-tool-loop", revision: "gemini-3.8-flash-off-v1", publicModelId: "antigravity-gemini-3.8-flash", reasoning: "off", wireModel: "gemini-3.8-flash-tiered" }) },
+    off: { wireModel: "gemini-3.8-flash-tiered", thinking: { kind: "native-level", thinkingLevel: "low", includeThoughts: false }, tools: enabled({ record: "pi-json-tool-loop", revision: "gemini-3.8-flash-off-v1", publicModelId: "antigravity-gemini-3.8-flash", reasoning: "off", wireModel: "gemini-3.8-flash-tiered" }, GEMINI_PARAMETERS_JSON_SCHEMA_PROFILE) },
     low: { wireModel: "gemini-3.8-flash-tiered", thinking: { kind: "native-level", thinkingLevel: "low", includeThoughts: true }, tools: disabled("missing-direct-evidence") },
     medium: { wireModel: "gemini-3.8-flash-tiered", thinking: { kind: "native-level", thinkingLevel: "medium", includeThoughts: true }, tools: disabled("missing-direct-evidence") },
     high: { wireModel: "gemini-3.8-flash-tiered", thinking: { kind: "native-level", thinkingLevel: "high", includeThoughts: true }, tools: disabled("missing-direct-evidence") },
@@ -158,13 +161,13 @@ function disabled(reason: Extract<ToolCapability, { readonly state: "disabled" }
   return { state: "disabled", contractRevision: 1, reason }
 }
 
-function enabled(evidence: ToolEvidenceRef): ToolCapability {
-  return { state: "enabled", contractRevision: 1, fixtureEvidence: evidence, directEvidence: evidence }
+function enabled(evidence: ToolEvidenceRef, schemaProfile: ToolSchemaProfile = GEMINI_PARAMETERS_JSON_SCHEMA_PROFILE): ToolCapability {
+  return { state: "enabled", contractRevision: 1, schemaProfile, fixtureEvidence: evidence, directEvidence: evidence }
 }
 
 /** Constructs deterministic capability data for hermetic serializer tests only. */
-export function createEnabledToolCapability(evidence: ToolEvidenceRef): Extract<ToolCapability, { readonly state: "enabled" }> {
-  return freeze({ state: "enabled", contractRevision: 1, fixtureEvidence: evidence, directEvidence: evidence })
+export function createEnabledToolCapability(evidence: ToolEvidenceRef, schemaProfile: ToolSchemaProfile = GEMINI_PARAMETERS_JSON_SCHEMA_PROFILE): Extract<ToolCapability, { readonly state: "enabled" }> {
+  return freeze({ state: "enabled", contractRevision: 1, schemaProfile, fixtureEvidence: evidence, directEvidence: evidence })
 }
 
 function freeze<T>(value: T): T {
