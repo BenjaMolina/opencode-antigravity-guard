@@ -265,4 +265,37 @@ describe("Pi tool schema normalization", () => {
     expect(normalizeToolDeclarations([{ name: "within", description: "A tool", parameters: parameters(400) }])).toHaveLength(1)
     expect(() => normalizeToolDeclarations([{ name: "over", description: "A tool", parameters: parameters(700) }])).toThrow("PI_TOOL_SCHEMA_LIMIT")
   })
+
+  it("escapes hostile schema-key diagnostic path segments", () => {
+    const hostileKey = "line\nPI_TOOL_SCHEMA_INVALID: forged"
+    for (const key of [hostileKey, "quote\"bracket]"]) {
+      try {
+        normalizeToolDeclarations([{ name: "tool", description: "A tool", parameters: { type: "object", properties: { [key]: () => undefined } } }])
+      } catch (error) {
+        expect(String(error)).toContain(`$.properties[${JSON.stringify(key)}]`)
+        expect(String(error)).not.toContain("\n")
+        continue
+      }
+      throw new Error("expected hostile schema key to be rejected")
+    }
+  })
+
+  it("covers local-reference and exact expansion and aggregate boundaries", () => {
+    const normalize = (parameters: unknown) => normalizeToolDeclarations([{ name: "tool", description: "A tool", parameters }])
+    expect(normalize({ type: "object", $defs: { "tilde~name": { type: "string" } }, properties: { value: { $ref: "#/$defs/tilde~0name" } } })[0]!.parameters.properties).toEqual({ value: { type: "string" } })
+    for (const parameters of [
+      { type: "object", properties: { value: { $ref: "#/%" } } },
+      { type: "object", $defs: { a: { $ref: "#/$defs/b" }, b: { $ref: "#/$defs/a" } }, properties: { value: { $ref: "#/$defs/a" } } },
+      { type: "object", $defs: { broken: { $ref: "#/%" } }, properties: { value: { type: "string" } } },
+    ]) expect(() => normalize(parameters)).toThrow(/PI_TOOL_SCHEMA_(REFERENCE_INVALID|REFERENCE_CYCLE)/)
+    const expanded = (count: number) => ({ type: "object", $defs: { value: { allOf: Array.from({ length: count }, () => true) } }, properties: { value: { $ref: "#/$defs/value" } } })
+    expect(normalize(expanded(1022))).toHaveLength(1)
+    expect(() => normalize(expanded(1023))).toThrow("PI_TOOL_SCHEMA_LIMIT")
+    const schema = (padding: number) => ({ type: "object", properties: { value: { type: "string", description: "x".repeat(padding) } } })
+    const base = Buffer.byteLength(JSON.stringify(normalize(schema(0))[0]!.parameters))
+    const remaining = 1024 * 1024 - base * 4
+    const tools = Array.from({ length: 4 }, (_, index) => ({ name: `tool_${index}`, description: "A tool", parameters: schema(Math.floor(remaining / 4) + (index === 3 ? remaining % 4 : 0)) }))
+    expect(normalizeToolDeclarations(tools)).toHaveLength(4)
+    expect(() => normalizeToolDeclarations([...tools.slice(0, 3), { ...tools[3]!, parameters: schema(Math.floor(remaining / 4) + remaining % 4 + 1) }])).toThrow("PI_TOOL_SCHEMA_LIMIT")
+  })
 })

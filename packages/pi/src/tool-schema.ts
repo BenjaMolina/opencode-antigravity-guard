@@ -67,7 +67,7 @@ function snapshotJson(value: unknown, declaration: string, path: string, state: 
     if (Array.isArray(value)) return freeze(snapshotArray(value, declaration, path, state, depth))
     const object = plainObject(value, declaration, path)
     const output: Record<string, JsonValue> = {}
-    for (const key of Object.keys(object).sort()) define(output, key, snapshotJson(ownData(object, key, declaration, path), declaration, `${path}.${key}`, state, depth + 1))
+    for (const key of Object.keys(object).sort()) define(output, key, snapshotJson(ownData(object, key, declaration, path), declaration, pathSegment(path, key), state, depth + 1))
     return freeze(output) as JsonObject
   } finally {
     state.ancestors.delete(value)
@@ -92,8 +92,9 @@ function emitSchema(value: JsonValue, root: JsonObject, declaration: string, pat
   if (!isJsonObject(value)) fail("PI_TOOL_SCHEMA_INVALID", declaration, path)
   const reference = value.$ref
   if (reference !== undefined) {
-    const target = resolveReference(reference, root, declaration, `${path}.$ref`)
-    if (isJsonObject(target) && targets.has(target)) fail("PI_TOOL_SCHEMA_REFERENCE_CYCLE", declaration, `${path}.$ref`)
+    const referencePath = pathSegment(path, "$ref")
+    const target = resolveReference(reference, root, declaration, referencePath)
+    if (isJsonObject(target) && targets.has(target)) fail("PI_TOOL_SCHEMA_REFERENCE_CYCLE", declaration, referencePath)
     const next = new Set(targets)
     if (isJsonObject(target)) next.add(target)
     const resolved = emitSchema(target, root, declaration, path, state, next, depth + 1)
@@ -111,14 +112,14 @@ function emitObject(value: JsonObject, root: JsonObject, declaration: string, pa
     const child = value[key]!
     if (omitted.has(key) || METADATA.has(key)) continue
     if (key === "$defs" || key === "definitions") {
-      emitSchemaMap(child, root, declaration, `${path}.${key}`, state, targets, depth + 1)
+      emitSchemaMap(child, root, declaration, pathSegment(path, key), state, targets, depth + 1)
       continue
     }
-    if (SCHEMA_MAPS.has(key)) define(output, key, emitSchemaMap(child, root, declaration, `${path}.${key}`, state, targets, depth + 1))
-    else if (SCHEMA_ARRAYS.has(key)) define(output, key, emitSchemaArray(child, root, declaration, `${path}.${key}`, state, targets, depth + 1))
-    else if (key === "dependencies") define(output, key, emitDependencies(child, root, declaration, `${path}.${key}`, state, targets, depth + 1))
-    else if (key === "items" && Array.isArray(child)) define(output, key, emitSchemaArray(child, root, declaration, `${path}.${key}`, state, targets, depth + 1))
-    else if (SCHEMAS.has(key)) define(output, key, emitSchema(child, root, declaration, `${path}.${key}`, state, targets, depth + 1))
+    if (SCHEMA_MAPS.has(key)) define(output, key, emitSchemaMap(child, root, declaration, pathSegment(path, key), state, targets, depth + 1))
+    else if (SCHEMA_ARRAYS.has(key)) define(output, key, emitSchemaArray(child, root, declaration, pathSegment(path, key), state, targets, depth + 1))
+    else if (key === "dependencies") define(output, key, emitDependencies(child, root, declaration, pathSegment(path, key), state, targets, depth + 1))
+    else if (key === "items" && Array.isArray(child)) define(output, key, emitSchemaArray(child, root, declaration, pathSegment(path, key), state, targets, depth + 1))
+    else if (SCHEMAS.has(key)) define(output, key, emitSchema(child, root, declaration, pathSegment(path, key), state, targets, depth + 1))
     else define(output, key, child)
   }
   return freeze(output) as JsonObject
@@ -127,7 +128,7 @@ function emitObject(value: JsonObject, root: JsonObject, declaration: string, pa
 function emitSchemaMap(value: JsonValue, root: JsonObject, declaration: string, path: string, state: ExpansionState, targets: Set<object>, depth: number): JsonObject {
   if (!isJsonObject(value)) fail("PI_TOOL_SCHEMA_INVALID", declaration, path)
   const output: Record<string, JsonValue> = {}
-  for (const key of Object.keys(value)) define(output, key, emitSchema(value[key]!, root, declaration, `${path}.${key}`, state, targets, depth))
+  for (const key of Object.keys(value)) define(output, key, emitSchema(value[key]!, root, declaration, pathSegment(path, key), state, targets, depth))
   return freeze(output) as JsonObject
 }
 
@@ -142,7 +143,7 @@ function emitDependencies(value: JsonValue, root: JsonObject, declaration: strin
   for (const key of Object.keys(value)) {
     const dependency = value[key]!
     if (Array.isArray(dependency) && dependency.every((entry) => typeof entry === "string")) define(output, key, dependency)
-    else define(output, key, emitSchema(dependency, root, declaration, `${path}.${key}`, state, targets, depth))
+    else define(output, key, emitSchema(dependency, root, declaration, pathSegment(path, key), state, targets, depth))
   }
   return freeze(output) as JsonObject
 }
@@ -173,6 +174,10 @@ function decodeToken(value: string, declaration: string, path: string): string {
     if (escape === "~1") return "/"
     return fail("PI_TOOL_SCHEMA_REFERENCE_INVALID", declaration, path)
   })
+}
+
+function pathSegment(path: string, key: string): string {
+  return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key) ? `${path}.${key}` : `${path}[${JSON.stringify(key)}]`
 }
 
 function isJsonObject(value: JsonValue): value is JsonObject {
