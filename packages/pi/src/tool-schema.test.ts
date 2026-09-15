@@ -80,6 +80,14 @@ describe("Pi tool schema normalization", () => {
     expect(tools).toEqual(before)
   })
 
+  it("preserves property dependencies", () => {
+    const parameters = {
+      type: "object",
+      dependencies: { enabled: ["mode"] },
+    }
+    expect(normalizeToolDeclarations([{ name: "tool", description: "A tool", parameters }])[0]?.parameters).toEqual(parameters)
+  })
+
   it.each([
     ["primitive declaration root", { type: "string" }, "$.type"],
 
