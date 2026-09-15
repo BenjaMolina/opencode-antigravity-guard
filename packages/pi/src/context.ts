@@ -68,7 +68,7 @@ export function serializeContext(input: SerializeTextContextInput, injectedSelec
   const selection = injectedSelection ?? selected
   if (selection.level !== selected.level || selection.route.wireModel !== selected.route.wireModel) fail("Invalid tool capability selection.")
   if (selection.tools.state !== "enabled") fail(capabilityError(entry.publicId, selection.level, selection.tools))
-  const prepared = prepareToolContext(field(context, "tools") ?? [], isRecord(options) ? field(options, "toolChoice") : undefined)
+  const prepared = prepareToolContext(field(context, "tools") ?? [], isRecord(options) ? field(options, "toolChoice") : undefined, selection.tools.schemaProfile)
   const { tools: _tools, messages, ...textContext } = context
   const { toolChoice: _choice, ...textOptions } = isRecord(options) ? options : {}
   const text = serializeTextContext({ ...input, context: { ...textContext, messages: [{ role: "user", content: "placeholder", timestamp: 0 }] } as Context, options: textOptions as SimpleStreamOptions })

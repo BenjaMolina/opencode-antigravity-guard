@@ -38,7 +38,7 @@ Maintainers can run `npm run build:pi` followed by `npx tsx scripts/pi-tool-loop
 
 Tool-bearing requests are never silently downgraded to text. When an exact route is eventually enabled, declarations are retained in order and omitted or `auto` choice serializes as `AUTO`; explicit `none` serializes as `NONE`. Forced, required, named, unknown, and constrained-sampling choices are rejected before transport.
 
-Schemas must use the documented strict object-rooted subset. Unsupported keywords, references, unions, lossy constraints, empty objects, and oversized input are rejected rather than cleaned. Tool results must match the exact call ID and name, remain text-only, and are replayed in assistant source-call order; image-bearing or ambiguous results are rejected. A missing persisted result uses the documented failed response only during context reconstruction.
+Only the evidence-enabled Gemini 3.8 Flash `off` route uses the `parametersJsonSchema` profile. Its hermetically verified preflight preserves ordinary JSON Schema constraints and JSON values in canonical immutable output, including safe local RFC 6901 `$ref` expansion (`#` and `#/...`) with resolved definitions removed. External, malformed, unresolved, cyclic, or otherwise unsafe references fail closed before transport. This is local serialization and safety evidence, not direct live backend acceptance of constrained or reference-based schemas. Tool results must match the exact call ID and name, remain text-only, and are replayed in assistant source-call order; image-bearing or ambiguous results are rejected. A missing persisted result uses the documented failed response only during context reconstruction.
 
 ## Text catalog limits and safety
 

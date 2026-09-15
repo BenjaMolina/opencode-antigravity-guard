@@ -6,13 +6,5 @@
       "properties": { "value": { "$ref": "#/defs/value" } }
     },
     "path": "$.properties.value.$ref"
-  },
-  {
-    "name": "constraint",
-    "parameters": {
-      "type": "object",
-      "properties": { "value": { "type": "string", "pattern": "[a-z]+" } }
-    },
-    "path": "$.properties.value.pattern"
   }
 ]

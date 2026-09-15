@@ -1,14 +1,20 @@
-import { canonicalJson, denseArray, fail, freeze, ownData, plainObject, type JsonObject, type JsonPrimitive, type JsonValue } from "./tool-contract.ts"
+import { denseArray, fail, freeze, ownData, plainObject, type JsonObject, type JsonValue } from "./tool-contract.ts"
 
-const TYPES = new Set(["object", "array", "string", "number", "integer", "boolean"])
-const KEYWORDS = new Set(["type", "description", "nullable", "enum", "const", "properties", "required", "items"])
 const MAX_SCHEMA_DEPTH = 32
 const MAX_SCHEMA_NODES = 2048
 const MAX_SCHEMA_BYTES = 256 * 1024
 const MAX_TOTAL_SCHEMA_BYTES = 1024 * 1024
+const METADATA = new Set(["$schema", "$id", "$anchor", "$dynamicAnchor", "$vocabulary", "$comment"])
+const SCHEMA_MAPS = new Set(["properties", "patternProperties", "dependentSchemas"])
+const SCHEMAS = new Set(["additionalItems", "additionalProperties", "contains", "contentSchema", "else", "if", "items", "not", "propertyNames", "then", "unevaluatedItems", "unevaluatedProperties"])
+const SCHEMA_ARRAYS = new Set(["allOf", "anyOf", "oneOf", "prefixItems"])
 
 interface SchemaState {
   readonly ancestors: Set<object>
+  nodes: number
+}
+
+interface ExpansionState {
   nodes: number
 }
 
@@ -41,76 +47,143 @@ function normalizeDeclaration(value: unknown, index: number, names: Set<string>)
   if (typeof description !== "string" || !description.trim()) fail("PI_TOOL_DECLARATION_INVALID", name, `${path}.description`)
   const constrainedSampling = ownData(tool, "constrainedSampling", name, path)
   if (constrainedSampling !== undefined && constrainedSampling !== false) fail("PI_TOOL_CONSTRAINED_SAMPLING_UNSUPPORTED", name, `${path}.constrainedSampling`)
-  const parameterRoot = plainObject(ownData(tool, "parameters", name, path), name, "$")
-  if (ownData(parameterRoot, "type", name, "$") !== "object") fail("PI_TOOL_SCHEMA_INVALID", name, "$.type")
-  const parameters = normalizeSchema(parameterRoot, name, "$")
+  const root = plainObject(ownData(tool, "parameters", name, path), name, "$")
+  if (ownData(root, "type", name, "$") !== "object") fail("PI_TOOL_SCHEMA_INVALID", name, "$.type")
+  const snapshot = snapshotJson(root, name, "$", { ancestors: new Set(), nodes: 0 })
+  if (!isJsonObject(snapshot)) fail("PI_TOOL_SCHEMA_INVALID", name, "$")
+  const parameters = emitSchema(snapshot, snapshot, name, "$", { nodes: 0 }, new Set())
+  if (!isJsonObject(parameters) || parameters.type !== "object") fail("PI_TOOL_SCHEMA_INVALID", name, "$.type")
   if (Buffer.byteLength(JSON.stringify(parameters), "utf8") > MAX_SCHEMA_BYTES) fail("PI_TOOL_SCHEMA_LIMIT", name, "$")
   return freeze({ name, description, parameters })
 }
 
-function normalizeSchema(value: unknown, declaration: string, path: string, state: SchemaState = { ancestors: new Set(), nodes: 0 }, depth = 0): JsonObject {
+function snapshotJson(value: unknown, declaration: string, path: string, state: SchemaState, depth = 0): JsonValue {
   if (depth > MAX_SCHEMA_DEPTH || ++state.nodes > MAX_SCHEMA_NODES) fail("PI_TOOL_SCHEMA_LIMIT", declaration, path)
-  if (typeof value === "object" && value !== null) {
-    if (state.ancestors.has(value)) fail("PI_TOOL_SCHEMA_INVALID", declaration, path)
-    state.ancestors.add(value)
+  if (value === null || typeof value === "string" || typeof value === "boolean") return value
+  if (typeof value === "number") return Number.isFinite(value) ? value : fail("PI_TOOL_SCHEMA_INVALID", declaration, path)
+  if (typeof value !== "object" || state.ancestors.has(value)) fail("PI_TOOL_SCHEMA_INVALID", declaration, path)
+  state.ancestors.add(value)
+  try {
+    if (Array.isArray(value)) return freeze(snapshotArray(value, declaration, path, state, depth))
+    const object = plainObject(value, declaration, path)
+    const output: Record<string, JsonValue> = {}
+    for (const key of Object.keys(object).sort()) define(output, key, snapshotJson(ownData(object, key, declaration, path), declaration, pathSegment(path, key), state, depth + 1))
+    return freeze(output) as JsonObject
+  } finally {
+    state.ancestors.delete(value)
   }
-  const schema = plainObject(value, declaration, path)
-  for (const key of Object.keys(schema)) if (!KEYWORDS.has(key)) fail("PI_TOOL_SCHEMA_UNSUPPORTED", declaration, `${path}.${key}`)
-  const type = ownData(schema, "type", declaration, path)
-  if (typeof type !== "string" || !TYPES.has(type)) fail("PI_TOOL_SCHEMA_INVALID", declaration, `${path}.type`)
-  const output: Record<string, JsonValue> = { type }
-  const description = ownData(schema, "description", declaration, path)
-  if (description !== undefined) {
-    if (typeof description !== "string") fail("PI_TOOL_SCHEMA_INVALID", declaration, `${path}.description`)
-    output.description = description
+}
+
+function snapshotArray(value: unknown[], declaration: string, path: string, state: SchemaState, depth: number): JsonValue[] {
+  if (Object.getPrototypeOf(value) !== Array.prototype || Object.getOwnPropertySymbols(value).length || Object.getOwnPropertyNames(value).length !== value.length + 1) fail("PI_TOOL_SCHEMA_INVALID", declaration, path)
+  const values = denseArray(value, declaration, path)
+  const output: JsonValue[] = []
+  for (let index = 0; index < values.length; index += 1) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, String(index))
+    if (!descriptor || !("value" in descriptor)) fail("PI_TOOL_SCHEMA_INVALID", declaration, `${path}[${index}]`)
+    output.push(snapshotJson(descriptor.value, declaration, `${path}[${index}]`, state, depth + 1))
   }
-  const nullable = ownData(schema, "nullable", declaration, path)
-  if (nullable !== undefined) {
-    if (typeof nullable !== "boolean") fail("PI_TOOL_SCHEMA_INVALID", declaration, `${path}.nullable`)
-    output.nullable = nullable
+  return output
+}
+
+function emitSchema(value: JsonValue, root: JsonObject, declaration: string, path: string, state: ExpansionState, targets: Set<object>, depth = 0): JsonValue {
+  if (depth > MAX_SCHEMA_DEPTH || ++state.nodes > MAX_SCHEMA_NODES) fail("PI_TOOL_SCHEMA_LIMIT", declaration, path)
+  if (typeof value === "boolean") return value
+  if (!isJsonObject(value)) fail("PI_TOOL_SCHEMA_INVALID", declaration, path)
+  const reference = value.$ref
+  if (reference !== undefined) {
+    const referencePath = pathSegment(path, "$ref")
+    const target = resolveReference(reference, root, declaration, referencePath)
+    if (isJsonObject(target) && targets.has(target)) fail("PI_TOOL_SCHEMA_REFERENCE_CYCLE", declaration, referencePath)
+    const next = new Set(targets)
+    if (isJsonObject(target)) next.add(target)
+    const resolved = emitSchema(target, root, declaration, path, state, next, depth + 1)
+    const sibling = emitObject(value, root, declaration, path, state, targets, depth + 1, new Set(["$ref"]))
+    if (!Object.keys(sibling).length) return resolved
+    if (resolved === true || resolved === false) return resolved === true ? sibling : false
+    return freeze({ allOf: freeze([resolved, sibling]) }) as JsonObject
   }
-  const enumValue = ownData(schema, "enum", declaration, path)
-  const constant = ownData(schema, "const", declaration, path)
-  if (enumValue !== undefined && constant !== undefined) fail("PI_TOOL_SCHEMA_INVALID", declaration, `${path}.const`)
-  if (enumValue !== undefined) output.enum = normalizeEnum(enumValue, type, nullable === true, declaration, `${path}.enum`)
-  if (constant !== undefined) output.enum = freeze([validateEnumValue(constant, type, nullable === true, declaration, `${path}.const`)])
-  if (type === "object") normalizeObject(schema, output, declaration, path, state, depth)
-  else if (type === "array") normalizeArray(schema, output, declaration, path, state, depth)
-  else if (ownData(schema, "properties", declaration, path) !== undefined || ownData(schema, "required", declaration, path) !== undefined || ownData(schema, "items", declaration, path) !== undefined) fail("PI_TOOL_SCHEMA_INVALID", declaration, path)
+  return emitObject(value, root, declaration, path, state, targets, depth, new Set())
+}
+
+function emitObject(value: JsonObject, root: JsonObject, declaration: string, path: string, state: ExpansionState, targets: Set<object>, depth: number, omitted: Set<string>): JsonObject {
+  const output: Record<string, JsonValue> = {}
+  for (const key of Object.keys(value)) {
+    const child = value[key]!
+    if (omitted.has(key) || METADATA.has(key)) continue
+    if (key === "$defs" || key === "definitions") {
+      emitSchemaMap(child, root, declaration, pathSegment(path, key), state, targets, depth + 1)
+      continue
+    }
+    if (SCHEMA_MAPS.has(key)) define(output, key, emitSchemaMap(child, root, declaration, pathSegment(path, key), state, targets, depth + 1))
+    else if (SCHEMA_ARRAYS.has(key)) define(output, key, emitSchemaArray(child, root, declaration, pathSegment(path, key), state, targets, depth + 1))
+    else if (key === "dependencies") define(output, key, emitDependencies(child, root, declaration, pathSegment(path, key), state, targets, depth + 1))
+    else if (key === "items" && Array.isArray(child)) define(output, key, emitSchemaArray(child, root, declaration, pathSegment(path, key), state, targets, depth + 1))
+    else if (SCHEMAS.has(key)) define(output, key, emitSchema(child, root, declaration, pathSegment(path, key), state, targets, depth + 1))
+    else define(output, key, child)
+  }
   return freeze(output) as JsonObject
 }
 
-function normalizeObject(schema: Record<string, unknown>, output: Record<string, JsonValue>, declaration: string, path: string, state: SchemaState, depth: number): void {
-  if (ownData(schema, "items", declaration, path) !== undefined) fail("PI_TOOL_SCHEMA_INVALID", declaration, `${path}.items`)
-  const properties = plainObject(ownData(schema, "properties", declaration, path), declaration, `${path}.properties`)
-  const names = Object.keys(properties).sort()
-  if (!names.length) fail("PI_TOOL_SCHEMA_INVALID", declaration, `${path}.properties`)
-  const normalized: Record<string, JsonValue> = {}
-  for (const name of names) normalized[name] = normalizeSchema(properties[name], declaration, `${path}.properties.${name}`, state, depth + 1)
-  output.properties = freeze(normalized) as JsonObject
-  const required = ownData(schema, "required", declaration, path)
-  if (required !== undefined) {
-    const values = denseArray(required, declaration, `${path}.required`)
-    if (values.some((name) => typeof name !== "string" || !Object.hasOwn(properties, name)) || new Set(values).size !== values.length) fail("PI_TOOL_SCHEMA_INVALID", declaration, `${path}.required`)
-    output.required = freeze([...values as string[]].sort())
+function emitSchemaMap(value: JsonValue, root: JsonObject, declaration: string, path: string, state: ExpansionState, targets: Set<object>, depth: number): JsonObject {
+  if (!isJsonObject(value)) fail("PI_TOOL_SCHEMA_INVALID", declaration, path)
+  const output: Record<string, JsonValue> = {}
+  for (const key of Object.keys(value)) define(output, key, emitSchema(value[key]!, root, declaration, pathSegment(path, key), state, targets, depth))
+  return freeze(output) as JsonObject
+}
+
+function emitSchemaArray(value: JsonValue, root: JsonObject, declaration: string, path: string, state: ExpansionState, targets: Set<object>, depth: number): readonly JsonValue[] {
+  if (!Array.isArray(value)) fail("PI_TOOL_SCHEMA_INVALID", declaration, path)
+  return freeze(value.map((item, index) => emitSchema(item, root, declaration, `${path}[${index}]`, state, targets, depth)))
+}
+
+function emitDependencies(value: JsonValue, root: JsonObject, declaration: string, path: string, state: ExpansionState, targets: Set<object>, depth: number): JsonObject {
+  if (!isJsonObject(value)) fail("PI_TOOL_SCHEMA_INVALID", declaration, path)
+  const output: Record<string, JsonValue> = {}
+  for (const key of Object.keys(value)) {
+    const dependency = value[key]!
+    if (Array.isArray(dependency) && dependency.every((entry) => typeof entry === "string")) define(output, key, dependency)
+    else define(output, key, emitSchema(dependency, root, declaration, pathSegment(path, key), state, targets, depth))
   }
+  return freeze(output) as JsonObject
 }
 
-function normalizeArray(schema: Record<string, unknown>, output: Record<string, JsonValue>, declaration: string, path: string, state: SchemaState, depth: number): void {
-  if (ownData(schema, "properties", declaration, path) !== undefined || ownData(schema, "required", declaration, path) !== undefined) fail("PI_TOOL_SCHEMA_INVALID", declaration, path)
-  output.items = normalizeSchema(ownData(schema, "items", declaration, path), declaration, `${path}.items`, state, depth + 1)
+function resolveReference(reference: JsonValue, root: JsonObject, declaration: string, path: string): JsonValue {
+  if (typeof reference !== "string" || (reference !== "#" && !reference.startsWith("#/"))) fail("PI_TOOL_SCHEMA_REFERENCE_INVALID", declaration, path)
+  if (reference === "#") return root
+  let pointer: string
+  try { pointer = decodeURIComponent(reference.slice(1)) } catch { return fail("PI_TOOL_SCHEMA_REFERENCE_INVALID", declaration, path) }
+  let current: JsonValue = root
+  for (const rawToken of pointer.slice(1).split("/")) {
+    const token = decodeToken(rawToken, declaration, path)
+    if (Array.isArray(current)) {
+      if (!/^(0|[1-9][0-9]*)$/.test(token) || !Number.isSafeInteger(Number(token)) || Number(token) >= current.length) fail("PI_TOOL_SCHEMA_REFERENCE_INVALID", declaration, path)
+      current = current[Number(token)]!
+    } else if (isJsonObject(current)) {
+      if (!Object.hasOwn(current, token)) fail("PI_TOOL_SCHEMA_REFERENCE_INVALID", declaration, path)
+      current = current[token]!
+    } else fail("PI_TOOL_SCHEMA_REFERENCE_INVALID", declaration, path)
+  }
+  if (typeof current !== "boolean" && !isJsonObject(current)) fail("PI_TOOL_SCHEMA_REFERENCE_INVALID", declaration, path)
+  return current
 }
 
-function normalizeEnum(value: unknown, type: string, nullable: boolean, declaration: string, path: string): readonly JsonPrimitive[] {
-  const values = denseArray(value, declaration, path)
-  if (!values.length) fail("PI_TOOL_SCHEMA_INVALID", declaration, path)
-  const normalized = values.map((item, index) => validateEnumValue(item, type, nullable, declaration, `${path}[${index}]`))
-  if (new Set(normalized.map((item) => JSON.stringify(item))).size !== normalized.length) fail("PI_TOOL_SCHEMA_INVALID", declaration, path)
-  return freeze(normalized)
+function decodeToken(value: string, declaration: string, path: string): string {
+  return value.replace(/~(.)?/g, (escape, next: string | undefined) => {
+    if (escape === "~0") return "~"
+    if (escape === "~1") return "/"
+    return fail("PI_TOOL_SCHEMA_REFERENCE_INVALID", declaration, path)
+  })
 }
 
-function validateEnumValue(value: unknown, type: string, nullable: boolean, declaration: string, path: string): JsonPrimitive {
-  const json = canonicalJson(value, declaration, path)
-  if (typeof json === "object" || (json === null && !nullable) || (json !== null && (type === "integer" ? typeof json !== "number" || !Number.isInteger(json) : typeof json !== type))) fail("PI_TOOL_SCHEMA_INVALID", declaration, path)
-  return json
+function pathSegment(path: string, key: string): string {
+  return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(key) ? `${path}.${key}` : `${path}[${JSON.stringify(key)}]`
+}
+
+function isJsonObject(value: JsonValue): value is JsonObject {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function define(target: Record<string, JsonValue>, key: string, value: JsonValue): void {
+  Object.defineProperty(target, key, { value, enumerable: true, configurable: false, writable: false })
 }

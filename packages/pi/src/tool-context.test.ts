@@ -7,18 +7,26 @@ const declaration = { name: "read_file", description: "Read one file", parameter
 
 describe("Pi tool request preparation", () => {
   it("retains declaration order and maps omitted, auto, and none choices", () => {
-    expect(prepareToolContext([declaration, { ...declaration, name: "list_files" }], undefined)?.mode).toBe("AUTO")
-    expect(prepareToolContext([declaration], "auto")?.mode).toBe("AUTO")
-    expect(prepareToolContext([declaration], "none")?.mode).toBe("NONE")
+    expect(prepareToolContext([declaration, { ...declaration, name: "list_files" }], undefined, "gemini-parameters-json-schema")?.mode).toBe("AUTO")
+    expect(prepareToolContext([declaration], "auto", "gemini-parameters-json-schema")?.mode).toBe("AUTO")
+    expect(prepareToolContext([declaration], "none", "gemini-parameters-json-schema")?.mode).toBe("NONE")
   })
 
   it.each(["required", "read_file", { type: "tool", name: "read_file" }])("rejects forced or named choice %j", (choice) => {
-    expect(() => prepareToolContext([declaration], choice)).toThrow(ToolPreflightError)
+    expect(() => prepareToolContext([declaration], choice, "gemini-parameters-json-schema")).toThrow(ToolPreflightError)
   })
 
   it("rejects auto without declarations and preserves no-op none", () => {
-    expect(() => prepareToolContext([], "auto")).toThrow("PI_TOOL_CHOICE_WITHOUT_DECLARATIONS")
-    expect(prepareToolContext([], "none")).toBeUndefined()
+    expect(() => prepareToolContext([], "auto", "gemini-parameters-json-schema")).toThrow("PI_TOOL_CHOICE_WITHOUT_DECLARATIONS")
+    expect(prepareToolContext([], "none", "gemini-parameters-json-schema")).toBeUndefined()
+  })
+})
+
+describe("Pi tool schema profile", () => {
+  it("rejects missing and forged profiles before reading a declaration getter", () => {
+    const hostile = Object.create(null, { length: { value: 1 }, 0: { get: () => { throw new Error("CANARY") } } })
+    expect(() => prepareToolContext(hostile, undefined, undefined)).toThrow("PI_TOOL_SCHEMA_PROFILE_UNSUPPORTED")
+    expect(() => prepareToolContext(hostile, undefined, "forged-profile")).toThrow("PI_TOOL_SCHEMA_PROFILE_UNSUPPORTED")
   })
 })
 
