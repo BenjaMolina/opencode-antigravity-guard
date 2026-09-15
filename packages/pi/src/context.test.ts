@@ -265,7 +265,7 @@ describe("Pi text context serialization", () => {
       const withoutDiagnostics = serializeContext({ context, model, project: "project", requestId: "agent-id" }, { ...selection, tools: enabled })
       expect(JSON.stringify(request)).toBe(JSON.stringify(withoutDiagnostics))
       expect(JSON.stringify(serializeContext({ context: { messages: [{ role: "user", content: "x", timestamp: 0 }] } as Context, model, project: "project", requestId: "agent-id" }))).toBe(JSON.stringify(serializeTextContext({ context: { messages: [{ role: "user", content: "x", timestamp: 0 }] } as Context, model, project: "project", requestId: "agent-id" })))
-      expect(JSON.stringify(request.request)).toBe(JSON.stringify({ contents: [{ role: "user", parts: [{ text: "x" }] }], tools: [{ functionDeclarations: [{ name: "read_file", description: "Read one file", parametersJsonSchema: { type: "object", properties: { path: { type: "string" } }, required: ["path"] } }] }], generationConfig: { temperature: 1, maxOutputTokens: 4096, thinkingConfig: { thinkingLevel: "low", includeThoughts: false } } }))
+      expect(JSON.stringify(request.request)).toBe(JSON.stringify({ contents: [{ role: "user", parts: [{ text: "x" }] }], tools: [{ functionDeclarations: [{ name: "read_file", description: "Read one file", parametersJsonSchema: { properties: { path: { type: "string" } }, required: ["path"], type: "object" } }] }], generationConfig: { temperature: 1, maxOutputTokens: 4096, thinkingConfig: { thinkingLevel: "low", includeThoughts: false } } }))
       expect(diagnostics).toEqual([{
         replayMode: "none",
         recoveryCount: 0,
@@ -277,12 +277,21 @@ describe("Pi text context serialization", () => {
       }])
       const declaration = request.request.tools?.[0]?.functionDeclarations[0]
       expect(declaration).not.toHaveProperty("parameters")
-      expect(JSON.stringify(declaration?.parametersJsonSchema)).toBe(JSON.stringify({ type: "object", properties: { path: { type: "string" } }, required: ["path"] }))
+      expect(JSON.stringify(declaration?.parametersJsonSchema)).toBe(JSON.stringify({ properties: { path: { type: "string" } }, required: ["path"], type: "object" }))
       expect(serializeContext({ context, model, options: { toolChoice: "auto" } as SimpleStreamOptions, project: "project", requestId: "agent-id" }, { ...selection, tools: enabled }).request.toolConfig).toBeUndefined()
       expect(serializeContext({ context, model, options: { toolChoice: "none" } as SimpleStreamOptions, project: "project", requestId: "agent-id" }, { ...selection, tools: enabled }).request.toolConfig).toEqual({ functionCallingConfig: { mode: "NONE" } })
     })
 
-    it("bridges an unsigned terminal orphan call into its fixed synthetic observation", () => {
+    it("serializes ask_user_choice only as a complete parametersJsonSchema", () => {
+          const selection = resolveGenerationSelection(listCatalogEntries()[0]!, "off")
+          const enabled = createEnabledToolCapability({ record: "fixture", revision: "1", publicModelId: "antigravity-gemini-3.8-flash", reasoning: "off", wireModel: "gemini-3.8-flash-tiered" }, "gemini-parameters-json-schema")
+          const context = { tools: [{ name: "ask_user_choice", description: "Ask", parameters: { type: "object", additionalProperties: false, properties: { options: { type: "array", minItems: 1, maxItems: 4, items: { type: "object", additionalProperties: false, properties: { label: { type: "string" } } } } } } }], messages: [{ role: "user", content: "x", timestamp: 0 }] } as Context
+          const declaration = serializeContext({ context, model, project: "project", requestId: "agent-id" }, { ...selection, tools: enabled }).request.tools?.[0]?.functionDeclarations[0]
+          expect(declaration).toEqual({ name: "ask_user_choice", description: "Ask", parametersJsonSchema: { additionalProperties: false, properties: { options: { items: { additionalProperties: false, properties: { label: { type: "string" } }, type: "object" }, maxItems: 4, minItems: 1, type: "array" } }, type: "object" } })
+          expect(declaration).not.toHaveProperty("parameters")
+        })
+
+        it("bridges an unsigned terminal orphan call into its fixed synthetic observation", () => {
       const selection = resolveGenerationSelection(listCatalogEntries()[0]!, "off")
       const enabled = createEnabledToolCapability({ record: "fixture", revision: "1", publicModelId: "antigravity-gemini-3.8-flash", reasoning: "off", wireModel: "gemini-3.8-flash-tiered" }, "gemini-parameters-json-schema")
       const context = { messages: [{ ...assistant([{ type: "toolCall", id: "call-1", name: "read_file", arguments: {} }]), stopReason: "toolUse" }] } as Context

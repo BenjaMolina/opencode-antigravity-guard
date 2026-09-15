@@ -203,6 +203,50 @@ describe("fixed Antigravity SSE transport", () => {
     }))
   })
 
+  it("rejects a mixed declaration set before payload hooks and fetch", async () => {
+    const entry = getCatalogEntry(model().id)!
+    const selection = resolveGenerationSelection(entry, undefined)
+    const enabled = { ...selection, tools: createEnabledToolCapability({ record: "test", revision: "1", publicModelId: entry.publicId, reasoning: selection.level, wireModel: selection.route.wireModel }) }
+    const fetch = vi.fn<typeof globalThis.fetch>()
+    const onPayload = vi.fn()
+    await expect(executeStreamTransport({
+      accessToken: "access-token", projectId: "stored-project",
+      context: { tools: [
+        { name: "valid", description: "Valid", parameters: { type: "object", properties: { value: { type: "string" } } } },
+        { name: "invalid", description: "Invalid", parameters: { type: "object", properties: { value: { $ref: "https://example.test/schema" } } } },
+      ], messages: [{ role: "user", content: "Hello", timestamp: 0 }] } as unknown as Context,
+      fetch, generationOptions: { onPayload }, model: model(), now: () => 1_000, onSemantic: vi.fn(), platform: "win32", requestId: "request-id", selection: enabled,
+    })).rejects.toMatchObject({ kind: "preflight", details: { preflightCategory: "schema", preflightPath: "$.properties.value.$ref" } })
+    expect(onPayload).not.toHaveBeenCalled()
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it("fails malformed-reference, limit, and forged-profile rows before hooks and fetch", async () => {
+    const entry = getCatalogEntry(model().id)!
+    const selection = resolveGenerationSelection(entry, undefined)
+    const enabled = { ...selection, tools: createEnabledToolCapability({ record: "test", revision: "1", publicModelId: entry.publicId, reasoning: selection.level, wireModel: selection.route.wireModel }) }
+    const expanded = { type: "object", $defs: { value: { allOf: Array.from({ length: 1023 }, () => true) } }, properties: { value: { $ref: "#/$defs/value" } } }
+    const large = (name: string) => ({ name, description: "A tool", parameters: { type: "object", properties: { value: { type: "string", description: "x".repeat(220 * 1024) } } } })
+    const forged = { ...enabled, tools: { ...enabled.tools, schemaProfile: "forged" } } as unknown as typeof enabled
+    const rows = [
+      { parameters: { type: "object", properties: { value: { $ref: "#/%" } } }, selection: enabled },
+      { parameters: { type: "object", $defs: { a: { $ref: "#/$defs/b" }, b: { $ref: "#/$defs/a" } }, properties: { value: { $ref: "#/$defs/a" } } }, selection: enabled },
+      { parameters: expanded, selection: enabled },
+      { parameters: undefined, tools: Array.from({ length: 5 }, (_, index) => large(`large_${index}`)), selection: enabled },
+      { parameters: { type: "object", properties: { value: { type: "string" } } }, selection: forged },
+    ]
+    for (const row of rows) {
+      const fetch = vi.fn<typeof globalThis.fetch>()
+      const onPayload = vi.fn()
+      const tools = row.tools ?? [{ name: "invalid", description: "Invalid", parameters: row.parameters }]
+      const error = await executeStreamTransport({ accessToken: "access-token", projectId: "stored-project", context: { tools, messages: [{ role: "user", content: "Hello", timestamp: 0 }] } as unknown as Context, fetch, generationOptions: { onPayload }, model: model(), now: () => 1_000, onSemantic: vi.fn(), platform: "win32", requestId: "request-id", selection: row.selection }).catch((caught: unknown) => caught)
+      expect(error).toMatchObject({ kind: "preflight", details: { preflightCategory: "schema", preflightPath: expect.any(String) } })
+      expect(JSON.stringify(error)).not.toContain("\n")
+      expect(onPayload).not.toHaveBeenCalled()
+      expect(fetch).not.toHaveBeenCalled()
+    }
+  })
+
   it("preserves safe schema preflight diagnostics before fetch", async () => {
     const entry = getCatalogEntry(model().id)!
     const selection = resolveGenerationSelection(entry, undefined)
