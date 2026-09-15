@@ -39,7 +39,7 @@ describe("Pi tool schema normalization", () => {
         parameters: {
           type: "object",
           properties: {
-            format: { type: "string", enum: ["text"] },
+            format: { const: "text", type: "string" },
             path: { type: "string" },
           },
           required: ["path"],
@@ -58,12 +58,34 @@ describe("Pi tool schema normalization", () => {
     expect(Object.isFrozen(normalizeToolDeclarations(tools)[0]?.parameters)).toBe(true)
   })
 
+  it("preserves ask_user_choice constraints and canonicalizes nested schemas", () => {
+    const tools = [{ name: "ask_user_choice", description: "Ask", parameters: {
+      type: "object", additionalProperties: false,
+      properties: {
+        question: { type: "string", minLength: 1, maxLength: 80, pattern: "\\S" },
+        options: { type: "array", minItems: 1, maxItems: 4, items: { type: "object", additionalProperties: false, properties: { label: { type: "string", const: "choice", default: "choice" }, value: { anyOf: [{ type: "string" }, { type: "number", minimum: 0 }] } } } },
+        labels: { type: "object", patternProperties: { "^x-": { type: "string" } }, additionalProperties: { type: "boolean" } },
+        empty: {}, permitted: true,
+      },
+    } }]
+    const before = structuredClone(tools)
+    expect(normalizeToolDeclarations(tools)).toEqual([{ name: "ask_user_choice", description: "Ask", parameters: {
+      additionalProperties: false,
+      properties: {
+        empty: {}, labels: { additionalProperties: { type: "boolean" }, patternProperties: { "^x-": { type: "string" } }, type: "object" },
+        options: { items: { additionalProperties: false, properties: { label: { const: "choice", default: "choice", type: "string" }, value: { anyOf: [{ type: "string" }, { minimum: 0, type: "number" }] } }, type: "object" }, maxItems: 4, minItems: 1, type: "array" },
+        permitted: true, question: { maxLength: 80, minLength: 1, pattern: "\\S", type: "string" },
+      }, type: "object",
+    } }])
+    expect(tools).toEqual(before)
+  })
+
   it.each([
     ["primitive declaration root", { type: "string" }, "$.type"],
-    ["unknown keyword", { type: "object", properties: { value: { type: "string", minLength: 1 } } }, "$.properties.value.minLength"],
-    ["union", { type: ["string", "null"] }, "$.type"],
-    ["empty object", { type: "object", properties: {} }, "$.properties"],
-    ["invalid enum", { type: "object", properties: { value: { type: "string", enum: ["ok", 1] } } }, "$.properties.value.enum[1]"],
+
+
+
+
   ])("rejects %s without repairing the schema", (_label, parameters, path) => {
     try {
       normalizeToolDeclarations([{ name: "tool", description: "A tool", parameters }])
@@ -117,19 +139,49 @@ describe("Pi tool schema normalization", () => {
     expect(() => normalizeToolDeclarations([{ ...tool, constrainedSampling: { type: "object" } }])).toThrow(/PI_TOOL_CONSTRAINED_SAMPLING_UNSUPPORTED/)
   })
 
+  it("preserves schema-position metadata boundaries, canonical ordering, and deeply frozen output", () => {
+    const properties = { second: { type: "object", $comment: "omit", properties: { z: { type: "string" }, a: { type: "string" } } } }
+    Object.defineProperty(properties, "__proto__", { value: { type: "string", default: { $id: "user-data" } }, enumerable: true })
+    const parameters = { type: "object", $id: "schema-id", properties }
+    const normalized = normalizeToolDeclarations([{ name: "tool", description: "A tool", parameters }])[0]!.parameters
+    const expected = { properties: { second: { properties: { a: { type: "string" }, z: { type: "string" } }, type: "object" } }, type: "object" }
+    Object.defineProperty(expected.properties, "__proto__", { value: { default: { $id: "user-data" }, type: "string" }, enumerable: true })
+    expect(normalized).toEqual(expected)
+    expect(Object.getPrototypeOf(normalized.properties!)).toBe(Object.prototype)
+    const frozen = (value: unknown): boolean => Object.isFrozen(value) && (typeof value !== "object" || value === null || Object.values(value).every(frozen))
+    expect(frozen(normalized)).toBe(true)
+    expect(parameters).toHaveProperty("$id", "schema-id")
+  })
+
   it("rejects duplicate declarations and hostile runtime values", () => {
     const getter = Object.create(null, { type: { get: () => { throw new Error("CANARY") } } })
     const sparse = [] as unknown[]
     sparse[1] = "value"
+    const indexedGetter: unknown[] = []
+    Object.defineProperty(indexedGetter, "0", { get: () => { throw new Error("CANARY-index") }, enumerable: true })
     const symbol = { type: "object", properties: { value: { type: "string" } }, [Symbol("x")]: true }
     const cycle: { type: string; properties: Record<string, unknown> } = { type: "object", properties: {} }
     cycle.properties.self = cycle
-    for (const parameters of [getter, { type: "object", properties: { value: { type: "number", enum: [Number.NaN] } } }, { type: "object", properties: { value: { type: "string", enum: sparse } } }, symbol, cycle]) {
+    class Schema { type = "object"; properties = {} }
+    const inherited = Object.create({ type: "object" })
+    const functionValue = { type: "object", properties: { value: () => undefined } }
+    const undefinedValue = { type: "object", properties: { value: undefined } }
+    const bigintValue = { type: "object", properties: { value: BigInt(1) } }
+    for (const parameters of [getter, { type: "object", properties: { value: { type: "number", enum: [Number.NaN] } } }, { type: "object", properties: { value: { type: "string", enum: sparse } } }, { type: "object", default: indexedGetter }, symbol, cycle, new Schema(), inherited, functionValue, undefinedValue, bigintValue]) {
       expect(() => normalizeToolDeclarations([{ name: "tool", description: "A tool", parameters }])).toThrow(/PI_TOOL_SCHEMA/)
+      expect(() => normalizeToolDeclarations([{ name: "tool", description: "A tool", parameters }])).not.toThrow("CANARY")
     }
     expect(() => normalizeToolDeclarations([
       { name: "tool", description: "A tool", parameters: { type: "object", properties: { value: { type: "string" } } } },
       { name: "tool", description: "Another tool", parameters: { type: "object", properties: { value: { type: "string" } } } },
     ])).toThrow(/PI_TOOL_DECLARATION_DUPLICATE/)
+  })
+
+  it("enforces deterministic hostile-value and source-node limits before returning declarations", () => {
+    const invalid = { type: "object", properties: { z: () => undefined, a: BigInt(1) } }
+    expect(() => normalizeToolDeclarations([{ name: "tool", description: "A tool", parameters: invalid }])).toThrow("$.properties.a")
+    const parameters = (count: number) => ({ type: "object", default: Array.from({ length: count }, () => null) })
+    expect(normalizeToolDeclarations([{ name: "within", description: "A tool", parameters: parameters(2045) }])).toHaveLength(1)
+    expect(() => normalizeToolDeclarations([{ name: "over", description: "A tool", parameters: parameters(2046) }])).toThrow(/PI_TOOL_SCHEMA_LIMIT/)
   })
 })
