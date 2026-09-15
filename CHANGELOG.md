@@ -12,6 +12,10 @@
 
 - **Bare Gemini CLI names for 3.1+** - Dotted-minor generations now use bare model names on the Gemini CLI backend (e.g. `gemini-3.1-pro`, `gemini-3.5-flash`) instead of the legacy `-preview` suffix, matching the `agy`/`gemini` CLIs. Renamed the `gemini-3.1-pro-preview` entry to `gemini-3.1-pro`. The 3.0 line (`gemini-3-pro-preview`, `gemini-3-flash-preview`) and the legacy `gemini-3.1-pro-preview-customtools` entry are unchanged, and previously-configured model strings still route via the resolver.
 
+### Fixed
+
+- **#43** - Gemini 3.8 Flash with reasoning disabled now accepts normal Pi/TypeBox tool schemas, including local `$ref` references.
+
 ## [1.6.0] - 2026-02-20
 
 ### Fixed

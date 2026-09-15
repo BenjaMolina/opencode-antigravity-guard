@@ -160,13 +160,22 @@ describe("Antigravity model catalog", () => {
 
   it("enables the directly admitted Gemini 3.8 Flash off route", () => {
     const entry = getCatalogEntry("antigravity-gemini-3.8-flash")!
-    expect(resolveGenerationSelection(entry, "off").tools.state).toBe("enabled")
+    const capability = resolveGenerationSelection(entry, "off").tools
+        expect(capability.state === "enabled" ? capability.schemaProfile : undefined).toBe("gemini-parameters-json-schema")
   })
+
+    it("keeps disabled Gemini, Claude, and GPT routes profile-free", () => {
+      for (const publicId of ["antigravity-gemini-3.7-flash", "antigravity-claude-sonnet-4.6", "antigravity-gpt-oss-120b"]) {
+        const capability = resolveGenerationSelection(getCatalogEntry(publicId)!, "off").tools
+        expect(capability.state).toBe("disabled")
+        expect("schemaProfile" in capability).toBe(false)
+      }
+    })
 
     it("constructs immutable enabled fixture data independently from catalog admission", () => {
     const entry = getCatalogEntry("antigravity-gemini-3.8-flash")!
     const selection = resolveGenerationSelection(entry, "off")
-    const enabled = createEnabledToolCapability({ record: "fixture", revision: "1", publicModelId: entry.publicId, reasoning: "off", wireModel: selection.route.wireModel })
+    const enabled = createEnabledToolCapability({ record: "fixture", revision: "1", publicModelId: entry.publicId, reasoning: "off", wireModel: selection.route.wireModel }, "gemini-parameters-json-schema")
     expect(Object.isFrozen(enabled)).toBe(true)
     expect(enabled.state).toBe("enabled")
     expect(resolveGenerationSelection(entry, "off").tools.state).toBe("enabled")
