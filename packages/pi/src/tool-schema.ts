@@ -90,7 +90,8 @@ function emitSchema(value: JsonValue, declaration: string, path: string): JsonVa
     const child = value[key]!
     if (METADATA.has(key)) continue
     if (key === "$ref" || key === "$defs" || key === "definitions") fail("PI_TOOL_SCHEMA_REFERENCE_INVALID", declaration, `${path}.${key}`)
-    if (SCHEMA_MAPS.has(key)) define(output, key, emitSchemaMap(child, declaration, `${path}.${key}`))
+    if (key === "dependencies") define(output, key, emitDependencies(child, declaration, `${path}.${key}`))
+    else if (SCHEMA_MAPS.has(key)) define(output, key, emitSchemaMap(child, declaration, `${path}.${key}`))
     else if (SCHEMAS.has(key)) define(output, key, emitSchema(child, declaration, `${path}.${key}`))
     else if (SCHEMA_ARRAYS.has(key)) define(output, key, emitSchemaArray(child, declaration, `${path}.${key}`))
     else define(output, key, child)
@@ -102,6 +103,16 @@ function emitSchemaMap(value: JsonValue, declaration: string, path: string): Jso
   if (!isJsonObject(value)) fail("PI_TOOL_SCHEMA_INVALID", declaration, path)
   const output: Record<string, JsonValue> = {}
   for (const key of Object.keys(value)) define(output, key, emitSchema(value[key]!, declaration, `${path}.${key}`))
+  return freeze(output) as JsonObject
+}
+
+function emitDependencies(value: JsonValue, declaration: string, path: string): JsonObject {
+  if (!isJsonObject(value)) fail("PI_TOOL_SCHEMA_INVALID", declaration, path)
+  const output: Record<string, JsonValue> = {}
+  for (const key of Object.keys(value)) {
+    const dependency = value[key]!
+    define(output, key, Array.isArray(dependency) ? dependency : emitSchema(dependency, declaration, `${path}.${key}`))
+  }
   return freeze(output) as JsonObject
 }
 
