@@ -184,4 +184,85 @@ describe("Pi tool schema normalization", () => {
     expect(normalizeToolDeclarations([{ name: "within", description: "A tool", parameters: parameters(2045) }])).toHaveLength(1)
     expect(() => normalizeToolDeclarations([{ name: "over", description: "A tool", parameters: parameters(2046) }])).toThrow(/PI_TOOL_SCHEMA_LIMIT/)
   })
+
+  it("expands local RFC 6901 references without changing source schemas", () => {
+    const parameters = {
+      type: "object",
+      $defs: {
+        "value/name": { type: "string", minLength: 1 },
+        nested: { $ref: "#/$defs/value~1name" },
+      },
+      definitions: { legacy: { type: "number", minimum: 0 } },
+      properties: {
+        direct: { $ref: "#/$defs/value~1name" },
+        encoded: { $ref: "#/%24defs/value%7E1name" },
+        nested: { $ref: "#/$defs/nested" },
+        legacy: { $ref: "#/definitions/legacy" },
+        tuple: { type: "array", items: [{ $ref: "#/$defs/value~1name" }] },
+        combined: { allOf: [{ $ref: "#/$defs/value~1name" }] },
+      },
+    }
+    const normalized = normalizeToolDeclarations([{ name: "tool", description: "A tool", parameters }])[0]!.parameters
+    expect(normalized).toEqual({
+      properties: {
+        combined: { allOf: [{ minLength: 1, type: "string" }] },
+        direct: { minLength: 1, type: "string" },
+        encoded: { minLength: 1, type: "string" },
+        legacy: { minimum: 0, type: "number" },
+        nested: { minLength: 1, type: "string" },
+        tuple: { items: [{ minLength: 1, type: "string" }], type: "array" },
+      },
+      type: "object",
+    })
+    expect(parameters).toHaveProperty("$defs")
+    expect(normalized).not.toHaveProperty("$defs")
+    expect(normalized).not.toHaveProperty("definitions")
+  })
+
+  it("preserves reference conjunction and rejects unsafe references deterministically", () => {
+    const normalize = (parameters: unknown) => normalizeToolDeclarations([{ name: "tool", description: "A tool", parameters }])
+    const parameters = {
+      type: "object",
+      $defs: { yes: true, no: false, value: { type: "string" } },
+      allOf: [{ $ref: "#/$defs/value" }],
+      dependencies: { mode: { $ref: "#/allOf/0" }, names: ["first", "second"] },
+      properties: {
+        conjunction: { $ref: "#/$defs/value", minLength: 2 },
+        yes: { $ref: "#/$defs/yes", type: "string" },
+        no: { $ref: "#/$defs/no", type: "string" },
+        "$ref": { type: "number" },
+        definitions: { type: "boolean" },
+      },
+    }
+    expect(normalize(parameters)[0]!.parameters).toEqual({
+      allOf: [{ type: "string" }],
+      dependencies: { mode: { type: "string" }, names: ["first", "second"] },
+      properties: {
+        "$ref": { type: "number" },
+        conjunction: { allOf: [{ type: "string" }, { minLength: 2 }] },
+        definitions: { type: "boolean" },
+        no: false,
+        yes: { type: "string" },
+      },
+      type: "object",
+    })
+    for (const reference of ["https://example.test/schema", "#name", "#/missing", "#/$defs/~2bad", "#/allOf/00", "#/allOf/-", "#/allOf/1", "#/type"]) {
+      expect(() => normalize({ type: "object", allOf: [{ type: "string" }], properties: { value: { $ref: reference } } })).toThrow("PI_TOOL_SCHEMA_REFERENCE_INVALID")
+    }
+    expect(() => normalize({ type: "object", properties: { value: { $ref: 1 } } })).toThrow("PI_TOOL_SCHEMA_REFERENCE_INVALID")
+    expect(() => normalize({ type: "object", $defs: { loop: { $ref: "#/$defs/loop" } }, properties: { value: { $ref: "#/$defs/loop" } } })).toThrow("PI_TOOL_SCHEMA_REFERENCE_CYCLE")
+  })
+
+  it("limits reference chains and repeated expanded definitions", () => {
+    const chain: Record<string, unknown> = { end: { type: "string" } }
+    for (let index = 32; index >= 0; index -= 1) chain[`step${index}`] = { $ref: `#/$defs/${index === 32 ? "end" : `step${index + 1}`}` }
+    expect(() => normalizeToolDeclarations([{ name: "chain", description: "A tool", parameters: { type: "object", $defs: chain, properties: { value: { $ref: "#/$defs/step0" } } } }])).toThrow("PI_TOOL_SCHEMA_LIMIT")
+    const parameters = (count: number) => ({
+      type: "object",
+      $defs: { value: { type: "object", properties: { nested: { type: "string" } } } },
+      properties: Object.fromEntries(Array.from({ length: count }, (_, index) => [`value${index}`, { $ref: "#/$defs/value" }])),
+    })
+    expect(normalizeToolDeclarations([{ name: "within", description: "A tool", parameters: parameters(400) }])).toHaveLength(1)
+    expect(() => normalizeToolDeclarations([{ name: "over", description: "A tool", parameters: parameters(700) }])).toThrow("PI_TOOL_SCHEMA_LIMIT")
+  })
 })

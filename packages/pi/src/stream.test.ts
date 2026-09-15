@@ -203,6 +203,24 @@ describe("fixed Antigravity SSE transport", () => {
     }))
   })
 
+  it("rejects a mixed declaration set before payload hooks and fetch", async () => {
+    const entry = getCatalogEntry(model().id)!
+    const selection = resolveGenerationSelection(entry, undefined)
+    const enabled = { ...selection, tools: createEnabledToolCapability({ record: "test", revision: "1", publicModelId: entry.publicId, reasoning: selection.level, wireModel: selection.route.wireModel }) }
+    const fetch = vi.fn<typeof globalThis.fetch>()
+    const onPayload = vi.fn()
+    await expect(executeStreamTransport({
+      accessToken: "access-token", projectId: "stored-project",
+      context: { tools: [
+        { name: "valid", description: "Valid", parameters: { type: "object", properties: { value: { type: "string" } } } },
+        { name: "invalid", description: "Invalid", parameters: { type: "object", properties: { value: { $ref: "https://example.test/schema" } } } },
+      ], messages: [{ role: "user", content: "Hello", timestamp: 0 }] } as unknown as Context,
+      fetch, generationOptions: { onPayload }, model: model(), now: () => 1_000, onSemantic: vi.fn(), platform: "win32", requestId: "request-id", selection: enabled,
+    })).rejects.toMatchObject({ kind: "preflight", details: { preflightCategory: "schema", preflightPath: "$.properties.value.$ref" } })
+    expect(onPayload).not.toHaveBeenCalled()
+    expect(fetch).not.toHaveBeenCalled()
+  })
+
   it("preserves safe schema preflight diagnostics before fetch", async () => {
     const entry = getCatalogEntry(model().id)!
     const selection = resolveGenerationSelection(entry, undefined)
