@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [1.1.18] - 2026-09-19
+
+### Added
+
+- **Full Gemini family tool support in Pi** - Enabled tool capability across all supported reasoning routes for Gemini 3.7 Flash, Gemini 3.6 Flash, and Gemini 3.1 Pro in @benjamolina/pi-antigravity-guard, with same-public-model signature replay.
 ## [1.1.17] - 2026-09-19
 
 ### Added
