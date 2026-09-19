@@ -163,8 +163,8 @@ jobs:
           }
 
           publish_if_missing "@benjamolina/antigravity-guard-core" "0.1.0" "@benjamolina/antigravity-guard-core" false
-          publish_if_missing "@benjamolina/pi-antigravity-guard" "0.4.4" "@benjamolina/pi-antigravity-guard" true
-          publish_if_missing "@benjamolina/opencode-antigravity-guard" "1.1.18" "" true
+          publish_if_missing "@benjamolina/pi-antigravity-guard" "0.4.5" "@benjamolina/pi-antigravity-guard" true
+          publish_if_missing "@benjamolina/opencode-antigravity-guard" "1.1.19" "" true
 
       - name: Create matching tag and release
         env:
@@ -172,7 +172,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          TAG="v1.1.18"
+          TAG="v1.1.19"
           git fetch --tags --force
           if git rev-parse "refs/tags/${TAG}^{commit}" >/dev/null 2>&1; then
             TAG_SHA=$(git rev-parse "refs/tags/${TAG}^{commit}")
@@ -209,17 +209,17 @@ jobs:
           ## Published packages
 
           - Core: `@benjamolina/antigravity-guard-core@0.1.0`
-          - Pi: `@benjamolina/pi-antigravity-guard@0.4.4`
-          - OpenCode root: `@benjamolina/opencode-antigravity-guard@1.1.18`
+          - Pi: `@benjamolina/pi-antigravity-guard@0.4.5`
+          - OpenCode root: `@benjamolina/opencode-antigravity-guard@1.1.19`
 
           ### Activation scope
 
-          - Full Gemini family (3.8 Flash, 3.7 Flash, 3.6 Flash, 3.1 Pro) is enabled for tools across all supported reasoning routes.
+          - Full Gemini family (3.8 Flash, 3.7 Flash, 3.6 Flash, 3.1 Pro) is enabled for tools across all supported reasoning routes, with signed replay fix for gemini-pro-agent.
 
           ### Upgrade the root plugin
 
           ```bash
-          npm install @benjamolina/opencode-antigravity-guard@1.1.18
+          npm install @benjamolina/opencode-antigravity-guard@1.1.19
           ```
           EOF
           sed -i 's/^          //' "$NOTES"

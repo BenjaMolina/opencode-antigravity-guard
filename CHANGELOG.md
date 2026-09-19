@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [1.1.19] - 2026-09-19
+
+### Fixed
+
+- **Gemini 3.1 Pro tool continuation** - Fixed signed tool replay detection for gemini-pro-agent runtime model on the high reasoning route, preventing HTTP 400 rejection during multi-turn tool loops.
 ## [1.1.18] - 2026-09-19
 
 ### Added
