@@ -52,7 +52,7 @@ describe("Antigravity Guard provider registration", () => {
       const state = resolveGenerationSelection(entry, routes[0]).tools
       if (entry.publicId === "antigravity-gemini-3.8-flash") {
         expect(state.state).toBe("enabled")
-        expect(readme).toContain(`| \`${entry.publicId}\` | ${routes.join(", ")} | Enabled (off) | pi-json-tool-loop/gemini-3.8-flash-off-v1 |`)
+        expect(readme).toContain(`| \`${entry.publicId}\` | ${routes.join(", ")} | Enabled (off, low, medium, high) | pi-json-tool-loop/gemini-3.8-flash-off-v1 |`)
         continue
       }
       expect(state.state).toBe("disabled")
@@ -134,7 +134,7 @@ describe("Antigravity Guard provider registration", () => {
       expect(refreshed).toMatchObject({ access: "refreshed-access", refresh: "refresh-token", projectId: "login-project", email: "alice@example.com" })
       expect(events.map((event) => event.type)).toEqual(["start", "text_start", "text_delta", "text_end", "done"])
       expect(fetch.mock.calls).toHaveLength(5)
-      expect(JSON.parse(String(fetch.mock.calls[4]?.[1]?.body))).toMatchObject({ project: "login-project", model: "gemini-3.8-flash-tiered" })
+      expect(JSON.parse(String(fetch.mock.calls[4]?.[1]?.body))).toMatchObject({ project: "login-project", model: "gemini-3.8-flash-low" })
     } finally {
       vi.unstubAllGlobals()
     }
@@ -159,7 +159,7 @@ describe("Antigravity Guard provider registration", () => {
     expect(events.map((event) => event.type)).toEqual(["start", "text_start", "text_delta", "text_end", "done"])
     expect(fetch).toHaveBeenCalledOnce()
     expect(fetch.mock.calls[0]?.[1]?.headers).toMatchObject({ Authorization: "Bearer stored-access" })
-    expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body))).toMatchObject({ project: "stored-project", model: "gemini-3.8-flash-tiered" })
+    expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body))).toMatchObject({ project: "stored-project", model: "gemini-3.8-flash-low" })
   })
 
   it("parses exactly the credential token and project at the provider boundary", () => {

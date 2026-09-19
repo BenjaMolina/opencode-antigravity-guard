@@ -27,8 +27,8 @@ describe("Antigravity model catalog", () => {
       contextWindow: 1_048_576,
       maxTokens: 65_536,
     })
-    expect(resolveGenerationRoute(entry!, undefined)).toEqual({ wireModel: "gemini-3.8-flash-tiered", thinking: { kind: "native-level", thinkingLevel: "low", includeThoughts: false } })
-    expect(resolveGenerationRoute(entry!, "high")).toEqual({ wireModel: "gemini-3.8-flash-tiered", thinking: { kind: "native-level", thinkingLevel: "high", includeThoughts: true } })
+    expect(resolveGenerationRoute(entry!, undefined)).toEqual({ wireModel: "gemini-3.8-flash-low", thinking: { kind: "budget", budget: 0, includeThoughts: false } })
+    expect(resolveGenerationRoute(entry!, "high")).toEqual({ wireModel: "gemini-3.8-flash-high", thinking: { kind: "budget", budget: -1, includeThoughts: true } })
   })
 
   it("rejects unsupported levels and protects internal descriptors from host mutation", () => {
@@ -133,14 +133,16 @@ describe("Antigravity model catalog", () => {
       for (const level of Object.keys(entry.routes)) {
         const selection = resolveGenerationSelection(entry, level)
         expect(Object.isFrozen(selection.tools)).toBe(true)
-        const isDirectlyAdmitted = entry.publicId === "antigravity-gemini-3.8-flash" && level === "off"
+        const isDirectlyAdmitted = entry.publicId === "antigravity-gemini-3.8-flash"
         expect(selection.tools.state).toBe(isDirectlyAdmitted ? "enabled" : "disabled")
         if (isDirectlyAdmitted) {
+          const wireModel = level === "high" ? "gemini-3.8-flash-high" : level === "medium" ? "gemini-3.8-flash-medium" : "gemini-3.8-flash-low"
+          const revision = `gemini-3.8-flash-${level}-v1`
           expect(selection.tools).toMatchObject({
             state: "enabled",
             contractRevision: 1,
-            fixtureEvidence: { record: "pi-json-tool-loop", revision: "gemini-3.8-flash-off-v1", publicModelId: entry.publicId, reasoning: "off", wireModel: "gemini-3.8-flash-tiered" },
-            directEvidence: { record: "pi-json-tool-loop", revision: "gemini-3.8-flash-off-v1", publicModelId: entry.publicId, reasoning: "off", wireModel: "gemini-3.8-flash-tiered" },
+            fixtureEvidence: { record: "pi-json-tool-loop", revision, publicModelId: entry.publicId, reasoning: level, wireModel },
+            directEvidence: { record: "pi-json-tool-loop", revision, publicModelId: entry.publicId, reasoning: level, wireModel },
           })
           continue
         }

@@ -18,10 +18,10 @@ describe("Pi text context serialization", () => {
     ], timestamp: 0 }, assistant([{ type: "text", text: "answer" }])] } as Context
     const before = structuredClone(context)
     expect(request(context, { temperature: 0.5, maxTokens: 12 })).toEqual({
-      project: "project", model: "gemini-3.8-flash-tiered", requestType: "agent", userAgent: "antigravity", requestId: "agent-id",
+      project: "project", model: "gemini-3.8-flash-low", requestType: "agent", userAgent: "antigravity", requestId: "agent-id",
       request: { systemInstruction: { parts: [{ text: " system " }] }, contents: [
         { role: "user", parts: [{ text: "first" }, { text: "  " }] }, { role: "model", parts: [{ text: "answer" }] },
-      ], generationConfig: { temperature: 0.5, maxOutputTokens: 12, thinkingConfig: { thinkingLevel: "low", includeThoughts: false } } },
+      ], generationConfig: { temperature: 0.5, maxOutputTokens: 12, thinkingConfig: { thinkingBudget: 0, includeThoughts: false } } },
     })
     expect(context).toEqual(before)
   })
@@ -64,17 +64,18 @@ describe("Pi text context serialization", () => {
   })
 
   it.each(["low", "medium", "high"] as const)("maps %s reasoning to the matching visible native thinking level", (reasoning) => {
-        expect(request({ messages: [{ role: "user", content: "x", timestamp: 0 }] }, { reasoning }).request.generationConfig.thinkingConfig).toEqual({
-          thinkingLevel: reasoning,
-          includeThoughts: true,
-        })
-      })
+    const budget = reasoning === "low" ? 1000 : reasoning === "medium" ? 4000 : -1
+    expect(request({ messages: [{ role: "user", content: "x", timestamp: 0 }] }, { reasoning }).request.generationConfig.thinkingConfig).toEqual({
+      thinkingBudget: budget,
+      includeThoughts: true,
+    })
+  })
 
-      it("uses invisible low thinking by default and for Pi's runtime off encoding", () => {
-        const context = { messages: [{ role: "user", content: "x", timestamp: 0 }] } as Context
-        expect(request(context).request.generationConfig.thinkingConfig).toEqual({ thinkingLevel: "low", includeThoughts: false })
-        expect(request(context, { reasoning: "off" as never }).request.generationConfig.thinkingConfig).toEqual({ thinkingLevel: "low", includeThoughts: false })
-      })
+  it("uses invisible low thinking by default and for Pi's runtime off encoding", () => {
+    const context = { messages: [{ role: "user", content: "x", timestamp: 0 }] } as Context
+    expect(request(context).request.generationConfig.thinkingConfig).toEqual({ thinkingBudget: 0, includeThoughts: false })
+    expect(request(context, { reasoning: "off" as never }).request.generationConfig.thinkingConfig).toEqual({ thinkingBudget: 0, includeThoughts: false })
+  })
 
       it("fails closed for a direct minimal reasoning request", () => {
         const context = { messages: [{ role: "user", content: "x", timestamp: 0 }] } as Context
@@ -259,13 +260,13 @@ describe("Pi text context serialization", () => {
         it("serializes Gemini declarations as parametersJsonSchema in normalized schema order", () => {
       const context = { tools: [{ name: "read_file", description: "Read one file", parameters: { type: "object", properties: { path: { type: "string" } }, required: ["path"] } }], messages: [{ role: "user", content: "x", timestamp: 0 }] } as Context
       const selection = resolveGenerationSelection(listCatalogEntries()[0]!, "off")
-      const enabled = createEnabledToolCapability({ record: "fixture", revision: "1", publicModelId: "antigravity-gemini-3.8-flash", reasoning: "off", wireModel: "gemini-3.8-flash-tiered" }, "gemini-parameters-json-schema")
+      const enabled = createEnabledToolCapability({ record: "fixture", revision: "1", publicModelId: "antigravity-gemini-3.8-flash", reasoning: "off", wireModel: "gemini-3.8-flash-low" }, "gemini-parameters-json-schema")
       const diagnostics: unknown[] = []
       const request = serializeContext({ context, model, project: "project", requestId: "agent-id" }, { ...selection, tools: enabled }, (diagnostic) => diagnostics.push(diagnostic))
       const withoutDiagnostics = serializeContext({ context, model, project: "project", requestId: "agent-id" }, { ...selection, tools: enabled })
       expect(JSON.stringify(request)).toBe(JSON.stringify(withoutDiagnostics))
       expect(JSON.stringify(serializeContext({ context: { messages: [{ role: "user", content: "x", timestamp: 0 }] } as Context, model, project: "project", requestId: "agent-id" }))).toBe(JSON.stringify(serializeTextContext({ context: { messages: [{ role: "user", content: "x", timestamp: 0 }] } as Context, model, project: "project", requestId: "agent-id" })))
-      expect(JSON.stringify(request.request)).toBe(JSON.stringify({ contents: [{ role: "user", parts: [{ text: "x" }] }], tools: [{ functionDeclarations: [{ name: "read_file", description: "Read one file", parametersJsonSchema: { properties: { path: { type: "string" } }, required: ["path"], type: "object" } }] }], generationConfig: { temperature: 1, maxOutputTokens: 4096, thinkingConfig: { thinkingLevel: "low", includeThoughts: false } } }))
+      expect(JSON.stringify(request.request)).toBe(JSON.stringify({ contents: [{ role: "user", parts: [{ text: "x" }] }], tools: [{ functionDeclarations: [{ name: "read_file", description: "Read one file", parametersJsonSchema: { properties: { path: { type: "string" } }, required: ["path"], type: "object" } }] }], generationConfig: { temperature: 1, maxOutputTokens: 4096, thinkingConfig: { thinkingBudget: 0, includeThoughts: false } } }))
       expect(diagnostics).toEqual([{
         replayMode: "none",
         recoveryCount: 0,
@@ -284,7 +285,7 @@ describe("Pi text context serialization", () => {
 
     it("serializes ask_user_choice only as a complete parametersJsonSchema", () => {
           const selection = resolveGenerationSelection(listCatalogEntries()[0]!, "off")
-          const enabled = createEnabledToolCapability({ record: "fixture", revision: "1", publicModelId: "antigravity-gemini-3.8-flash", reasoning: "off", wireModel: "gemini-3.8-flash-tiered" }, "gemini-parameters-json-schema")
+          const enabled = createEnabledToolCapability({ record: "fixture", revision: "1", publicModelId: "antigravity-gemini-3.8-flash", reasoning: "off", wireModel: "gemini-3.8-flash-low" }, "gemini-parameters-json-schema")
           const context = { tools: [{ name: "ask_user_choice", description: "Ask", parameters: { type: "object", additionalProperties: false, properties: { options: { type: "array", minItems: 1, maxItems: 4, items: { type: "object", additionalProperties: false, properties: { label: { type: "string" } } } } } } }], messages: [{ role: "user", content: "x", timestamp: 0 }] } as Context
           const declaration = serializeContext({ context, model, project: "project", requestId: "agent-id" }, { ...selection, tools: enabled }).request.tools?.[0]?.functionDeclarations[0]
           expect(declaration).toEqual({ name: "ask_user_choice", description: "Ask", parametersJsonSchema: { additionalProperties: false, properties: { options: { items: { additionalProperties: false, properties: { label: { type: "string" } }, type: "object" }, maxItems: 4, minItems: 1, type: "array" } }, type: "object" } })
@@ -293,7 +294,7 @@ describe("Pi text context serialization", () => {
 
         it("bridges an unsigned terminal orphan call into its fixed synthetic observation", () => {
       const selection = resolveGenerationSelection(listCatalogEntries()[0]!, "off")
-      const enabled = createEnabledToolCapability({ record: "fixture", revision: "1", publicModelId: "antigravity-gemini-3.8-flash", reasoning: "off", wireModel: "gemini-3.8-flash-tiered" }, "gemini-parameters-json-schema")
+      const enabled = createEnabledToolCapability({ record: "fixture", revision: "1", publicModelId: "antigravity-gemini-3.8-flash", reasoning: "off", wireModel: "gemini-3.8-flash-low" }, "gemini-parameters-json-schema")
       const context = { messages: [{ ...assistant([{ type: "toolCall", id: "call-1", name: "read_file", arguments: {} }]), stopReason: "toolUse" }] } as Context
       expect(serializeContext({ context, model, project: "project", requestId: "agent-id" }, { ...selection, tools: enabled }).request.contents).toEqual([{
         role: "user",
@@ -303,14 +304,14 @@ describe("Pi text context serialization", () => {
 
     it("rejects enabled tool-result history until Unit D replay is implemented", () => {
       const selection = resolveGenerationSelection(listCatalogEntries()[0]!, "off")
-      const enabled = createEnabledToolCapability({ record: "fixture", revision: "1", publicModelId: "antigravity-gemini-3.8-flash", reasoning: "off", wireModel: "gemini-3.8-flash-tiered" }, "gemini-parameters-json-schema")
+      const enabled = createEnabledToolCapability({ record: "fixture", revision: "1", publicModelId: "antigravity-gemini-3.8-flash", reasoning: "off", wireModel: "gemini-3.8-flash-low" }, "gemini-parameters-json-schema")
       const context = { messages: [{ role: "toolResult", toolCallId: "call-1", toolName: "read_file", content: [], isError: false, timestamp: 0 }] } as Context
       expect(() => serializeContext({ context, model, project: "project", requestId: "agent-id" }, { ...selection, tools: enabled })).toThrow("PI_TOOL_RESULT_FOREIGN")
     })
 
     it("uses defaults, accepts repeated text, and bounds serialized text", () => {
     expect(request({ messages: [{ role: "user", content: "same", timestamp: 0 }, { role: "user", content: "same", timestamp: 0 }] })).toMatchObject({
-      model: "gemini-3.8-flash-tiered", request: { generationConfig: { temperature: 1, maxOutputTokens: 4096 } },
+      model: "gemini-3.8-flash-low", request: { generationConfig: { temperature: 1, maxOutputTokens: 4096 } },
     })
     expect(request({ messages: [{ role: "user", content: "é".repeat(4 * 1024 * 1024), timestamp: 0 }] }).request.contents[0]?.parts).toEqual([{ text: "é".repeat(4 * 1024 * 1024) }])
     expect(() => request({ messages: [{ role: "user", content: "é".repeat(4 * 1024 * 1024 + 1), timestamp: 0 }] })).toThrow(ContextSerializationError)
@@ -320,7 +321,7 @@ describe("Pi text context serialization", () => {
 
   it("bridges unsigned assistant calls and matching results through the enabled request-local replay", () => {
     const selection = resolveGenerationSelection(listCatalogEntries()[0]!, "off")
-    const enabled = createEnabledToolCapability({ record: "fixture", revision: "1", publicModelId: "antigravity-gemini-3.8-flash", reasoning: "off", wireModel: "gemini-3.8-flash-tiered" }, "gemini-parameters-json-schema")
+    const enabled = createEnabledToolCapability({ record: "fixture", revision: "1", publicModelId: "antigravity-gemini-3.8-flash", reasoning: "off", wireModel: "gemini-3.8-flash-low" }, "gemini-parameters-json-schema")
     const context = { messages: [{ ...assistant([{ type: "text", text: "calling" }, { type: "toolCall", id: "call-1", name: "read_file", arguments: {} }]), stopReason: "toolUse" }, { role: "toolResult", toolCallId: "call-1", toolName: "read_file", content: [{ type: "text", text: "done" }], isError: false, timestamp: 0 }] } as Context
     expect(JSON.stringify(serializeContext({ context, model, project: "project", requestId: "agent-id" }, { ...selection, tools: enabled }).request.contents)).toBe(JSON.stringify([
       { role: "model", parts: [{ text: "calling" }] },
@@ -331,7 +332,7 @@ describe("Pi text context serialization", () => {
 
   it("skips empty unsigned text only within assistant tool-call replay groups", () => {
         const selection = resolveGenerationSelection(listCatalogEntries()[0]!, "off")
-        const enabled = createEnabledToolCapability({ record: "fixture", revision: "1", publicModelId: "antigravity-gemini-3.8-flash", reasoning: "off", wireModel: "gemini-3.8-flash-tiered" }, "gemini-parameters-json-schema")
+        const enabled = createEnabledToolCapability({ record: "fixture", revision: "1", publicModelId: "antigravity-gemini-3.8-flash", reasoning: "off", wireModel: "gemini-3.8-flash-low" }, "gemini-parameters-json-schema")
         const serialize = (content: unknown[]) => serializeContext({
           context: { messages: [
             { ...assistant(content), provider: "antigravity-guard", model: "antigravity-gemini-3.8-flash", stopReason: "toolUse" },
@@ -366,7 +367,7 @@ describe("Pi text context serialization", () => {
 
       it("preserves assistant text and thinking around a replayed call", () => {
     const selection = resolveGenerationSelection(listCatalogEntries()[0]!, "off")
-    const enabled = createEnabledToolCapability({ record: "fixture", revision: "1", publicModelId: "antigravity-gemini-3.8-flash", reasoning: "off", wireModel: "gemini-3.8-flash-tiered" }, "gemini-parameters-json-schema")
+    const enabled = createEnabledToolCapability({ record: "fixture", revision: "1", publicModelId: "antigravity-gemini-3.8-flash", reasoning: "off", wireModel: "gemini-3.8-flash-low" }, "gemini-parameters-json-schema")
     const call = { ...assistant([{ type: "thinking", thinking: "plan", thinkingSignature: "c2ln" }, { type: "toolCall", id: "call-1", name: "read_file", arguments: {} }, { type: "text", text: "after" }]), provider: "antigravity-guard", model: "antigravity-gemini-3.8-flash", stopReason: "toolUse" }
     const context = { messages: [call, { role: "toolResult", toolCallId: "call-1", toolName: "read_file", content: [], isError: false, timestamp: 0 }] } as Context
     expect(serializeContext({ context, model, project: "project", requestId: "agent-id" }, { ...selection, tools: enabled }).request.contents[0]?.parts).toEqual([
@@ -380,7 +381,7 @@ describe("Pi text context serialization", () => {
     ["invalid", "antigravity-guard", "not base64", { text: "[Observation from `read_file`:\n]" }],
   ])("replays %s tool calls only for valid same-model signatures", (_case, provider, signature, expected) => {
     const selection = resolveGenerationSelection(listCatalogEntries()[0]!, "off")
-    const enabled = createEnabledToolCapability({ record: "fixture", revision: "1", publicModelId: "antigravity-gemini-3.8-flash", reasoning: "off", wireModel: "gemini-3.8-flash-tiered" }, "gemini-parameters-json-schema")
+    const enabled = createEnabledToolCapability({ record: "fixture", revision: "1", publicModelId: "antigravity-gemini-3.8-flash", reasoning: "off", wireModel: "gemini-3.8-flash-low" }, "gemini-parameters-json-schema")
     const context = { messages: [{ ...assistant([{ type: "toolCall", id: "call-1", name: "read_file", arguments: {}, thoughtSignature: signature }]), provider, model: "antigravity-gemini-3.8-flash", stopReason: "toolUse" }, { role: "toolResult", toolCallId: "call-1", toolName: "read_file", content: [], isError: false, timestamp: 0 }] } as Context
     expect(serializeContext({ context, model, project: "project", requestId: "agent-id" }, { ...selection, tools: enabled }).request.contents[0]?.parts[0]).toEqual(expected)
   })
