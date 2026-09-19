@@ -133,11 +133,12 @@ describe("Antigravity model catalog", () => {
       for (const level of Object.keys(entry.routes)) {
         const selection = resolveGenerationSelection(entry, level)
         expect(Object.isFrozen(selection.tools)).toBe(true)
-        const isDirectlyAdmitted = entry.publicId === "antigravity-gemini-3.8-flash"
+        const isDirectlyAdmitted = entry.publicId.startsWith("antigravity-gemini-")
         expect(selection.tools.state).toBe(isDirectlyAdmitted ? "enabled" : "disabled")
         if (isDirectlyAdmitted) {
-          const wireModel = level === "high" ? "gemini-3.8-flash-high" : level === "medium" ? "gemini-3.8-flash-medium" : "gemini-3.8-flash-low"
-          const revision = `gemini-3.8-flash-${level}-v1`
+          const wireModel = selection.route.wireModel
+          const prefix = entry.publicId.replace("antigravity-", "")
+          const revision = `${prefix}-${level}-v1`
           expect(selection.tools).toMatchObject({
             state: "enabled",
             contractRevision: 1,
@@ -160,19 +161,21 @@ describe("Antigravity model catalog", () => {
     expect(resolveToolCapability(stale, gemini.publicId, "low", low.route.wireModel)).toEqual({ state: "disabled", contractRevision: 1, reason: "stale-or-conflicting-evidence" })
   })
 
-  it("enables the directly admitted Gemini 3.8 Flash off route", () => {
-    const entry = getCatalogEntry("antigravity-gemini-3.8-flash")!
-    const capability = resolveGenerationSelection(entry, "off").tools
-        expect(capability.state === "enabled" ? capability.schemaProfile : undefined).toBe("gemini-parameters-json-schema")
+  it("enables the directly admitted Gemini family routes", () => {
+    for (const publicId of ["antigravity-gemini-3.8-flash", "antigravity-gemini-3.7-flash", "antigravity-gemini-3.6-flash", "antigravity-gemini-3.1-pro"]) {
+      const entry = getCatalogEntry(publicId)!
+      const capability = resolveGenerationSelection(entry, "off").tools
+      expect(capability.state === "enabled" ? capability.schemaProfile : undefined).toBe("gemini-parameters-json-schema")
+    }
   })
 
-    it("keeps disabled Gemini, Claude, and GPT routes profile-free", () => {
-      for (const publicId of ["antigravity-gemini-3.7-flash", "antigravity-claude-sonnet-4.6", "antigravity-gpt-oss-120b"]) {
-        const capability = resolveGenerationSelection(getCatalogEntry(publicId)!, "off").tools
-        expect(capability.state).toBe("disabled")
-        expect("schemaProfile" in capability).toBe(false)
-      }
-    })
+  it("keeps disabled Claude and GPT routes profile-free", () => {
+    for (const publicId of ["antigravity-claude-sonnet-4.6", "antigravity-claude-opus-4.6-thinking", "antigravity-gpt-oss-120b"]) {
+      const capability = resolveGenerationSelection(getCatalogEntry(publicId)!, "off").tools
+      expect(capability.state).toBe("disabled")
+      expect("schemaProfile" in capability).toBe(false)
+    }
+  })
 
     it("constructs immutable enabled fixture data independently from catalog admission", () => {
     const entry = getCatalogEntry("antigravity-gemini-3.8-flash")!

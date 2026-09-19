@@ -50,9 +50,10 @@ describe("Antigravity Guard provider registration", () => {
     for (const entry of listCatalogEntries()) {
       const routes = Object.keys(entry.routes)
       const state = resolveGenerationSelection(entry, routes[0]).tools
-      if (entry.publicId === "antigravity-gemini-3.8-flash") {
+      if (entry.publicId.startsWith("antigravity-gemini-")) {
         expect(state.state).toBe("enabled")
-        expect(readme).toContain(`| \`${entry.publicId}\` | ${routes.join(", ")} | Enabled (off, low, medium, high) | pi-json-tool-loop/gemini-3.8-flash-off-v1 |`)
+        const prefix = entry.publicId.replace("antigravity-", "")
+        expect(readme).toContain(`| \`${entry.publicId}\` | ${routes.join(", ")} | Enabled (${routes.join(", ")}) | pi-json-tool-loop/${prefix}-off-v1 |`)
         continue
       }
       expect(state.state).toBe("disabled")

@@ -149,6 +149,26 @@ describe("Pi text context serialization", () => {
       "antigravity-gemini-3.7-flash",
       "antigravity-gemini-3.6-flash",
       "antigravity-gemini-3.1-pro",
+    ])("preserves same-model signatures for %s", (id) => {
+      const signed = { messages: [
+        { role: "user", content: "x", timestamp: 0 },
+        { role: "assistant", content: [{ type: "thinking", thinking: "plan", thinkingSignature: "c2ln" }, { type: "text", text: "answer", textSignature: "c2ln" }], provider: "antigravity-guard", model: id, api: "antigravity-guard-sse", usage: {}, stopReason: "stop", timestamp: 0 },
+      ] } as Context
+      const serialize = (context: Context) => serializeTextContext({ context, model: { ...model, id }, project: "project", requestId: "agent-id" })
+      expect(serialize(signed).request.contents[1]?.parts).toEqual([
+        { thought: true, text: "plan", thoughtSignature: "c2ln" },
+        { text: "answer", thoughtSignature: "c2ln" },
+      ])
+      for (const unsupported of [
+        { messages: [{ role: "toolResult", content: [], timestamp: 0 }] },
+        { messages: [{ role: "user", content: [{ type: "image" }], timestamp: 0 }] },
+      ]) expect(() => serialize(unsupported as Context)).toThrow(ContextSerializationError)
+    })
+
+    it.each([
+      "antigravity-claude-sonnet-4.6",
+      "antigravity-claude-opus-4.6-thinking",
+      "antigravity-gpt-oss-120b",
     ])("strips historical signatures and rejects tools before serializing %s", (id) => {
       const signed = { messages: [
         { role: "user", content: "x", timestamp: 0 },
