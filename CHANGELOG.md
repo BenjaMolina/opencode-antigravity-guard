@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [1.1.20] - 2026-09-19
+
+### Added
+
+- **Pi Multimodal Support** - Enabled native multimodal image inputs (input: ["text", "image"]) and tool media result tolerance in @benjamolina/pi-antigravity-guard, serializing images to inlineData and preventing PI_TOOL_RESULT_MEDIA_UNSUPPORTED session corruption.
 ## [1.1.19] - 2026-09-19
 
 ### Fixed
