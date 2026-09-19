@@ -242,12 +242,13 @@ export function resolveToolCapability(capability: ToolCapability, publicModelId:
 }
 
 export function toPiModelDescriptor(entry: CatalogEntry) {
+  const isMultimodal = entry.response.family === "gemini" || entry.response.family === "claude"
   return {
     id: entry.publicId,
-    name: entry.descriptor.name,
+    name: entry.descriptor.name.replace(", text only", ""),
     reasoning: true,
     thinkingLevelMap: { ...entry.descriptor.thinkingLevelMap },
-    input: ["text"] as "text"[],
+    input: (isMultimodal ? ["text", "image"] : ["text"]) as ("text" | "image")[],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: entry.descriptor.contextWindow,
     maxTokens: entry.descriptor.maxTokens,

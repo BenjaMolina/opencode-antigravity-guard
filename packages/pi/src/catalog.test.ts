@@ -19,10 +19,10 @@ describe("Antigravity model catalog", () => {
     expect(entry?.publicId).toBe("antigravity-gemini-3.8-flash")
     expect(toPiModelDescriptor(entry!)).toEqual({
       id: "antigravity-gemini-3.8-flash",
-      name: "Gemini 3.8 Flash (Antigravity, text only)",
+      name: "Gemini 3.8 Flash (Antigravity)",
       reasoning: true,
       thinkingLevelMap: { minimal: null, low: "low", medium: "medium", high: "high" },
-      input: ["text"],
+      input: ["text", "image"],
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
       contextWindow: 1_048_576,
       maxTokens: 65_536,
@@ -39,7 +39,7 @@ describe("Antigravity model catalog", () => {
     expect(() => resolveGenerationRoute(entry, "unknown")).toThrow("Unsupported reasoning level")
     const descriptor = toPiModelDescriptor(entry)
     descriptor.input.pop()
-    expect(toPiModelDescriptor(entry).input).toEqual(["text"])
+    expect(toPiModelDescriptor(entry).input).toEqual(["text", "image"])
     expect(Object.isFrozen(entry)).toBe(true)
     expect(Object.isFrozen(entry.routes)).toBe(true)
   })

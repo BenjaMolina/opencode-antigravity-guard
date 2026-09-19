@@ -66,7 +66,7 @@ export function replayToolHistory(messages: unknown[], serializePart: (part: Rec
     declaredToolCount: safeCount(declaredToolCount),
   }
   let replayMode: ToolReplayMode = "none"
-  let pending: { calls: PendingCall[], results: Map<string, WirePart>, observations: boolean } | undefined
+  let pending: { calls: PendingCall[], results: Map<string, WirePart>, observations: boolean, extraParts?: WirePart[] } | undefined
   const appendTurn = (role: WireContent["role"], parts: WirePart[]) => {
     if (!parts.length) return
     const last = output.at(-1)
@@ -75,12 +75,16 @@ export function replayToolHistory(messages: unknown[], serializePart: (part: Rec
   }
   const finalize = () => {
     if (!pending) return
-    appendTurn("user", pending.calls.map((call) => {
+    const turnParts: WirePart[] = pending.calls.map((call) => {
       const actual = pending!.results.get(call.id)
       if (actual) return actual
       recoveryCount.value += 1
       return pending!.observations ? observation(call, missingResultText()) : missingResult(call)
-    }))
+    })
+    if (pending.extraParts?.length) {
+      turnParts.push(...pending.extraParts)
+    }
+    appendTurn("user", turnParts)
     pending = undefined
   }
   for (const message of messages) {
@@ -94,13 +98,31 @@ export function replayToolHistory(messages: unknown[], serializePart: (part: Rec
       if (!call) history(calls.has(id) ? "PI_TOOL_RESULT_SEPARATED" : "PI_TOOL_RESULT_FOREIGN")
       if (value(current, "toolName") !== call.name) history("PI_TOOL_RESULT_NAME_MISMATCH")
       if (value(current, "addedToolNames") !== undefined && dense(value(current, "addedToolNames")).length) history("PI_TOOL_CALL_INVALID")
-      const text = dense(value(current, "content")).map((item) => {
+      const textParts: string[] = []
+      const imageParts: WirePart[] = []
+      for (const item of dense(value(current, "content"))) {
         const part = record(item)
-        if (value(part, "type") !== "text" || typeof value(part, "text") !== "string") history("PI_TOOL_RESULT_MEDIA_UNSUPPORTED")
-        return value(part, "text") as string
-      }).join("\n\n")
-      const response = value(current, "isError") === true ? { error: text } : { output: text }
-      pending.results.set(id, pending.observations ? observation(call, text) : { functionResponse: { name: call.name, response } })
+        if (value(part, "type") === "text" && typeof value(part, "text") === "string") {
+          textParts.push(value(part, "text") as string)
+        } else if (value(part, "type") === "image") {
+          const rawData = value(part, "data") ?? (isRecord(value(part, "source")) ? value(record(value(part, "source")), "data") : undefined)
+          if (typeof rawData === "string" && rawData) {
+            const rawMime = value(part, "mimeType") ?? (isRecord(value(part, "source")) ? value(record(value(part, "source")), "media_type") : undefined)
+            const mimeType = typeof rawMime === "string" && rawMime ? rawMime : "image/jpeg"
+            imageParts.push({ inlineData: { mimeType, data: rawData } })
+          }
+        } else {
+          history("PI_TOOL_RESULT_MEDIA_UNSUPPORTED")
+        }
+      }
+      const text = textParts.join("\n\n")
+      const outputText = text || (imageParts.length > 0 ? "[Image content]" : "")
+      const response = value(current, "isError") === true ? { error: outputText } : { output: outputText }
+      pending.results.set(id, pending.observations ? observation(call, outputText) : { functionResponse: { name: call.name, response } })
+      if (imageParts.length > 0) {
+        if (!pending.extraParts) pending.extraParts = []
+        pending.extraParts.push(...imageParts)
+      }
       results.add(id)
       continue
     }

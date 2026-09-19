@@ -195,10 +195,26 @@ describe("Pi tool history replay", () => {
     [assistant([call("one")]), { ...result("one", ["x"]), toolName: "other" }, "PI_TOOL_RESULT_NAME_MISMATCH"],
     [assistant([call("one")]), result("one", ["x"]), result("one", ["again"]), "PI_TOOL_RESULT_DUPLICATE"],
     [{ role: "toolResult", toolCallId: "one", toolName: "read_file", content: [], isError: false, timestamp: 0 }, "PI_TOOL_RESULT_FOREIGN"],
-    [assistant([call("one")]), { ...result("one", ["x"]), content: [{ type: "text", text: "x" }, { type: "image" }] }, "PI_TOOL_RESULT_MEDIA_UNSUPPORTED"],
+    [assistant([call("one")]), { ...result("one", ["x"]), content: [{ type: "text", text: "x" }, { type: "audio" }] }, "PI_TOOL_RESULT_MEDIA_UNSUPPORTED"],
     [assistant([call("one")]), { ...result("one", ["x"]), addedToolNames: ["later"] }, "PI_TOOL_CALL_INVALID"],
   ])("rejects invalid replay history", (...values) => {
     const code = values.at(-1) as string
     expect(() => replayToolHistory(values.slice(0, -1) as never[], part)).toThrow(code)
+  })
+
+  it("replays tool results containing images as inlineData wire parts", () => {
+    const history = [
+      assistant([call("one")]),
+      { ...result("one", ["text content"]), content: [{ type: "text", text: "text content" }, { type: "image", data: "aW1hZ2U=", mimeType: "image/png" }] },
+    ]
+    const replayed = replayToolHistory(history as never[], part)
+    expect(replayed).toHaveLength(2)
+    expect(replayed[1]).toEqual({
+      role: "user",
+      parts: [
+        { functionResponse: { name: "read_file", response: { output: "text content" } } },
+        { inlineData: { mimeType: "image/png", data: "aW1hZ2U=" } },
+      ],
+    })
   })
 })
