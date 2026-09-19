@@ -219,8 +219,10 @@ function resolveOutputTokens(maxTokens: unknown, maxAllowed: number, thinking: R
 }
 
 function geminiRequiresSignedToolReplay(wireModel: string): boolean {
-  const match = /^gemini-(\d+)(?:[.-])/.exec(wireModel)
-  return match !== null && Number(match[1]) >= 3
+  if (!wireModel.startsWith("gemini-")) return false
+  const match = /^gemini-(\d+)/.exec(wireModel)
+  if (match) return Number(match[1]) >= 3
+  return true
 }
 
 function validThoughtSignature(value: unknown): string | undefined {

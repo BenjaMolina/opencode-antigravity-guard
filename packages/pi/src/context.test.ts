@@ -2,7 +2,7 @@ import type { Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai"
 import { describe, expect, it } from "vitest"
 
 import { ContextSerializationError, serializeContext, serializeTextContext } from "./context.ts"
-import { createEnabledToolCapability, listCatalogEntries, resolveGenerationSelection } from "./catalog.ts"
+import { createEnabledToolCapability, getCatalogEntry, listCatalogEntries, resolveGenerationSelection } from "./catalog.ts"
 
 const model = { id: "antigravity-gemini-3.8-flash" } as Model<string>
 const request = (context: Context, options?: SimpleStreamOptions) => serializeTextContext({
@@ -406,6 +406,23 @@ describe("Pi text context serialization", () => {
     expect(serializeContext({ context, model, project: "project", requestId: "agent-id" }, { ...selection, tools: enabled }).request.contents[0]?.parts[0]).toEqual(expected)
   })
 
+
+  it("enforces signed tool replay for gemini-pro-agent", () => {
+    const entry = getCatalogEntry("antigravity-gemini-3.1-pro")!
+    const selection = resolveGenerationSelection(entry, "high")
+    const context = { messages: [
+      { ...assistant([{ type: "toolCall", id: "call-1", name: "read_file", arguments: {}, thoughtSignature: "c2ln" }]), provider: "antigravity-guard", model: "antigravity-gemini-3.1-pro", stopReason: "toolUse" },
+      { role: "toolResult", toolCallId: "call-1", toolName: "read_file", content: [{ type: "text", text: "ok" }], isError: false, timestamp: 0 },
+    ] } as Context
+    const serialized = serializeContext({ context, model: { id: "antigravity-gemini-3.1-pro" } as Model<string>, options: { reasoning: "high" }, project: "project", requestId: "agent-id" }, selection)
+    expect(serialized.request.contents[0]?.parts[0]).toEqual({
+      functionCall: { name: "read_file", args: {} },
+      thoughtSignature: "c2ln",
+    })
+    expect(serialized.request.contents[1]?.parts[0]).toEqual({
+      functionResponse: { name: "read_file", response: { output: "ok" } },
+    })
+  })
 
   it("rejects a forged enabled selection before reading tool declarations", () => {
     const selection = resolveGenerationSelection(listCatalogEntries()[0]!, "off")
