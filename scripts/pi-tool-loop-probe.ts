@@ -7,7 +7,7 @@ import { StringDecoder } from "node:string_decoder"
 export const PROBE_ROUTE = {
   publicModelId: "antigravity-gemini-3.8-flash",
   reasoning: "off",
-  wireModel: "gemini-3.8-flash-tiered",
+  wireModel: "gemini-3.8-flash-low",
 } as const
 
 const COMPLETION_MARKER = "PI_EVIDENCE_LOOP_OK"
@@ -78,7 +78,6 @@ type ToolTerminalDiagnostics = {
   readonly assistantToolCallBlockCount?: number
   readonly declaredToolCount?: number
   readonly preflightCategory?: "schema" | "tool-choice" | "declaration" | "history" | "capability"
-  readonly preflightPath?: string
   readonly failure?: {
     readonly kind: "aborted" | "access" | "capability" | "model" | "quota" | "preflight" | "response" | "transport" | "callback"
     readonly status?: number
@@ -246,8 +245,13 @@ function collectEvent(line: string, events: ProbeEvent[]): void {
   }
 }
 
+function isSafeRecord(value: unknown): value is ProbeEvent {
+  if (typeof value !== "object" || value === null || Array.isArray(value) || Object.getPrototypeOf(value) !== Object.prototype) return false
+  return Object.values(Object.getOwnPropertyDescriptors(value)).every((descriptor) => "value" in descriptor)
+}
+
 function objectValue(value: unknown): ProbeEvent | undefined {
-  return typeof value === "object" && value !== null && !Array.isArray(value) ? value as ProbeEvent : undefined
+  return isSafeRecord(value) ? value : undefined
 }
 
 function hasExactMarker(message: ProbeEvent | undefined, marker: string): boolean {
@@ -374,7 +378,6 @@ function sanitizeToolDiagnostics(value: unknown): ToolTerminalDiagnostics | unde
   const assistantToolCallBlockCount = safeCount(source.assistantToolCallBlockCount)
   const declaredToolCount = safeCount(source.declaredToolCount)
   const preflightCategory = allowedPreflightCategory(source.preflightCategory)
-  const preflightPath = typeof source.preflightPath === "string" ? source.preflightPath : undefined
   const failure = sanitizeFailure(source.failure)
   const terminal = allowedStopReason(source.terminal)
 
@@ -387,7 +390,6 @@ function sanitizeToolDiagnostics(value: unknown): ToolTerminalDiagnostics | unde
   if (assistantToolCallBlockCount !== undefined) output.assistantToolCallBlockCount = assistantToolCallBlockCount
   if (declaredToolCount !== undefined) output.declaredToolCount = declaredToolCount
   if (preflightCategory) output.preflightCategory = preflightCategory
-  if (preflightPath !== undefined) output.preflightPath = preflightPath
   if (failure) output.failure = failure
   if (terminal) output.terminal = terminal
   return Object.keys(output).length ? output : undefined

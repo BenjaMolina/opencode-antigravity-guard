@@ -18,7 +18,7 @@ All seven rows below are registered for text. The exact `antigravity-gemini-3.8-
 
 | Public ID | Exposed Pi levels | Tool state | Admission |
 |---|---|---|---|
-| `antigravity-gemini-3.8-flash` | off, low, medium, high | Enabled (off) | pi-json-tool-loop/gemini-3.8-flash-off-v1 |
+| `antigravity-gemini-3.8-flash` | off, low, medium, high | Enabled (off, low, medium, high) | pi-json-tool-loop/gemini-3.8-flash-off-v1 |
 | `antigravity-gemini-3.7-flash` | off, low, medium, high | Disabled | missing-direct-evidence |
 | `antigravity-gemini-3.6-flash` | off, low, medium, high | Disabled | missing-direct-evidence |
 | `antigravity-gemini-3.1-pro` | off, low, high | Disabled | missing-direct-evidence |

@@ -53,7 +53,7 @@ describe("fixed Antigravity SSE transport", () => {
         "Content-Type": "application/json",
         "X-Trace": "safe",
       }),
-      body: expect.stringMatching(/"project":"stored-project".*"model":"gemini-3\.8-flash-tiered"|"model":"gemini-3\.8-flash-tiered".*"project":"stored-project"/),
+      body: expect.stringMatching(/"project":"stored-project".*"model":"gemini-3\.8-flash-low"|"model":"gemini-3\.8-flash-low".*"project":"stored-project"/),
     }))
     expect(onSemantic.mock.calls.map(([semantic]) => semantic)).toEqual([
       { type: "text", text: "Hi" },
@@ -320,7 +320,7 @@ describe("fixed Antigravity SSE transport", () => {
       `data: ${JSON.stringify({ response: { candidates: [{ content: { parts: [{ text: "ok" }] }, finishReason: "STOP" }] } })}\n\n`,
       { headers: { "Content-Type": "text/event-stream" } },
     ))
-    const input = { accessToken: "access-token", projectId: "stored-project", fetch, generationOptions: { reasoning: "high" as const }, model: model(), now: () => 1_000, onSemantic: vi.fn(), platform: "win32", requestId: "request-id" }
+    const input = { accessToken: "access-token", projectId: "stored-project", fetch, generationOptions: { reasoning: "high" as const }, model: { ...model(), id: "antigravity-gemini-3.7-flash" }, now: () => 1_000, onSemantic: vi.fn(), platform: "win32", requestId: "request-id" }
     const contexts = [
       { tools: [{ name: "read_file" }], messages: [{ role: "user", content: "Hello" }] },
       { messages: [{ role: "assistant", content: [{ type: "toolCall", id: "call-1", name: "read_file", arguments: {} }] }] },
@@ -392,7 +392,7 @@ describe("fixed Antigravity SSE transport", () => {
 
     expect(fetch).toHaveBeenCalledTimes(2)
     expect(fetch.mock.calls.map(([, init]) => JSON.parse(String(init?.body)).project).sort()).toEqual(["project-first", "project-second"])
-    expect(fetch.mock.calls.map(([, init]) => JSON.parse(String(init?.body)).model)).toEqual(["gemini-3.8-flash-tiered", "gemini-3.8-flash-tiered"])
+    expect(fetch.mock.calls.map(([, init]) => JSON.parse(String(init?.body)).model)).toEqual(["gemini-3.8-flash-low", "gemini-3.8-flash-low"])
     await executeStreamTransport({ ...shared, accessToken: "third", projectId: "project-third" })
     expect(fetch.mock.calls.map(([, init]) => JSON.parse(String(init?.body)).project).sort()).toEqual(["project-first", "project-second", "project-third"])
     await expect(executeStreamTransport({ ...shared, accessToken: "fourth", projectId: "project-fourth", model: { ...model(), id: "gemini-3.8-flash" } })).rejects.toMatchObject({ kind: "response" })

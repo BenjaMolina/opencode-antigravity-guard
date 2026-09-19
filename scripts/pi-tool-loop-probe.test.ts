@@ -8,7 +8,7 @@ import { isJsonProbeComplete, jsonProbeArgs, sanitizeTerminalCategory, summarize
 const route = {
   publicModelId: "antigravity-gemini-3.8-flash",
   reasoning: "off",
-  wireModel: "gemini-3.8-flash-tiered",
+  wireModel: "gemini-3.8-flash-low",
 } as const
 
 describe("Pi tool-loop probe evidence", () => {
@@ -167,7 +167,7 @@ describe("Pi tool-loop probe evidence", () => {
               assistantToolCallBlockCount: 1,
               declaredToolCount: 1,
               preflightCategory: "schema",
-              preflightPath: "$.type",
+              preflightPath: "CANARY-sensitive-preflight-path",
               failure: { kind: "preflight", status: 400, errorMessage: secret },
               terminal: "toolUse",
               raw: { secret },
@@ -210,7 +210,6 @@ describe("Pi tool-loop probe evidence", () => {
           assistantToolCallBlockCount: 1,
           declaredToolCount: 1,
           preflightCategory: "schema",
-          preflightPath: "$.type",
           failure: { kind: "preflight", status: 400 },
           terminal: "toolUse",
         },
@@ -227,6 +226,7 @@ describe("Pi tool-loop probe evidence", () => {
       }],
     }])
     expect(JSON.stringify(summary)).not.toContain(secret)
+    expect(JSON.stringify(summary)).not.toContain("CANARY-sensitive-preflight-path")
   })
 
   it.each([
