@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [1.1.17] - 2026-09-19
+
+### Added
+
+- **Gemini 3.8 Flash thinking variants in Pi** - Enabled tool capability across off, low, medium, and high reasoning levels for ntigravity-gemini-3.8-flash in @benjamolina/pi-antigravity-guard, with integer 	hinkingBudget routing aligned with official Antigravity CLI wire format.
 ### Added
 
 - **Pi Gemini tool loop** - Gemini 3.8 Flash with reasoning disabled is the only tool-enabled route; all other routes remain gated.
