@@ -19,9 +19,9 @@ All seven rows below are registered for text. The exact `antigravity-gemini-3.8-
 | Public ID | Exposed Pi levels | Tool state | Admission |
 |---|---|---|---|
 | `antigravity-gemini-3.8-flash` | off, low, medium, high | Enabled (off, low, medium, high) | pi-json-tool-loop/gemini-3.8-flash-off-v1 |
-| `antigravity-gemini-3.7-flash` | off, low, medium, high | Disabled | missing-direct-evidence |
-| `antigravity-gemini-3.6-flash` | off, low, medium, high | Disabled | missing-direct-evidence |
-| `antigravity-gemini-3.1-pro` | off, low, high | Disabled | missing-direct-evidence |
+| `antigravity-gemini-3.7-flash` | off, low, medium, high | Enabled (off, low, medium, high) | pi-json-tool-loop/gemini-3.7-flash-off-v1 |
+| `antigravity-gemini-3.6-flash` | off, low, medium, high | Enabled (off, low, medium, high) | pi-json-tool-loop/gemini-3.6-flash-off-v1 |
+| `antigravity-gemini-3.1-pro` | off, low, high | Enabled (off, low, high) | pi-json-tool-loop/gemini-3.1-pro-off-v1 |
 | `antigravity-claude-sonnet-4.6` | off, high | Disabled | claude-continuity-unproven |
 | `antigravity-claude-opus-4.6-thinking` | off, high | Disabled | claude-continuity-unproven |
 | `antigravity-gpt-oss-120b` | off, medium | Disabled | missing-direct-evidence |
