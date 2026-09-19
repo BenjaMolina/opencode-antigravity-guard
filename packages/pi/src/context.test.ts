@@ -26,6 +26,20 @@ describe("Pi text context serialization", () => {
     expect(context).toEqual(before)
   })
 
+  it("serializes valid user image parts into native inlineData parts", () => {
+    const context = { messages: [
+      { role: "user", content: [
+        { type: "text", text: "Look at this:" },
+        { type: "image", data: "aW1hZ2VEYXRh", mimeType: "image/png" },
+      ], timestamp: 0 },
+    ] } as Context
+    const serialized = serializeTextContext({ context, model, project: "project", requestId: "agent-id" })
+    expect(serialized.request.contents[0]?.parts).toEqual([
+      { text: "Look at this:" },
+      { inlineData: { mimeType: "image/png", data: "aW1hZ2VEYXRh" } },
+    ])
+  })
+
   it.each([
     [{ tools: [{}], messages: [{ role: "user", content: "x", timestamp: 0 }] }, undefined],
     [{ messages: [{ role: "toolResult", content: [], timestamp: 0 }] }, undefined],

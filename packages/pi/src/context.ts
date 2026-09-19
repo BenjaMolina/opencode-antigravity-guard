@@ -11,9 +11,10 @@ const THINKING_LEVELS = ["low", "medium", "high"] as const
 type ThinkingLevel = typeof THINKING_LEVELS[number]
 
 interface Part {
-  text: string
+  text?: string
   thought?: true
   thoughtSignature?: string
+  inlineData?: { mimeType: string, data: string }
 }
 
 interface Content {
@@ -124,7 +125,7 @@ export function serializeTextContext(input: SerializeTextContextInput): Generati
       if (role !== "user" && role !== "assistant") fail("Unsupported context role for this text-only provider.")
       const assistant = role === "assistant"
       const parts = messageParts(field(message, "content", true), assistant, assistant && entry.replay.kind === "same-public-model" && isSameProviderAndModel(message, entry.publicId))
-      textBytes += parts.reduce((total, part) => total + byteLength(part.text), 0)
+      textBytes += parts.reduce((total, part) => total + (part.text ? byteLength(part.text) : (part.inlineData ? byteLength(part.inlineData.data) : 0)), 0)
       if (textBytes > MAX_TEXT_BYTES) fail("Text context is too large.")
       contents.push({ role: role === "assistant" ? "model" : "user", parts })
     }
@@ -192,6 +193,13 @@ function messagePart(part: Record<string, unknown>, assistant: boolean, sameProv
     const text = field(part, "thinking", true)
     if (typeof text !== "string" || !text) fail("Only text context is supported by this provider.")
     return { text }
+  }
+  if (type === "image") {
+    const rawData = field(part, "data") ?? (isRecord(field(part, "source")) ? field(field(part, "source") as Record<string, unknown>, "data") : undefined)
+    if (typeof rawData !== "string" || !rawData) fail("Invalid image data.")
+    const rawMime = field(part, "mimeType") ?? (isRecord(field(part, "source")) ? field(field(part, "source") as Record<string, unknown>, "media_type") : undefined)
+    const mimeType = typeof rawMime === "string" && rawMime ? rawMime : "image/jpeg"
+    return { inlineData: { mimeType, data: rawData } }
   }
   fail("Only text context is supported by this provider.")
 }
