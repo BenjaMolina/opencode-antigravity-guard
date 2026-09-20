@@ -2,6 +2,7 @@ import type { Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai"
 
 import { CLAUDE_CUSTOM_PARAMETERS_PROFILE, getCatalogEntry, resolveGenerationSelection, type GenerationSelection, type ToolCapability } from "./catalog.ts"
 import { normalizeCustomToolSchema } from "./tool-schema.ts"
+import { buildAntigravityEnvelope } from "./envelope.ts"
 import { hasToolContext, prepareToolContext, replayToolHistory, type ToolReplayDiagnostics } from "./tool-context.ts"
 
 const MAX_TEXT_BYTES = 8 * 1024 * 1024
@@ -35,7 +36,7 @@ export interface GenerationRequest {
   model: string
   request: {
     contents: Content[]
-    systemInstruction?: { parts: Part[] }
+    systemInstruction?: { role?: "user", parts: Part[] }
     tools?: { functionDeclarations: readonly GeminiFunctionDeclaration[] }[]
     toolConfig?: { functionCallingConfig: { mode: "AUTO" | "NONE" } }
     generationConfig: {
@@ -45,6 +46,8 @@ export interface GenerationRequest {
         | { thinkingLevel: "low" | "medium" | "high", includeThoughts: boolean }
         | { thinkingBudget: number, includeThoughts: boolean }
     }
+    sessionId?: string
+    labels?: Record<string, string>
   }
   requestType: "agent"
   userAgent: "antigravity"
@@ -92,6 +95,13 @@ export function serializeContext(input: SerializeTextContextInput, injectedSelec
     prepared?.declarations.length ?? 0,
   )
   const { systemInstruction, generationConfig } = text.request
+  const envelope = buildAntigravityEnvelope({
+    wireModelId: selection.route.wireModel,
+    family: entry.response.family,
+    contentsCount: contents.length,
+    messages: isDenseArray(messages),
+    injectedRequestId: input.requestId,
+  })
   return { ...text, request: {
     contents,
     ...(systemInstruction ? { systemInstruction } : {}),
@@ -106,7 +116,9 @@ export function serializeContext(input: SerializeTextContextInput, injectedSelec
       ...(prepared.mode === "NONE" ? { toolConfig: { functionCallingConfig: { mode: "NONE" } } } : {}),
     } : {}),
     generationConfig,
-  } }
+    sessionId: envelope.sessionId,
+    labels: envelope.labels,
+  }, requestId: envelope.requestId }
 }
 
 export function serializeTextContext(input: SerializeTextContextInput): GenerationRequest {
@@ -141,9 +153,16 @@ export function serializeTextContext(input: SerializeTextContextInput): Generati
       contents.push({ role: role === "assistant" ? "model" : "user", parts })
     }
     if (!contents.length) fail("A text conversation is required.")
-    const systemInstruction = systemPrompt === undefined ? undefined : { parts: [{ text: systemPrompt }] }
+    const systemInstruction = systemPrompt === undefined ? undefined : { role: "user" as const, parts: [{ text: systemPrompt }] }
     const temperature = option(options, "temperature")
     const maxTokens = option(options, "maxTokens")
+    const envelope = buildAntigravityEnvelope({
+      wireModelId: route.wireModel,
+      family: entry.response.family,
+      contentsCount: contents.length,
+      messages: isDenseArray(field(context, "messages", true)),
+      injectedRequestId: requestId,
+    })
     return { project, model: route.wireModel, request: { contents, ...(systemInstruction ? { systemInstruction } : {}), generationConfig: {
       temperature: typeof temperature === "number" ? temperature : 1,
       maxOutputTokens: resolveOutputTokens(maxTokens, entry.descriptor.maxTokens, route.thinking),
@@ -151,7 +170,7 @@ export function serializeTextContext(input: SerializeTextContextInput): Generati
         const thinkingConfig = serializeThinkingConfig(route.thinking)
         return thinkingConfig ? { thinkingConfig } : {}
       })(),
-    } }, requestType: "agent", userAgent: "antigravity", requestId }
+    }, sessionId: envelope.sessionId, labels: envelope.labels }, requestType: "agent", userAgent: "antigravity", requestId: envelope.requestId }
   } catch (error) {
     if (error instanceof ContextSerializationError) throw error
     fail("Invalid text context.")
