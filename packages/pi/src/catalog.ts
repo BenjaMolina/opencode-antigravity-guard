@@ -13,7 +13,8 @@ export interface ToolEvidenceRef {
 }
 
 export const GEMINI_PARAMETERS_JSON_SCHEMA_PROFILE = "gemini-parameters-json-schema" as const
-export type ToolSchemaProfile = typeof GEMINI_PARAMETERS_JSON_SCHEMA_PROFILE
+export const CLAUDE_CUSTOM_PARAMETERS_PROFILE = "claude-custom-parameters" as const
+export type ToolSchemaProfile = typeof GEMINI_PARAMETERS_JSON_SCHEMA_PROFILE | typeof CLAUDE_CUSTOM_PARAMETERS_PROFILE
 
 export type ToolCapability =
   | { readonly state: "disabled", readonly contractRevision: 1, readonly reason: "missing-direct-evidence" | "stale-or-conflicting-evidence" | "claude-continuity-unproven" }
@@ -116,10 +117,10 @@ const CATALOG = freeze(defineCatalog([{
     maxTokens: 64_000,
   },
   routes: {
-    off: { wireModel: "claude-sonnet-4-6", thinking: { kind: "budget", budget: 0, includeThoughts: false }, tools: disabled("claude-continuity-unproven") },
-    high: { wireModel: "claude-sonnet-4-6", thinking: { kind: "budget", budget: 1024, includeThoughts: true }, tools: disabled("claude-continuity-unproven") },
+    off: { wireModel: "claude-sonnet-4-6", thinking: { kind: "budget", budget: 0, includeThoughts: false }, tools: enabled({ record: "pi-json-tool-loop", revision: "claude-sonnet-4.6-off-v1", publicModelId: "antigravity-claude-sonnet-4.6", reasoning: "off", wireModel: "claude-sonnet-4-6" }, CLAUDE_CUSTOM_PARAMETERS_PROFILE) },
+    high: { wireModel: "claude-sonnet-4-6", thinking: { kind: "budget", budget: 1024, includeThoughts: true }, tools: enabled({ record: "pi-json-tool-loop", revision: "claude-sonnet-4.6-high-v1", publicModelId: "antigravity-claude-sonnet-4.6", reasoning: "high", wireModel: "claude-sonnet-4-6" }, CLAUDE_CUSTOM_PARAMETERS_PROFILE) },
   },
-  replay: { kind: "strip" },
+  replay: { kind: "same-public-model" },
   response: { kind: "gemini-envelope", family: "claude" },
 }, {
   publicId: "antigravity-claude-opus-4.6-thinking",
@@ -130,10 +131,10 @@ const CATALOG = freeze(defineCatalog([{
     maxTokens: 64_000,
   },
   routes: {
-    off: { wireModel: "claude-opus-4-6-thinking", thinking: { kind: "budget", budget: 0, includeThoughts: false }, tools: disabled("claude-continuity-unproven") },
-    high: { wireModel: "claude-opus-4-6-thinking", thinking: { kind: "budget", budget: 1024, includeThoughts: true }, tools: disabled("claude-continuity-unproven") },
+    off: { wireModel: "claude-opus-4-6-thinking", thinking: { kind: "budget", budget: 0, includeThoughts: false }, tools: enabled({ record: "pi-json-tool-loop", revision: "claude-opus-4.6-thinking-off-v1", publicModelId: "antigravity-claude-opus-4.6-thinking", reasoning: "off", wireModel: "claude-opus-4-6-thinking" }, CLAUDE_CUSTOM_PARAMETERS_PROFILE) },
+    high: { wireModel: "claude-opus-4-6-thinking", thinking: { kind: "budget", budget: 1024, includeThoughts: true }, tools: enabled({ record: "pi-json-tool-loop", revision: "claude-opus-4.6-thinking-high-v1", publicModelId: "antigravity-claude-opus-4.6-thinking", reasoning: "high", wireModel: "claude-opus-4-6-thinking" }, CLAUDE_CUSTOM_PARAMETERS_PROFILE) },
   },
-  replay: { kind: "strip" },
+  replay: { kind: "same-public-model" },
   response: { kind: "gemini-envelope", family: "claude" },
 }, {
   publicId: "antigravity-gpt-oss-120b",
@@ -144,10 +145,10 @@ const CATALOG = freeze(defineCatalog([{
     maxTokens: 32_768,
   },
   routes: {
-    off: { wireModel: "gpt-oss-120b-medium", thinking: { kind: "omit" }, tools: disabled("missing-direct-evidence") },
-    medium: { wireModel: "gpt-oss-120b-medium", thinking: { kind: "budget", budget: 8192, includeThoughts: true }, tools: disabled("missing-direct-evidence") },
+    off: { wireModel: "gpt-oss-120b-medium", thinking: { kind: "omit" }, tools: enabled({ record: "pi-json-tool-loop", revision: "gpt-oss-120b-off-v1", publicModelId: "antigravity-gpt-oss-120b", reasoning: "off", wireModel: "gpt-oss-120b-medium" }, CLAUDE_CUSTOM_PARAMETERS_PROFILE) },
+    medium: { wireModel: "gpt-oss-120b-medium", thinking: { kind: "budget", budget: 8192, includeThoughts: true }, tools: enabled({ record: "pi-json-tool-loop", revision: "gpt-oss-120b-medium-v1", publicModelId: "antigravity-gpt-oss-120b", reasoning: "medium", wireModel: "gpt-oss-120b-medium" }, CLAUDE_CUSTOM_PARAMETERS_PROFILE) },
   },
-  replay: { kind: "strip" },
+  replay: { kind: "same-public-model" },
   response: { kind: "gemini-envelope", family: "gpt-oss" },
 }] as const satisfies readonly CatalogEntry[]))
 

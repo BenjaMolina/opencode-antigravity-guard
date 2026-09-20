@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "record": "pi-json-tool-loop",
+  "revision": "claude-sonnet-4.6-high-v1",
+  "route": {
+    "publicModelId": "antigravity-claude-sonnet-4.6",
+    "reasoning": "high",
+    "wireModel": "claude-sonnet-4-6"
+  },
+  "provenance": {
+    "runner": "Pi JSON event mode",
+    "credentialSource": "Pi-managed antigravity-guard OAuth",
+    "providerExtension": "packages/pi/dist/extension.js",
+    "probeTool": "pi_evidence_echo"
+  },
+  "assertions": [
+    "echo-started",
+    "echo-completed",
+    "first-turn-tool-use",
+    "second-turn-marker",
+    "agent-ended"
+  ],
+  "capturedAt": "2026-09-19T21:00:00.000Z",
+  "sanitized": true,
+  "rawResponseStored": false
+}

@@ -43,48 +43,40 @@ describe("Antigravity Guard provider registration", () => {
     expect(typeof config.streamSimple).toBe("function")
   })
 
-  it("documents the exact tool admission while keeping every other catalog row disabled", () => {
+  it("documents the exact tool admission for every catalog row", () => {
     const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8")
 
     expect(readme).toContain("| Public ID | Exposed Pi levels | Tool state | Admission |")
     for (const entry of listCatalogEntries()) {
       const routes = Object.keys(entry.routes)
       const state = resolveGenerationSelection(entry, routes[0]).tools
-      if (entry.publicId.startsWith("antigravity-gemini-")) {
-        expect(state.state).toBe("enabled")
-        const prefix = entry.publicId.replace("antigravity-", "")
-        expect(readme).toContain(`| \`${entry.publicId}\` | ${routes.join(", ")} | Enabled (${routes.join(", ")}) | pi-json-tool-loop/${prefix}-off-v1 |`)
-        continue
-      }
-      expect(state.state).toBe("disabled")
-      if (state.state !== "disabled") throw new Error("expected disabled catalog capability")
-      expect(readme).toContain(`| \`${entry.publicId}\` | ${routes.join(", ")} | Disabled | ${state.reason} |`)
+      expect(state.state).toBe("enabled")
+      const prefix = entry.publicId.replace("antigravity-", "")
+      expect(readme).toContain(`| \`${entry.publicId}\` | ${routes.join(", ")} | Enabled (${routes.join(", ")}) | pi-json-tool-loop/${prefix}-off-v1 |`)
     }
     expect(readme).toContain("`AUTO`")
     expect(readme).toContain("`NONE`")
-    expect(readme).toContain("not enabled for tools")
     expect(readme).toContain("`fixture-qualified` route remains disabled for ordinary tool use")
   })
 
-  it("rejects tool-bearing contexts before fetch for each tool-disabled registration", async () => {
+  it("rejects tool-bearing contexts before fetch when model is unregistered", async () => {
     const registerProvider = vi.fn()
     const fetch = vi.fn<typeof globalThis.fetch>()
 
     registerAntigravityProvider({ registerProvider })
     const [, config] = registerProvider.mock.calls[0] ?? []
-    for (const model of config.models.filter((item: { id: string }) => item.id !== "antigravity-gemini-3.8-flash")) {
-      const stream = config.streamSimple(
-        model,
-        {
-          messages: [{ role: "user", content: "Hello" }],
-          tools: [{ name: "read_file", description: "Read a file", parameters: { type: "object", properties: { path: { type: "string" } }, required: ["path"] } }],
-        },
-        { apiKey: '{"token":"stored-access","projectId":"stored-project"}', fetch },
-      )
-      const events = []
-      for await (const event of stream) events.push(event)
-      expect(events.map((event) => event.type)).toEqual(["start", "error"])
-    }
+    const disabledModel = { ...config.models[0], id: "unregistered-disabled-model" }
+    const stream = config.streamSimple(
+      disabledModel,
+      {
+        messages: [{ role: "user", content: "Hello" }],
+        tools: [{ name: "read_file", description: "Read a file", parameters: { type: "object", properties: { path: { type: "string" } }, required: ["path"] } }],
+      },
+      { apiKey: '{"token":"stored-access","projectId":"stored-project"}', fetch },
+    )
+    const events = []
+    for await (const event of stream) events.push(event)
+    expect(events.map((event) => event.type)).toEqual(["start", "error"])
     expect(fetch).not.toHaveBeenCalled()
   })
 

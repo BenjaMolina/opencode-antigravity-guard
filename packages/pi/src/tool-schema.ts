@@ -187,3 +187,34 @@ function isJsonObject(value: JsonValue): value is JsonObject {
 function define(target: Record<string, JsonValue>, key: string, value: JsonValue): void {
   Object.defineProperty(target, key, { value, enumerable: true, configurable: false, writable: false })
 }
+
+const CUSTOM_TOOL_SCHEMA_ALLOW = new Set([
+  "type",
+  "description",
+  "properties",
+  "required",
+  "items",
+  "enum",
+])
+
+export function normalizeCustomToolSchema(schema: unknown): JsonObject {
+  if (!schema || typeof schema !== "object" || Array.isArray(schema)) return {}
+  const out: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(schema as Record<string, unknown>)) {
+    if (!CUSTOM_TOOL_SCHEMA_ALLOW.has(key)) continue
+    if (key === "properties" && value && typeof value === "object" && !Array.isArray(value)) {
+      const props: Record<string, unknown> = {}
+      for (const [propName, propSchema] of Object.entries(value as Record<string, unknown>)) {
+        props[propName] = normalizeCustomToolSchema(propSchema)
+      }
+      out.properties = props
+      continue
+    }
+    if (key === "items") {
+      out.items = normalizeCustomToolSchema(value)
+      continue
+    }
+    out[key] = value
+  }
+  return out as JsonObject
+}

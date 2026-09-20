@@ -183,18 +183,30 @@ describe("Pi text context serialization", () => {
       "antigravity-claude-sonnet-4.6",
       "antigravity-claude-opus-4.6-thinking",
       "antigravity-gpt-oss-120b",
-    ])("strips historical signatures and rejects tools before serializing %s", (id) => {
+    ])("preserves same-model signatures for %s", (id) => {
       const signed = { messages: [
         { role: "user", content: "x", timestamp: 0 },
         { role: "assistant", content: [{ type: "thinking", thinking: "plan", thinkingSignature: "c2ln" }, { type: "text", text: "answer", textSignature: "c2ln" }], provider: "antigravity-guard", model: id, api: "antigravity-guard-sse", usage: {}, stopReason: "stop", timestamp: 0 },
       ] } as Context
       const serialize = (context: Context) => serializeTextContext({ context, model: { ...model, id }, project: "project", requestId: "agent-id" })
-      expect(serialize(signed).request.contents[1]?.parts).toEqual([{ text: "plan" }, { text: "answer" }])
+      expect(serialize(signed).request.contents[1]?.parts).toEqual([
+        { thought: true, text: "plan", thoughtSignature: "c2ln" },
+        { text: "answer", thoughtSignature: "c2ln" },
+      ])
       for (const unsupported of [
-        { tools: [{}], messages: [{ role: "user", content: "x", timestamp: 0 }] },
         { messages: [{ role: "toolResult", content: [], timestamp: 0 }] },
-        { messages: [{ role: "user", content: [{ type: "image" }], timestamp: 0 }] },
       ]) expect(() => serialize(unsupported as Context)).toThrow(ContextSerializationError)
+    })
+
+    it("serializes Claude and GPT declarations as custom parameters", () => {
+      const context = { tools: [{ name: "read_file", description: "Read one file", parameters: { type: "object", properties: { path: { type: "string" } }, required: ["path"], additionalProperties: false } }], messages: [{ role: "user", content: "x", timestamp: 0 }] } as Context
+      const selection = resolveGenerationSelection(getCatalogEntry("antigravity-claude-sonnet-4.6")!, "high")
+      const request = serializeContext({ context, model: { id: "antigravity-claude-sonnet-4.6" } as Model<string>, options: { reasoning: "high" }, project: "project", requestId: "agent-id" }, selection)
+      expect(request.request.tools?.[0]?.functionDeclarations[0]).toEqual({
+        name: "read_file",
+        description: "Read one file",
+        parameters: { type: "object", properties: { path: { type: "string" } }, required: ["path"] },
+      })
     })
 
     it("serializes Claude high as its literal integer budget and rejects an equal explicit output limit", () => {
