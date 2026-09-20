@@ -17,9 +17,9 @@ describe("Pi text context serialization", () => {
       { type: "text", text: "first" }, { type: "text", text: "  " },
     ], timestamp: 0 }, assistant([{ type: "text", text: "answer" }])] } as Context
     const before = structuredClone(context)
-    expect(request(context, { temperature: 0.5, maxTokens: 12 })).toEqual({
-      project: "project", model: "gemini-3.8-flash-low", requestType: "agent", userAgent: "antigravity", requestId: "agent-id",
-      request: { systemInstruction: { parts: [{ text: " system " }] }, contents: [
+    expect(request(context, { temperature: 0.5, maxTokens: 12 })).toMatchObject({
+      project: "project", model: "gemini-3.8-flash-low", requestType: "agent", userAgent: "antigravity",
+      request: { systemInstruction: { role: "user", parts: [{ text: " system " }] }, contents: [
         { role: "user", parts: [{ text: "first" }, { text: "  " }] }, { role: "model", parts: [{ text: "answer" }] },
       ], generationConfig: { temperature: 0.5, maxOutputTokens: 12, thinkingConfig: { thinkingBudget: 0, includeThoughts: false } } },
     })
@@ -312,7 +312,7 @@ describe("Pi text context serialization", () => {
       const withoutDiagnostics = serializeContext({ context, model, project: "project", requestId: "agent-id" }, { ...selection, tools: enabled })
       expect(JSON.stringify(request)).toBe(JSON.stringify(withoutDiagnostics))
       expect(JSON.stringify(serializeContext({ context: { messages: [{ role: "user", content: "x", timestamp: 0 }] } as Context, model, project: "project", requestId: "agent-id" }))).toBe(JSON.stringify(serializeTextContext({ context: { messages: [{ role: "user", content: "x", timestamp: 0 }] } as Context, model, project: "project", requestId: "agent-id" })))
-      expect(JSON.stringify(request.request)).toBe(JSON.stringify({ contents: [{ role: "user", parts: [{ text: "x" }] }], tools: [{ functionDeclarations: [{ name: "read_file", description: "Read one file", parametersJsonSchema: { properties: { path: { type: "string" } }, required: ["path"], type: "object" } }] }], generationConfig: { temperature: 1, maxOutputTokens: 4096, thinkingConfig: { thinkingBudget: 0, includeThoughts: false } } }))
+      expect(request.request).toMatchObject({ contents: [{ role: "user", parts: [{ text: "x" }] }], tools: [{ functionDeclarations: [{ name: "read_file", description: "Read one file", parametersJsonSchema: { properties: { path: { type: "string" } }, required: ["path"], type: "object" } }] }], generationConfig: { temperature: 1, maxOutputTokens: 4096, thinkingConfig: { thinkingBudget: 0, includeThoughts: false } } })
       expect(diagnostics).toEqual([{
         replayMode: "none",
         recoveryCount: 0,
@@ -565,5 +565,64 @@ describe("Pi text context serialization", () => {
         { functionResponse: { name: "read_file", response: { output: "gemini file content" } } },
       ],
     })
+  })
+
+  it("populates Antigravity envelope labels and sessionId for Claude, GPT, and Gemini", () => {
+    const context = { messages: [{ role: "user", content: "hello", timestamp: 12345 }] } as Context
+
+    // 1. Claude Sonnet 4.6
+    const claudeReq = serializeTextContext({
+      context,
+      model: { id: "antigravity-claude-sonnet-4.6" } as Model<string>,
+      project: "proj-1",
+      requestId: "agent-11111111-2222-3333-4444-555555555555",
+    })
+    expect(claudeReq.request.sessionId).toBeDefined()
+    expect(claudeReq.request.labels).toEqual(expect.objectContaining({
+      used_claude: "true",
+      used_claude_conservative: "true",
+      used_non_gemini_model: "true",
+      model_enum: "MODEL_PLACEHOLDER_M35",
+      last_step_index: "0",
+    }))
+    expect(claudeReq.requestId).toMatch(/^agent\/[a-f0-9-]+\/[a-f0-9-]+\/1$/)
+
+    // 2. Claude Opus 4.6 Thinking
+    const opusReq = serializeTextContext({
+      context,
+      model: { id: "antigravity-claude-opus-4.6-thinking" } as Model<string>,
+      project: "proj-1",
+      requestId: "agent-11111111-2222-3333-4444-555555555555",
+    })
+    expect(opusReq.request.labels?.model_enum).toBe("MODEL_PLACEHOLDER_M26")
+    expect(opusReq.request.labels?.used_claude).toBe("true")
+
+    // 3. GPT-OSS 120B
+    const gptReq = serializeTextContext({
+      context,
+      model: { id: "antigravity-gpt-oss-120b" } as Model<string>,
+      project: "proj-1",
+      requestId: "agent-11111111-2222-3333-4444-555555555555",
+    })
+    expect(gptReq.request.labels).toEqual(expect.objectContaining({
+      used_claude: "false",
+      used_claude_conservative: "false",
+      used_non_gemini_model: "true",
+      model_enum: "MODEL_OPENAI_GPT_OSS_120B_MEDIUM",
+    }))
+
+    // 4. Gemini 3.8 Flash
+    const geminiReq = serializeTextContext({
+      context,
+      model: { id: "antigravity-gemini-3.8-flash" } as Model<string>,
+      project: "proj-1",
+      requestId: "agent-11111111-2222-3333-4444-555555555555",
+    })
+    expect(geminiReq.request.labels).toEqual(expect.objectContaining({
+      used_claude: "false",
+      used_claude_conservative: "false",
+      used_non_gemini_model: "false",
+      model_enum: "MODEL_PLACEHOLDER_M320",
+    }))
   })
 })
