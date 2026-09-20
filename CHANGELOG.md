@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [1.1.21] - 2026-09-19
+
+### Added
+
+- **Claude and GPT-OSS tool support in Pi** - Enabled tool capability for Claude Sonnet 4.6, Claude Opus 4.6 Thinking, and GPT-OSS 120B in @benjamolina/pi-antigravity-guard using the claude-custom-parameters schema bridge and same-public-model replay.
 ## [1.1.20] - 2026-09-19
 
 ### Added
