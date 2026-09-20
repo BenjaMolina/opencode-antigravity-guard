@@ -457,4 +457,113 @@ describe("Pi text context serialization", () => {
     expect(() => serializeContext({ context, model, project: "project", requestId: "agent-id" }, forged)).toThrow("PI_TOOL_SCHEMA_PROFILE_UNSUPPORTED")
   })
 
+
+  it.each([
+    ["antigravity-claude-sonnet-4.6", "claude-sonnet-4-6"],
+    ["antigravity-claude-opus-4.6-thinking", "claude-opus-4-6-thinking"],
+    ["antigravity-gpt-oss-120b", "gpt-oss-120b-medium"],
+  ])("preserves matching tool call IDs on functionCall and functionResponse for %s", (publicId, wireModel) => {
+    const context = {
+      tools: [{ name: "read_file", description: "Read file", parameters: { type: "object", properties: { path: { type: "string" } } } }],
+      messages: [
+        { role: "user", content: "read file", timestamp: 0 },
+        {
+          role: "assistant",
+          content: [{ type: "toolCall", id: "call_abc-123", name: "read_file", arguments: { path: "test.txt" } }],
+          stopReason: "toolUse",
+          timestamp: 0,
+        },
+        {
+          role: "toolResult",
+          toolCallId: "call_abc-123",
+          toolName: "read_file",
+          content: [{ type: "text", text: "file content" }],
+          isError: false,
+          timestamp: 0,
+        },
+      ],
+    } as Context
+    const entry = getCatalogEntry(publicId)!
+    const selection = resolveGenerationSelection(entry, "off")
+    const serialized = serializeContext({
+      context,
+      model: { id: publicId } as Model<string>,
+      options: {},
+      project: "test-project",
+      requestId: "test-req",
+    }, selection)
+
+    expect(serialized.model).toBe(wireModel)
+    const contents = serialized.request.contents
+    expect(contents).toHaveLength(3)
+    expect(contents[0]).toEqual({
+      role: "user",
+      parts: [{ text: "read file" }],
+    })
+    expect(contents[1]).toEqual({
+      role: "model",
+      parts: [
+        { functionCall: { id: "call_abc-123", name: "read_file", args: { path: "test.txt" } } },
+      ],
+    })
+    expect(contents[2]).toEqual({
+      role: "user",
+      parts: [
+        { functionResponse: { id: "call_abc-123", name: "read_file", response: { output: "file content" } } },
+      ],
+    })
+  })
+
+  it("omits tool call IDs on functionCall and functionResponse for Gemini models", () => {
+    const context = {
+      tools: [{ name: "read_file", description: "Read file", parameters: { type: "object", properties: { path: { type: "string" } } } }],
+      messages: [
+        { role: "user", content: "read file", timestamp: 0 },
+        {
+          role: "assistant",
+          provider: "antigravity-guard",
+          model: "antigravity-gemini-3.8-flash",
+          content: [{ type: "toolCall", id: "call_gemini-456", name: "read_file", arguments: { path: "test.txt" }, thoughtSignature: "c2ln" }],
+          stopReason: "toolUse",
+          timestamp: 0,
+        },
+        {
+          role: "toolResult",
+          toolCallId: "call_gemini-456",
+          toolName: "read_file",
+          content: [{ type: "text", text: "gemini file content" }],
+          isError: false,
+          timestamp: 0,
+        },
+      ],
+    } as Context
+    const entry = getCatalogEntry("antigravity-gemini-3.8-flash")!
+    const selection = resolveGenerationSelection(entry, "off")
+    const serialized = serializeContext({
+      context,
+      model: { id: "antigravity-gemini-3.8-flash" } as Model<string>,
+      options: {},
+      project: "test-project",
+      requestId: "test-req",
+    }, selection)
+
+    const contents = serialized.request.contents
+    expect(contents).toHaveLength(3)
+    expect(contents[0]).toEqual({
+      role: "user",
+      parts: [{ text: "read file" }],
+    })
+    expect(contents[1]).toEqual({
+      role: "model",
+      parts: [
+        { functionCall: { name: "read_file", args: { path: "test.txt" } }, thoughtSignature: "c2ln" },
+      ],
+    })
+    expect(contents[2]).toEqual({
+      role: "user",
+      parts: [
+        { functionResponse: { name: "read_file", response: { output: "gemini file content" } } },
+      ],
+    })
+  })
 })

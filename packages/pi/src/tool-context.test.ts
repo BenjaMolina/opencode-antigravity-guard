@@ -217,4 +217,64 @@ describe("Pi tool history replay", () => {
       ],
     })
   })
+
+  it("preserves matching sanitized IDs on functionCall and functionResponse when includeToolCallId is enabled", () => {
+    const history = [
+      assistant([call("call 123#test", "read_file", { path: "hello.txt" })]),
+      result("call 123#test", ["file content"]),
+    ]
+    const replayed = replayToolHistory(history as never[], part, undefined, {
+      requireSignedToolCalls: false,
+      isSameModel: () => true,
+      toolCallSignature: () => undefined,
+      includeToolCallId: true,
+    })
+    expect(replayed).toHaveLength(2)
+    expect(replayed[0]).toEqual({
+      role: "model",
+      parts: [
+        { functionCall: { id: "call_123_test", name: "read_file", args: { path: "hello.txt" } } },
+      ],
+    })
+    expect(replayed[1]).toEqual({
+      role: "user",
+      parts: [
+        { functionResponse: { id: "call_123_test", name: "read_file", response: { output: "file content" } } },
+      ],
+    })
+  })
+
+  it("includes sanitized IDs in synthetic missing results when includeToolCallId is enabled", () => {
+    const orphan = [assistant([call("call_orphan", "read_file", { path: "foo" })])]
+    const replayed = replayToolHistory(orphan, part, undefined, {
+      requireSignedToolCalls: false,
+      isSameModel: () => true,
+      toolCallSignature: () => undefined,
+      includeToolCallId: true,
+    })
+    expect(replayed).toHaveLength(2)
+    expect(replayed[0]).toEqual({
+      role: "model",
+      parts: [
+        { functionCall: { id: "call_orphan", name: "read_file", args: { path: "foo" } } },
+      ],
+    })
+    expect(replayed[1]).toEqual({
+      role: "user",
+      parts: [
+        {
+          functionResponse: {
+            id: "call_orphan",
+            name: "read_file",
+            response: {
+              error: {
+                code: "PI_TOOL_RESULT_MISSING",
+                message: "Tool execution did not complete or its result was not recorded. Treat the call as failed; do not assume it had no side effects and do not retry it automatically.",
+              },
+            },
+          },
+        },
+      ],
+    })
+  })
 })

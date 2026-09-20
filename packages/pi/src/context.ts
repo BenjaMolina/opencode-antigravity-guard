@@ -76,17 +76,20 @@ export function serializeContext(input: SerializeTextContextInput, injectedSelec
   const { toolChoice: _choice, ...textOptions } = isRecord(options) ? options : {}
   const text = serializeTextContext({ ...input, context: { ...textContext, messages: [{ role: "user", content: "placeholder", timestamp: 0 }] } as Context, options: textOptions as SimpleStreamOptions })
   const sameModel = (message: Record<string, unknown>) => field(message, "role") === "assistant" && entry.replay.kind === "same-public-model" && isSameProviderAndModel(message, entry.publicId)
-  const signedToolReplay = geminiRequiresSignedToolReplay(selection.route.wireModel) ? {
-    requireSignedToolCalls: true,
+  const requireSigned = geminiRequiresSignedToolReplay(selection.route.wireModel)
+  const includeToolCallId = entry.response.family === "claude" || entry.response.family === "gpt-oss"
+  const toolReplayPolicy = (requireSigned || includeToolCallId) ? {
+    requireSignedToolCalls: requireSigned,
     isSameModel: sameModel,
     toolCallSignature: (part: Record<string, unknown>, message: Record<string, unknown>) => sameModel(message) ? validThoughtSignature(field(part, "thoughtSignature")) : undefined,
+    includeToolCallId,
   } : undefined
   const contents = replayToolHistory(
     isDenseArray(messages),
     (part, message) => messagePart(part, field(message, "role") === "assistant", sameModel(message)),
     onDiagnostics,
-    signedToolReplay,
-        prepared?.declarations.length ?? 0,
+    toolReplayPolicy,
+    prepared?.declarations.length ?? 0,
   )
   const { systemInstruction, generationConfig } = text.request
   return { ...text, request: {

@@ -47,10 +47,18 @@ export interface ToolReplayDiagnostics {
   readonly declaredToolCount: number
 }
 
+let toolCallCounter = 0
+export function sanitizeToolCallId(id: string, fallbackName?: string): string {
+  const cleaned = id.replace(/[^a-zA-Z0-9_-]/g, "_")
+  const capped = cleaned.slice(0, 64)
+  return capped || `${fallbackName || "tool"}_${++toolCallCounter}`
+}
+
 export interface ToolReplayPolicy {
   readonly requireSignedToolCalls: boolean
   readonly isSameModel: (message: Record<string, unknown>) => boolean
   readonly toolCallSignature: (part: Record<string, unknown>, message: Record<string, unknown>) => string | undefined
+  readonly includeToolCallId?: boolean
 }
 
 export function replayToolHistory(messages: unknown[], serializePart: (part: Record<string, unknown>, message: Record<string, unknown>) => WirePart, onDiagnostics?: (diagnostics: ToolReplayDiagnostics) => void, policy?: ToolReplayPolicy, declaredToolCount = 0): WireContent[] {
@@ -79,7 +87,7 @@ export function replayToolHistory(messages: unknown[], serializePart: (part: Rec
       const actual = pending!.results.get(call.id)
       if (actual) return actual
       recoveryCount.value += 1
-      return pending!.observations ? observation(call, missingResultText()) : missingResult(call)
+      return pending!.observations ? observation(call, missingResultText()) : missingResult(call, policy?.includeToolCallId)
     })
     if (pending.extraParts?.length) {
       turnParts.push(...pending.extraParts)
@@ -118,7 +126,7 @@ export function replayToolHistory(messages: unknown[], serializePart: (part: Rec
       const text = textParts.join("\n\n")
       const outputText = text || (imageParts.length > 0 ? "[Image content]" : "")
       const response = value(current, "isError") === true ? { error: outputText } : { output: outputText }
-      pending.results.set(id, pending.observations ? observation(call, outputText) : { functionResponse: { name: call.name, response } })
+      pending.results.set(id, pending.observations ? observation(call, outputText) : { functionResponse: { ...(policy?.includeToolCallId ? { id: sanitizeToolCallId(call.id, call.name) } : {}), name: call.name, response } })
       if (imageParts.length > 0) {
         if (!pending.extraParts) pending.extraParts = []
         pending.extraParts.push(...imageParts)
@@ -170,7 +178,7 @@ export function replayToolHistory(messages: unknown[], serializePart: (part: Rec
     appendTurn("model", parts.flatMap((part) => {
       if (!("call" in part)) return [part]
       if (observations) return []
-      return [{ functionCall: { name: part.call.name, args: part.call.args }, ...(part.signature ? { thoughtSignature: part.signature } : {}) }]
+      return [{ functionCall: { ...(policy?.includeToolCallId ? { id: sanitizeToolCallId(part.call.id, part.call.name) } : {}), name: part.call.name, args: part.call.args }, ...(part.signature ? { thoughtSignature: part.signature } : {}) }]
     }))
     pending = { calls: group, results: new Map(), observations }
   }
@@ -189,9 +197,10 @@ function missingResultText(): string {
   return "Tool execution did not complete or its result was not recorded. Treat the call as failed; do not assume it had no side effects and do not retry it automatically."
 }
 
-function missingResult(call: PendingCall): WirePart {
+function missingResult(call: PendingCall, includeToolCallId?: boolean): WirePart {
   return {
     functionResponse: {
+      ...(includeToolCallId ? { id: sanitizeToolCallId(call.id, call.name) } : {}),
       name: call.name,
       response: {
         error: {
