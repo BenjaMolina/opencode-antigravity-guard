@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.23 (2026-09-19)
+
+- Align Pi generation requests with official Google Antigravity CLI wire format by populating `request.sessionId`, `request.labels` (`used_claude`, `used_claude_conservative`, `used_non_gemini_model`, `model_enum`, `trajectory_id`, `request_id`, `last_step_index`), `systemInstruction.role: "user"`, and CLI-structured `requestId`, fixing Turn 1 rejection for Claude and GPT-OSS models.
+
 ## 1.1.22 (2026-09-19)
 
 - Fix Claude and GPT-OSS tool continuation Turn 2 rejection (`Error: Antigravity generation request was rejected`) by preserving matching sanitized tool call IDs on both `functionCall` and `functionResponse` in Pi.

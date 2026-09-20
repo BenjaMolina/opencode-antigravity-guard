@@ -11,6 +11,6 @@ Align \packages/pi\ generation requests with the authentic Google Antigravity CL
 - [x] Task 1: Create \packages/pi/src/envelope.ts\ with \ANTIGRAVITY_MODEL_ENUM\, \esolveSessionTrajectory\, and \uildAntigravityEnvelope\ matching \pi-antigravity\.
 - [x] Task 2: Update \GenerationRequest\, \serializeContext\, and \serializeTextContext\ in \packages/pi/src/context.ts\ to populate \equest.sessionId\, \equest.labels\, \systemInstruction.role = \"user\"\, and envelope \equestId\.
 - [x] Task 3: Add unit tests in \packages/pi/src/context.test.ts\ verifying \sessionId\, \labels\ (including \used_claude\, \model_enum\, etc.), and formatted \equestId\ for Claude, GPT-OSS, and Gemini models.
-- [ ] Task 4: Run full verification (\
+- [x] Task 4: Run full verification (\
 pm test\, \
 pm run typecheck:all\), commit work units, open and merge PR linked to #60, release v1.1.23 (@benjamolina/pi-antigravity-guard@0.4.9), and update in Pi via Bun.
