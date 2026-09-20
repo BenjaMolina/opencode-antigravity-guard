@@ -127,28 +127,22 @@ describe("Antigravity model catalog", () => {
     expect(readme).toContain("Unsupported levels are not advertised")
   })
 
-  it("keeps per-route frozen capability evidence fail-closed except for the directly admitted route", () => {
+  it("keeps per-route frozen capability evidence fail-closed except for directly admitted routes", () => {
     const catalog = listCatalogEntries()
     for (const entry of catalog) {
       for (const level of Object.keys(entry.routes)) {
         const selection = resolveGenerationSelection(entry, level)
         expect(Object.isFrozen(selection.tools)).toBe(true)
-        const isDirectlyAdmitted = entry.publicId.startsWith("antigravity-gemini-")
-        expect(selection.tools.state).toBe(isDirectlyAdmitted ? "enabled" : "disabled")
-        if (isDirectlyAdmitted) {
-          const wireModel = selection.route.wireModel
-          const prefix = entry.publicId.replace("antigravity-", "")
-          const revision = `${prefix}-${level}-v1`
-          expect(selection.tools).toMatchObject({
-            state: "enabled",
-            contractRevision: 1,
-            fixtureEvidence: { record: "pi-json-tool-loop", revision, publicModelId: entry.publicId, reasoning: level, wireModel },
-            directEvidence: { record: "pi-json-tool-loop", revision, publicModelId: entry.publicId, reasoning: level, wireModel },
-          })
-          continue
-        }
-        if (selection.tools.state !== "disabled") throw new Error("expected disabled capability")
-        expect(selection.tools.reason).toBe(entry.response.family === "claude" ? "claude-continuity-unproven" : "missing-direct-evidence")
+        expect(selection.tools.state).toBe("enabled")
+        const wireModel = selection.route.wireModel
+        const prefix = entry.publicId.replace("antigravity-", "")
+        const revision = `${prefix}-${level}-v1`
+        expect(selection.tools).toMatchObject({
+          state: "enabled",
+          contractRevision: 1,
+          fixtureEvidence: { record: "pi-json-tool-loop", revision, publicModelId: entry.publicId, reasoning: level, wireModel },
+          directEvidence: { record: "pi-json-tool-loop", revision, publicModelId: entry.publicId, reasoning: level, wireModel },
+        })
       }
     }
     const gemini = getCatalogEntry("antigravity-gemini-3.8-flash")!
@@ -161,7 +155,7 @@ describe("Antigravity model catalog", () => {
     expect(resolveToolCapability(stale, gemini.publicId, "low", low.route.wireModel)).toEqual({ state: "disabled", contractRevision: 1, reason: "stale-or-conflicting-evidence" })
   })
 
-  it("enables the directly admitted Gemini family routes", () => {
+  it("enables the directly admitted Gemini family routes with gemini-parameters-json-schema", () => {
     for (const publicId of ["antigravity-gemini-3.8-flash", "antigravity-gemini-3.7-flash", "antigravity-gemini-3.6-flash", "antigravity-gemini-3.1-pro"]) {
       const entry = getCatalogEntry(publicId)!
       const capability = resolveGenerationSelection(entry, "off").tools
@@ -169,11 +163,11 @@ describe("Antigravity model catalog", () => {
     }
   })
 
-  it("keeps disabled Claude and GPT routes profile-free", () => {
+  it("enables Claude and GPT routes with claude-custom-parameters profile", () => {
     for (const publicId of ["antigravity-claude-sonnet-4.6", "antigravity-claude-opus-4.6-thinking", "antigravity-gpt-oss-120b"]) {
-      const capability = resolveGenerationSelection(getCatalogEntry(publicId)!, "off").tools
-      expect(capability.state).toBe("disabled")
-      expect("schemaProfile" in capability).toBe(false)
+      const entry = getCatalogEntry(publicId)!
+      const capability = resolveGenerationSelection(entry, "off").tools
+      expect(capability.state === "enabled" ? capability.schemaProfile : undefined).toBe("claude-custom-parameters")
     }
   })
 

@@ -1,5 +1,5 @@
 import { canonicalJson, ToolPreflightError } from "./tool-contract.ts"
-import { GEMINI_PARAMETERS_JSON_SCHEMA_PROFILE, type ToolSchemaProfile } from "./catalog.ts"
+import { CLAUDE_CUSTOM_PARAMETERS_PROFILE, GEMINI_PARAMETERS_JSON_SCHEMA_PROFILE, type ToolSchemaProfile } from "./catalog.ts"
 import { normalizeToolDeclarations, type ToolDeclaration } from "./tool-schema.ts"
 
 export interface PreparedToolContext {
@@ -21,7 +21,7 @@ export function hasToolContext(context: unknown): boolean {
 }
 
 export function prepareToolContext(tools: unknown, choice: unknown, schemaProfile: unknown): PreparedToolContext | undefined {
-  if (schemaProfile !== GEMINI_PARAMETERS_JSON_SCHEMA_PROFILE) throw new ToolPreflightError("PI_TOOL_SCHEMA_PROFILE_UNSUPPORTED", "tools", "$")
+  if (schemaProfile !== GEMINI_PARAMETERS_JSON_SCHEMA_PROFILE && schemaProfile !== CLAUDE_CUSTOM_PARAMETERS_PROFILE) throw new ToolPreflightError("PI_TOOL_SCHEMA_PROFILE_UNSUPPORTED", "tools", "$")
   const declarations = normalizeToolDeclarations(tools ?? [])
   if (!declarations.length) {
     if (choice === "auto") throw new ToolPreflightError("PI_TOOL_CHOICE_WITHOUT_DECLARATIONS", "tools", "$")

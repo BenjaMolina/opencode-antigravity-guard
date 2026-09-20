@@ -22,9 +22,9 @@ All seven rows below are registered for text. The exact `antigravity-gemini-3.8-
 | `antigravity-gemini-3.7-flash` | off, low, medium, high | Enabled (off, low, medium, high) | pi-json-tool-loop/gemini-3.7-flash-off-v1 |
 | `antigravity-gemini-3.6-flash` | off, low, medium, high | Enabled (off, low, medium, high) | pi-json-tool-loop/gemini-3.6-flash-off-v1 |
 | `antigravity-gemini-3.1-pro` | off, low, high | Enabled (off, low, high) | pi-json-tool-loop/gemini-3.1-pro-off-v1 |
-| `antigravity-claude-sonnet-4.6` | off, high | Disabled | claude-continuity-unproven |
-| `antigravity-claude-opus-4.6-thinking` | off, high | Disabled | claude-continuity-unproven |
-| `antigravity-gpt-oss-120b` | off, medium | Disabled | missing-direct-evidence |
+| `antigravity-claude-sonnet-4.6` | off, high | Enabled (off, high) | pi-json-tool-loop/claude-sonnet-4.6-off-v1 |
+| `antigravity-claude-opus-4.6-thinking` | off, high | Enabled (off, high) | pi-json-tool-loop/claude-opus-4.6-thinking-off-v1 |
+| `antigravity-gpt-oss-120b` | off, medium | Enabled (off, medium) | pi-json-tool-loop/gpt-oss-120b-off-v1 |
 
 `off` is available for every row even though it is omitted from Pi's level map; omitted reasoning also selects that row's `off` route. Unsupported levels are not advertised and are rejected before transport. `antigravity-gemini-3.5-flash` is not registered or advertised as supported because its recorded HTTP-200 response lacks the strict terminal metadata required for admission. A future `fixture-qualified` route remains disabled for ordinary tool use; only separately authorized direct validation for the exact route may make it enabled.
 

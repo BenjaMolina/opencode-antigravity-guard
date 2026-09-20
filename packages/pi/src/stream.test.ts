@@ -320,7 +320,13 @@ describe("fixed Antigravity SSE transport", () => {
       `data: ${JSON.stringify({ response: { candidates: [{ content: { parts: [{ text: "ok" }] }, finishReason: "STOP" }] } })}\n\n`,
       { headers: { "Content-Type": "text/event-stream" } },
     ))
-    const input = { accessToken: "access-token", projectId: "stored-project", fetch, generationOptions: { reasoning: "high" as const }, model: { ...model(), id: "antigravity-claude-sonnet-4.6" }, now: () => 1_000, onSemantic: vi.fn(), platform: "win32", requestId: "request-id" }
+    const entry = getCatalogEntry(model().id)!
+    const selection = resolveGenerationSelection(entry, "off")
+    const disabledSelection = {
+      ...selection,
+      tools: { state: "disabled" as const, contractRevision: 1 as const, reason: "missing-direct-evidence" as const },
+    }
+    const input = { accessToken: "access-token", projectId: "stored-project", fetch, selection: disabledSelection, model: model(), now: () => 1_000, onSemantic: vi.fn(), platform: "win32", requestId: "request-id" }
     const contexts = [
       { tools: [{ name: "read_file" }], messages: [{ role: "user", content: "Hello" }] },
       { messages: [{ role: "assistant", content: [{ type: "toolCall", id: "call-1", name: "read_file", arguments: {} }] }] },

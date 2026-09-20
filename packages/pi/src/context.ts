@@ -1,6 +1,7 @@
 import type { Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai"
 
-import { getCatalogEntry, resolveGenerationSelection, type GenerationSelection, type ToolCapability } from "./catalog.ts"
+import { CLAUDE_CUSTOM_PARAMETERS_PROFILE, getCatalogEntry, resolveGenerationSelection, type GenerationSelection, type ToolCapability } from "./catalog.ts"
+import { normalizeCustomToolSchema } from "./tool-schema.ts"
 import { hasToolContext, prepareToolContext, replayToolHistory, type ToolReplayDiagnostics } from "./tool-context.ts"
 
 const MAX_TEXT_BYTES = 8 * 1024 * 1024
@@ -25,7 +26,8 @@ interface Content {
 interface GeminiFunctionDeclaration {
   readonly name: string
   readonly description: string
-  readonly parametersJsonSchema: object
+  readonly parametersJsonSchema?: object
+  readonly parameters?: object
 }
 
 export interface GenerationRequest {
@@ -91,7 +93,13 @@ export function serializeContext(input: SerializeTextContextInput, injectedSelec
     contents,
     ...(systemInstruction ? { systemInstruction } : {}),
     ...(prepared ? {
-      tools: [{ functionDeclarations: prepared.declarations.map(({ name, description, parameters }) => ({ name, description, parametersJsonSchema: parameters })) }],
+      tools: [{ functionDeclarations: prepared.declarations.map(({ name, description, parameters }) => ({
+        name,
+        description,
+        ...(selection.tools.state === "enabled" && selection.tools.schemaProfile === CLAUDE_CUSTOM_PARAMETERS_PROFILE
+          ? { parameters: normalizeCustomToolSchema(parameters) }
+          : { parametersJsonSchema: parameters }),
+      })) }],
       ...(prepared.mode === "NONE" ? { toolConfig: { functionCallingConfig: { mode: "NONE" } } } : {}),
     } : {}),
     generationConfig,
