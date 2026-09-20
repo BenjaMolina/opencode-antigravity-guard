@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.22 (2026-09-19)
+
+- Fix Claude and GPT-OSS tool continuation Turn 2 rejection (`Error: Antigravity generation request was rejected`) by preserving matching sanitized tool call IDs on both `functionCall` and `functionResponse` in Pi.
+
 ## [Unreleased]
 
 ## [1.1.21] - 2026-09-19

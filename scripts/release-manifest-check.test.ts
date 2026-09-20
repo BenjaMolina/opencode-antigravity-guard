@@ -8,8 +8,8 @@ const coreName = "@benjamolina/antigravity-guard-core"
 const piName = "@benjamolina/pi-antigravity-guard"
 const rootName = "@benjamolina/opencode-antigravity-guard"
 const repositoryUrl = "git+https://github.com/BenjaMolina/opencode-antigravity-guard.git"
-const piVersion = "0.4.7"
-const rootVersion = "1.1.21"
+const piVersion = "0.4.8"
+const rootVersion = "1.1.22"
 
 function readFileSync(path: URL, encoding: "utf8"): string {
   return readFileSyncRaw(path, encoding).replaceAll("\r\n", "\n")

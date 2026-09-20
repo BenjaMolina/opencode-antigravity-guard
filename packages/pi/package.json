@@ -1,6 +1,6 @@
 {
   "name": "@benjamolina/pi-antigravity-guard",
-  "version": "0.4.7",
+  "version": "0.4.8",
   "description": "Pi adapter for Antigravity Guard",
   "type": "module",
   "license": "MIT",
@@ -24,7 +24,9 @@
     "README.md"
   ],
   "pi": {
-    "extensions": ["./dist/extension.js"]
+    "extensions": [
+      "./dist/extension.js"
+    ]
   },
   "dependencies": {
     "@benjamolina/antigravity-guard-core": "0.1.0"
