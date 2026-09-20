@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.24 (2026-09-19)
+
+- Enforce explicit `toolConfig: { functionCallingConfig: { mode: "AUTO" } }` for Claude and GPT-OSS models when tools are declared, and sanitize image base64 data to strip `data:image/...;base64,` URI prefixes in Pi.
+
 ## 1.1.23 (2026-09-19)
 
 - Align Pi generation requests with official Google Antigravity CLI wire format by populating `request.sessionId`, `request.labels` (`used_claude`, `used_claude_conservative`, `used_non_gemini_model`, `model_enum`, `trajectory_id`, `request_id`, `last_step_index`), `systemInstruction.role: "user"`, and CLI-structured `requestId`, fixing Turn 1 rejection for Claude and GPT-OSS models.

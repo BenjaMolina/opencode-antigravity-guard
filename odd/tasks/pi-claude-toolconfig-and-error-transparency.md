@@ -18,4 +18,4 @@ Fix Claude tool execution Turn 2 rejection in Pi by:
 - [x] Task 2: Update \packages/pi/src/tool-context.ts\ to strip data URI prefixes from image parts in \	oolResult\.
 - [x] Task 3: Update \packages/pi/src/stream.ts\ \httpError\ to extract and report the backend's real error message.
 - [x] Task 4: Add unit test coverage in \context.test.ts\ and \stream.test.ts\.
-- [ ] Task 5: Run full test suite & typecheck, commit work units, open PR #63, merge into main, release v1.1.24 (@benjamolina/pi-antigravity-guard@0.4.10), and update in Pi via Bun.
+- [x] Task 5: Run full test suite & typecheck, commit work units, open PR #63, merge into main, release v1.1.24 (@benjamolina/pi-antigravity-guard@0.4.10), and update in Pi via Bun.
