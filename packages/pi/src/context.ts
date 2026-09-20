@@ -113,7 +113,11 @@ export function serializeContext(input: SerializeTextContextInput, injectedSelec
           ? { parameters: normalizeCustomToolSchema(parameters) }
           : { parametersJsonSchema: parameters }),
       })) }],
-      ...(prepared.mode === "NONE" ? { toolConfig: { functionCallingConfig: { mode: "NONE" } } } : {}),
+      ...(prepared.mode === "NONE"
+        ? { toolConfig: { functionCallingConfig: { mode: "NONE" } } }
+        : (entry.response.family === "claude" || entry.response.family === "gpt-oss"
+          ? { toolConfig: { functionCallingConfig: { mode: "AUTO" } } }
+          : {})),
     } : {}),
     generationConfig,
     sessionId: envelope.sessionId,
@@ -229,7 +233,8 @@ function messagePart(part: Record<string, unknown>, assistant: boolean, sameProv
     if (typeof rawData !== "string" || !rawData) fail("Invalid image data.")
     const rawMime = field(part, "mimeType") ?? (isRecord(field(part, "source")) ? field(field(part, "source") as Record<string, unknown>, "media_type") : undefined)
     const mimeType = typeof rawMime === "string" && rawMime ? rawMime : "image/jpeg"
-    return { inlineData: { mimeType, data: rawData } }
+    const cleanedData = rawData.replace(/^data:[^;]+;base64,/s, "").trim()
+    return { inlineData: { mimeType, data: cleanedData } }
   }
   fail("Only text context is supported by this provider.")
 }
