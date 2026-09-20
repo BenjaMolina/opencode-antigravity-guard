@@ -625,4 +625,23 @@ describe("Pi text context serialization", () => {
       model_enum: "MODEL_PLACEHOLDER_M320",
     }))
   })
+
+  it("serializes explicit AUTO toolConfig for Claude and GPT-OSS while keeping Gemini toolConfig undefined on auto", () => {
+    const context = {
+      tools: [{ name: "read_file", description: "Read file", parameters: { type: "object", properties: { path: { type: "string" } } } }],
+      messages: [{ role: "user", content: "read", timestamp: 0 }],
+    } as Context
+
+    for (const id of ["antigravity-claude-sonnet-4.6", "antigravity-claude-opus-4.6-thinking", "antigravity-gpt-oss-120b"]) {
+      const entry = getCatalogEntry(id)!
+      const selection = resolveGenerationSelection(entry, "off")
+      const serialized = serializeContext({ context, model: { id } as Model<string>, project: "p", requestId: "r" }, selection)
+      expect(serialized.request.toolConfig).toEqual({ functionCallingConfig: { mode: "AUTO" } })
+    }
+
+    const geminiEntry = getCatalogEntry("antigravity-gemini-3.8-flash")!
+    const geminiSelection = resolveGenerationSelection(geminiEntry, "off")
+    const geminiSerialized = serializeContext({ context, model: { id: "antigravity-gemini-3.8-flash" } as Model<string>, project: "p", requestId: "r" }, geminiSelection)
+    expect(geminiSerialized.request.toolConfig).toBeUndefined()
+  })
 })

@@ -117,7 +117,8 @@ export function replayToolHistory(messages: unknown[], serializePart: (part: Rec
           if (typeof rawData === "string" && rawData) {
             const rawMime = value(part, "mimeType") ?? (isRecord(value(part, "source")) ? value(record(value(part, "source")), "media_type") : undefined)
             const mimeType = typeof rawMime === "string" && rawMime ? rawMime : "image/jpeg"
-            imageParts.push({ inlineData: { mimeType, data: rawData } })
+            const cleanedData = rawData.replace(/^data:[^;]+;base64,/s, "").trim()
+            imageParts.push({ inlineData: { mimeType, data: cleanedData } })
           }
         } else {
           history("PI_TOOL_RESULT_MEDIA_UNSUPPORTED")
