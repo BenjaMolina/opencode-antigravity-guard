@@ -875,4 +875,160 @@ describe("Pi text context serialization", () => {
       expect(res.request.systemInstruction).toEqual({ role: "user", parts: [{ text: raw }] })
     }
   })
+
+  it("normalizes Pi 1.4+ TranscriptContext system messages, sections, and <docs> blocks while anchoring trajectory on the first user message", () => {
+    const transcriptContext = {
+      messages: [
+        {
+          role: "system",
+          content: "",
+          sections: {
+            preamble: "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files.",
+            rules: "<rules>\n- Initial rule\n</rules>",
+            docs: [
+              "<docs>",
+              "Pi documentation (read only when the user asks about pi itself, its SDK, extensions, themes, skills, or TUI):",
+              "- Main documentation: C:\\pi\\README.md",
+              "- Additional docs: C:\\pi\\docs",
+              "- Examples: C:\\pi\\examples (extensions, custom tools, SDK)",
+              "- When reading pi docs or examples, resolve docs/... under Additional docs and examples/... under Examples, not the current working directory",
+              "- When asked about: extensions (docs/extensions.md), custom providers (docs/custom-provider.md)",
+              "- When working on pi topics, read the docs and examples, and follow .md cross-references before implementing",
+              "- Always read pi .md files completely and follow links to related docs (e.g., tui.md for TUI API details)",
+              "</docs>",
+            ].join("\n"),
+            ephemeral: "<ephemeral>remove me</ephemeral>",
+          },
+        },
+        {
+          role: "user",
+          content: [{ type: "text", text: "Reply with ARGON_HUB_OK" }],
+          timestamp: 1795434974808,
+        },
+        {
+          role: "system",
+          content: [{ type: "text", text: "Follow-up system note." }],
+          sections: {
+            rules: "<rules>\n- Updated rule\n</rules>",
+            ephemeral: null,
+          },
+          timestamp: 1795434975000,
+        },
+      ],
+    } as unknown as Context
+
+    const snapshot = structuredClone(transcriptContext)
+    const argonModel = { id: "antigravity-gemini-4-argon" } as Model<string>
+    const result = serializeContext({
+      context: transcriptContext,
+      model: argonModel,
+      options: { reasoning: "low" },
+      project: "proj",
+      requestId: "agent-00000000-0000-0000-0000-000000000001",
+    })
+
+    const legacyEquivalent = serializeContext({
+      context: {
+        systemPrompt: "placeholder",
+        messages: [
+          {
+            role: "user",
+            content: [{ type: "text", text: "Reply with ARGON_HUB_OK" }],
+            timestamp: 1795434974808,
+          },
+        ],
+      } as Context,
+      model: argonModel,
+      options: { reasoning: "low" },
+      project: "proj",
+      requestId: "agent-00000000-0000-0000-0000-000000000001",
+    })
+
+    expect(transcriptContext).toEqual(snapshot)
+    expect(result.request.contents).toEqual([
+      { role: "user", parts: [{ text: "Reply with ARGON_HUB_OK" }] },
+    ])
+    expect(result.request.sessionId).toBe(legacyEquivalent.request.sessionId)
+    expect(result.request.labels?.trajectory_id).toBe(legacyEquivalent.request.labels?.trajectory_id)
+
+    const systemText = result.request.systemInstruction?.parts[0]?.text ?? ""
+    expect(systemText).toContain("working on software projects")
+    expect(systemText).not.toContain("operating inside pi, a coding agent harness")
+    expect(systemText).toContain("Follow-up system note.")
+    expect(systemText).toContain("<rules>\n- Updated rule\n</rules>")
+    expect(systemText).not.toContain("Initial rule")
+    expect(systemText).not.toContain("remove me")
+    expect(systemText).not.toContain("When reading pi docs or examples")
+    expect(systemText).not.toContain("When asked about:")
+    expect(systemText).toContain("<reference_paths>\n- Main reference: C:\\pi\\README.md")
+    expect(systemText).not.toContain("<reference_paths>\nLocal harness documentation")
+  })
+
+  it("replays TranscriptContext toolsAdded and toolsRemoved deltas without emitting empty systemInstruction", () => {
+    const argonEntry = getCatalogEntry("antigravity-gemini-4-argon")!
+    const selection = resolveGenerationSelection(argonEntry, "low")
+    const transcriptWithTools = {
+      messages: [
+        {
+          role: "system",
+          content: "",
+          toolsAdded: [
+            { name: "read_file", description: "Read file", parameters: { type: "object", properties: { path: { type: "string" } }, required: ["path"] } },
+            { name: "obsolete_tool", description: "Old tool", parameters: { type: "object", properties: {} } },
+          ],
+          timestamp: 0,
+        },
+        {
+          role: "user",
+          content: "Inspect repo",
+          timestamp: 1795434974900,
+        },
+        {
+          role: "system",
+          content: "",
+          toolsRemoved: [{ name: "obsolete_tool" }],
+          toolsAdded: [
+            { name: "write_file", description: "Write file", parameters: { type: "object", properties: { path: { type: "string" } }, required: ["path"] } },
+          ],
+          timestamp: 1795434974950,
+        },
+      ],
+    } as unknown as Context
+
+    let capturedDeclaredCount = -1
+    const serialized = serializeContext(
+      {
+        context: transcriptWithTools,
+        model: { id: "antigravity-gemini-4-argon" } as Model<string>,
+        options: { reasoning: "low" },
+        project: "proj",
+        requestId: "req-tools",
+      },
+      selection,
+      (diagnostics) => { capturedDeclaredCount = diagnostics.declaredToolCount },
+    )
+
+    expect(serialized.request.systemInstruction).toBeUndefined()
+    expect(serialized.request.contents).toEqual([
+      { role: "user", parts: [{ text: "Inspect repo" }] },
+    ])
+    expect(serialized.request.tools?.[0]?.functionDeclarations.map((d) => d.name)).toEqual([
+      "read_file",
+      "write_file",
+    ])
+    expect(capturedDeclaredCount).toBe(2)
+  })
+
+  it("rejects malformed TranscriptContext system message fields with ContextSerializationError", () => {
+    const invalidSystemContexts = [
+      { messages: [{ role: "system", content: 123, timestamp: 0 }, { role: "user", content: "hi", timestamp: 1 }] },
+      { messages: [{ role: "system", content: [{ type: "image", data: "abc", mimeType: "image/png" }], timestamp: 0 }, { role: "user", content: "hi", timestamp: 1 }] },
+      { messages: [{ role: "system", content: "", sections: { bad: 42 }, timestamp: 0 }, { role: "user", content: "hi", timestamp: 1 }] },
+      { messages: [{ role: "system", content: "", toolsRemoved: [{ name: "" }], timestamp: 0 }, { role: "user", content: "hi", timestamp: 1 }] },
+    ]
+    for (const ctx of invalidSystemContexts) {
+      expect(() => request(ctx as unknown as Context)).toThrow(ContextSerializationError)
+      expect(() => request(ctx as unknown as Context)).not.toThrow("Unsupported context role")
+    }
+  })
 })

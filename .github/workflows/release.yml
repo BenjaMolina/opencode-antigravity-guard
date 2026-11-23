@@ -163,8 +163,8 @@ jobs:
           }
 
           publish_if_missing "@benjamolina/antigravity-guard-core" "0.2.0" "@benjamolina/antigravity-guard-core" false
-          publish_if_missing "@benjamolina/pi-antigravity-guard" "0.5.0" "@benjamolina/pi-antigravity-guard" true
-          publish_if_missing "@benjamolina/opencode-antigravity-guard" "1.2.0" "" true
+          publish_if_missing "@benjamolina/pi-antigravity-guard" "0.5.1" "@benjamolina/pi-antigravity-guard" true
+          publish_if_missing "@benjamolina/opencode-antigravity-guard" "1.2.1" "" true
 
       - name: Create matching tag and release
         env:
@@ -172,7 +172,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          TAG="v1.2.0"
+          TAG="v1.2.1"
           git fetch --tags --force
           if git rev-parse "refs/tags/${TAG}^{commit}" >/dev/null 2>&1; then
             TAG_SHA=$(git rev-parse "refs/tags/${TAG}^{commit}")
@@ -209,18 +209,17 @@ jobs:
           ## Published packages
 
           - Core: `@benjamolina/antigravity-guard-core@0.2.0`
-          - Pi: `@benjamolina/pi-antigravity-guard@0.5.0`
-          - OpenCode root: `@benjamolina/opencode-antigravity-guard@1.2.0`
+          - Pi: `@benjamolina/pi-antigravity-guard@0.5.1`
+          - OpenCode root: `@benjamolina/opencode-antigravity-guard@1.2.1`
 
           ### Activation scope
 
-          - Antigravity Hub version discovery, headers, and account fingerprint migration (`2.34.0`, floor `2.9.1`).
-          - Full `gemini-4-*` (`argon`, `carbon`, `neon`, `hydrogen`), `xhigh` reasoning tier, `gemini-3.5-flash-lite`, `gpt-oss-120b-medium`, and Pi harness prompt sanitization across OpenCode and Pi.
+          - Pi `1.4.0+` `TranscriptContext` compatibility (`role: "system"` messages with `sections`, `toolsAdded`, and `toolsRemoved`), optional `constrainedSampling: { type: "json_schema", strict: "prefer" }` tool admission, and updated `<docs>` boilerplate sanitization in `@benjamolina/pi-antigravity-guard@0.5.1`.
 
           ### Upgrade the root plugin
 
           ```bash
-          npm install @benjamolina/opencode-antigravity-guard@1.2.0
+          npm install @benjamolina/opencode-antigravity-guard@1.2.1
           ```
           EOF
           sed -i 's/^          //' "$NOTES"

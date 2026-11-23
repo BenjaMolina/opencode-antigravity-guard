@@ -66,7 +66,7 @@ export interface SerializeTextContextInput {
 export class ContextSerializationError extends Error {}
 
 const PI_DOCS_BLOCK_REGEX =
-  /Pi documentation \(read only when the user asks about pi[^)]*\):\r?\n- Main documentation: ([^\r\n]+)\r?\n- Additional docs: ([^\r\n]+)\r?\n- Examples: ([^\r\n]+)[^\r\n]*\r?\n- When asked about:[^\r\n]+\r?\n(?:- When working on pi topics[^\r\n]+\r?\n)?- Always read pi \.md files completely[^\r\n]+/g
+  /(?:<docs>\r?\n)?Pi documentation \(read only when the user asks about pi[^)]*\):\r?\n- Main documentation: ([^\r\n]+)\r?\n- Additional docs: ([^\r\n]+)\r?\n- Examples: ([^\r\n]+)[^\r\n]*\r?\n(?:- When reading pi docs or examples[^\r\n]+\r?\n)?- When asked about:[^\r\n]+\r?\n(?:- When working on pi topics[^\r\n]+\r?\n)?- Always read pi \.md files completely[^\r\n]+(?:\r?\n<\/docs>)?/g
 
 export function sanitizeAntigravitySystemPrompt(systemPrompt: string): string {
   if (!systemPrompt.includes(PI_HARNESS_MARKER)) return systemPrompt
@@ -97,10 +97,19 @@ export function serializeContext(input: SerializeTextContextInput, injectedSelec
   const selection = injectedSelection ?? selected
   if (selection.level !== selected.level || selection.route.wireModel !== selected.route.wireModel) fail("Invalid tool capability selection.")
   if (selection.tools.state !== "enabled") fail(capabilityError(entry.publicId, selection.level, selection.tools))
-  const prepared = prepareToolContext(field(context, "tools") ?? [], isRecord(options) ? field(options, "toolChoice") : undefined, selection.tools.schemaProfile)
-  const { tools: _tools, messages, ...textContext } = context
+  const normalized = normalizeContextRecord(context)
+  const prepared = prepareToolContext(normalized.tools ?? [], isRecord(options) ? field(options, "toolChoice") : undefined, selection.tools.schemaProfile)
+  const { tools: _tools, messages: _messages, systemPrompt: _systemPrompt, ...textContext } = context
   const { toolChoice: _choice, ...textOptions } = isRecord(options) ? options : {}
-  const text = serializeTextContext({ ...input, context: { ...textContext, messages: [{ role: "user", content: "placeholder", timestamp: 0 }] } as Context, options: textOptions as SimpleStreamOptions })
+  const text = serializeTextContext({
+    ...input,
+    context: {
+      ...textContext,
+      ...(normalized.systemPrompt !== undefined ? { systemPrompt: normalized.systemPrompt } : {}),
+      messages: [{ role: "user", content: "placeholder", timestamp: 0 }],
+    } as Context,
+    options: textOptions as SimpleStreamOptions,
+  })
   const sameModel = (message: Record<string, unknown>) => field(message, "role") === "assistant" && entry.replay.kind === "same-public-model" && isSameProviderAndModel(message, entry.publicId)
   const requireSigned = geminiRequiresSignedToolReplay(selection.route.wireModel)
   const includeToolCallId = entry.response.family === "claude" || entry.response.family === "gpt-oss"
@@ -111,7 +120,7 @@ export function serializeContext(input: SerializeTextContextInput, injectedSelec
     includeToolCallId,
   } : undefined
   const contents = replayToolHistory(
-    isDenseArray(messages),
+    normalized.messages,
     (part, message) => messagePart(part, field(message, "role") === "assistant", sameModel(message)),
     onDiagnostics,
     toolReplayPolicy,
@@ -122,7 +131,7 @@ export function serializeContext(input: SerializeTextContextInput, injectedSelec
     wireModelId: selection.route.wireModel,
     family: entry.response.family,
     contentsCount: contents.length,
-    messages: isDenseArray(messages),
+    messages: normalized.messages,
     injectedRequestId: input.requestId,
   })
   return { ...text, request: {
@@ -160,16 +169,17 @@ export function serializeTextContext(input: SerializeTextContextInput): Generati
     if (!isRecord(context) || !entry || typeof project !== "string" || typeof requestId !== "string") fail("Invalid text context.")
     const selection = resolveGenerationSelection(entry, option(options, "reasoning"))
     const route = selection.route
-    if (isToolBearingContext(context) && selection.tools.state !== "enabled") fail(capabilityError(entry.publicId, selection.level, selection.tools))
-    const rawSystemPrompt = field(context, "systemPrompt")
-    const tools = field(context, "tools")
+    const normalized = normalizeContextRecord(context)
+    if (isToolBearingNormalizedContext(normalized) && selection.tools.state !== "enabled") fail(capabilityError(entry.publicId, selection.level, selection.tools))
+    const rawSystemPrompt = normalized.systemPrompt
+    const tools = normalized.tools
     if (rawSystemPrompt !== undefined && typeof rawSystemPrompt !== "string") fail("Text-only context is required.")
     if (tools !== undefined && isDenseArray(tools).length) fail("Tools are not supported by this text-only provider.")
     validateOptions(options, entry.descriptor.maxTokens)
     const systemPrompt = rawSystemPrompt === undefined ? undefined : sanitizeAntigravitySystemPrompt(rawSystemPrompt)
     let textBytes = byteLength(systemPrompt ?? "")
     const contents: Content[] = []
-    for (const message of isDenseArray(field(context, "messages", true))) {
+    for (const message of normalized.messages) {
       if (!isRecord(message)) fail("Invalid text context.")
       const role = field(message, "role", true)
       if (role === "toolResult") fail("Tool history is not supported by this text-only provider.")
@@ -188,7 +198,7 @@ export function serializeTextContext(input: SerializeTextContextInput): Generati
       wireModelId: route.wireModel,
       family: entry.response.family,
       contentsCount: contents.length,
-      messages: isDenseArray(field(context, "messages", true)),
+      messages: normalized.messages,
       injectedRequestId: requestId,
     })
     return { project, model: route.wireModel, request: { contents, ...(systemInstruction ? { systemInstruction } : {}), generationConfig: {
@@ -205,16 +215,98 @@ export function serializeTextContext(input: SerializeTextContextInput): Generati
   }
 }
 
+interface NormalizedContextRecord {
+  readonly systemPrompt: unknown
+  readonly tools: unknown
+  readonly messages: unknown[]
+}
+
+function normalizeContextRecord(context: Record<string, unknown>): NormalizedContextRecord {
+  const rawSystemPrompt = field(context, "systemPrompt")
+  const rawTools = field(context, "tools")
+  const rawMessages = isDenseArray(field(context, "messages", true))
+  const hasSystemMessage = rawMessages.some((message) => isRecord(message) && field(message, "role") === "system")
+  if (!hasSystemMessage) {
+    return { systemPrompt: rawSystemPrompt, tools: rawTools, messages: rawMessages }
+  }
+  if (rawSystemPrompt !== undefined && typeof rawSystemPrompt !== "string") fail("Text-only context is required.")
+  const systemContentParts: string[] = []
+  const sectionMap = new Map<string, string>()
+  const toolMap = new Map<string | symbol, unknown>()
+  if (rawTools !== undefined) {
+    for (const tool of isDenseArray(rawTools)) {
+      const name = isRecord(tool) ? field(tool, "name") : undefined
+      toolMap.set(typeof name === "string" && name ? name : Symbol("tool"), tool)
+    }
+  }
+  const conversationMessages: unknown[] = []
+  for (const message of rawMessages) {
+    if (!isRecord(message)) fail("Invalid text context.")
+    const role = field(message, "role", true)
+    if (role !== "system") {
+      conversationMessages.push(message)
+      continue
+    }
+    const contentText = extractSystemMessageContent(field(message, "content", true))
+    if (contentText.length > 0) systemContentParts.push(contentText)
+    const rawSections = field(message, "sections")
+    if (rawSections !== undefined) {
+      if (!isRecord(rawSections)) fail("Invalid text context.")
+      for (const sectionName of Object.keys(rawSections)) {
+        const sectionValue = field(rawSections, sectionName)
+        if (sectionValue === null) sectionMap.delete(sectionName)
+        else if (typeof sectionValue === "string") sectionMap.set(sectionName, sectionValue)
+        else fail("Invalid text context.")
+      }
+    }
+    const rawRemoved = field(message, "toolsRemoved")
+    if (rawRemoved !== undefined) {
+      for (const ref of isDenseArray(rawRemoved)) {
+        if (!isRecord(ref)) fail("Invalid text context.")
+        const removedName = field(ref, "name", true)
+        if (typeof removedName !== "string" || !removedName) fail("Invalid text context.")
+        toolMap.delete(removedName)
+      }
+    }
+    const rawAdded = field(message, "toolsAdded")
+    if (rawAdded !== undefined) {
+      for (const tool of isDenseArray(rawAdded)) {
+        const addedName = isRecord(tool) ? field(tool, "name") : undefined
+        toolMap.set(typeof addedName === "string" && addedName ? addedName : Symbol("tool"), tool)
+      }
+    }
+  }
+  const basePrompt = systemContentParts.join("\n\n")
+  const transcriptPrompt = [basePrompt, ...sectionMap.values()].filter((part) => part.length > 0).join("\n\n")
+  const effectiveSystemPrompt = typeof rawSystemPrompt === "string"
+    ? [rawSystemPrompt, transcriptPrompt].filter((part) => part.length > 0).join("\n\n")
+    : (transcriptPrompt.length > 0 ? transcriptPrompt : undefined)
+  const effectiveTools = toolMap.size > 0 ? [...toolMap.values()] : (rawTools !== undefined ? [] : undefined)
+  return { systemPrompt: effectiveSystemPrompt, tools: effectiveTools, messages: conversationMessages }
+}
+
+function extractSystemMessageContent(content: unknown): string {
+  if (typeof content === "string") return content
+  const parts = isDenseArray(content)
+  const texts: string[] = []
+  for (const item of parts) {
+    if (!isRecord(item) || field(item, "type", true) !== "text") fail("Only text context is supported by this provider.")
+    const text = field(item, "text", true)
+    if (typeof text !== "string") fail("Only text context is supported by this provider.")
+    texts.push(text)
+  }
+  return texts.join("\n")
+}
+
 function capabilityError(publicId: string, reasoning: string, capability: ToolCapability): string {
   const reason = capability.state === "disabled" ? capability.reason : capability.state
   return `PI_TOOL_CAPABILITY_NOT_ENABLED: ${publicId}/${reasoning} is ${capability.state} (${reason}).`
 }
 
-function isToolBearingContext(context: Record<string, unknown>): boolean {
-  const tools = field(context, "tools")
+function isToolBearingNormalizedContext(context: NormalizedContextRecord): boolean {
+  const tools = context.tools
   if (tools !== undefined && isDenseArray(tools).length > 0) return true
-  const messages = isDenseArray(field(context, "messages", true))
-  for (const message of messages) {
+  for (const message of context.messages) {
     if (!isRecord(message)) continue
     if (field(message, "role") === "toolResult") return true
     const content = field(message, "content")

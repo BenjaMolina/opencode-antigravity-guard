@@ -1,11 +1,21 @@
 import { describe, expect, it } from "vitest"
 
 import { ToolPreflightError } from "./tool-contract.ts"
-import { prepareToolContext, replayToolHistory } from "./tool-context.ts"
+import { hasToolContext, prepareToolContext, replayToolHistory } from "./tool-context.ts"
 
 const declaration = { name: "read_file", description: "Read one file", parameters: { type: "object", properties: { path: { type: "string" } }, required: ["path"] } }
 
 describe("Pi tool request preparation", () => {
+  it("detects active tools across TranscriptContext system messages and ignores fully removed tool sets", () => {
+    expect(hasToolContext({ messages: [{ role: "system", content: "", toolsAdded: [declaration], timestamp: 0 }, { role: "user", content: "hi", timestamp: 1 }] })).toBe(true)
+    expect(hasToolContext({
+      messages: [
+        { role: "system", content: "", toolsAdded: [declaration], timestamp: 0 },
+        { role: "system", content: "", toolsRemoved: [{ name: "read_file" }], timestamp: 1 },
+        { role: "user", content: "hi", timestamp: 2 },
+      ],
+    })).toBe(false)
+  })
   it("retains declaration order and maps omitted, auto, and none choices", () => {
     expect(prepareToolContext([declaration, { ...declaration, name: "list_files" }], undefined, "gemini-parameters-json-schema")?.mode).toBe("AUTO")
     expect(prepareToolContext([declaration], "auto", "gemini-parameters-json-schema")?.mode).toBe("AUTO")

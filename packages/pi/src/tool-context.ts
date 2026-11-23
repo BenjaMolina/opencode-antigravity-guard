@@ -12,12 +12,41 @@ export function hasToolContext(context: unknown): boolean {
   const tools = value(context, "tools")
   if (Array.isArray(tools) && tools.length > 0) return true
   const messages = value(context, "messages")
-  return Array.isArray(messages) && messages.some((message: unknown) => {
-    if (!isRecord(message)) return false
-    if (value(message, "role") === "toolResult") return true
+  if (!Array.isArray(messages)) return false
+  const activeTools = new Map<string | symbol, unknown>()
+  for (let index = 0; index < messages.length; index++) {
+    const descriptor = Object.getOwnPropertyDescriptor(messages, String(index))
+    if (!descriptor || !("value" in descriptor)) continue
+    const message = descriptor.value
+    if (!isRecord(message)) continue
+    const role = value(message, "role")
+    if (role === "toolResult") return true
+    if (role === "system") {
+      const removed = value(message, "toolsRemoved")
+      if (Array.isArray(removed)) {
+        for (let r = 0; r < removed.length; r++) {
+          const rd = Object.getOwnPropertyDescriptor(removed, String(r))
+          const item = rd && "value" in rd ? rd.value : undefined
+          const name = isRecord(item) ? value(item, "name") : undefined
+          if (typeof name === "string" && name) activeTools.delete(name)
+        }
+      }
+      const added = value(message, "toolsAdded")
+      if (Array.isArray(added)) {
+        for (let a = 0; a < added.length; a++) {
+          const ad = Object.getOwnPropertyDescriptor(added, String(a))
+          if (!ad || !("value" in ad)) continue
+          const item = ad.value
+          const name = isRecord(item) ? value(item, "name") : undefined
+          activeTools.set(typeof name === "string" && name ? name : Symbol("tool"), item)
+        }
+      }
+      continue
+    }
     const content = value(message, "content")
-    return Array.isArray(content) && content.some((part: unknown) => isRecord(part) && value(part, "type") === "toolCall")
-  })
+    if (Array.isArray(content) && content.some((part: unknown) => isRecord(part) && value(part, "type") === "toolCall")) return true
+  }
+  return activeTools.size > 0
 }
 
 export function prepareToolContext(tools: unknown, choice: unknown, schemaProfile: unknown): PreparedToolContext | undefined {
