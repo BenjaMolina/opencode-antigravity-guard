@@ -61,6 +61,7 @@ import { isGemini3Model, isImageGenerationModel, buildImageGenerationConfig, app
 import {
   resolveModelForHeaderStyle,
   resolveAntigravityGemini35FlashBackendModel,
+  resolveAntigravityGemini4BackendModel,
   isClaudeModel,
   isClaudeThinkingModel,
   CLAUDE_THINKING_MAX_OUTPUT_TOKENS,
@@ -100,20 +101,33 @@ function buildSignatureSessionKey(
 
 
 
+function isGemini3Or4Model(model?: string): boolean {
+  if (typeof model !== "string") return false;
+  const lower = model.toLowerCase();
+  return lower.includes("gemini-3") || lower.includes("gemini-4");
+}
+
+function stripThinkingTierSuffixForCacheKey(model: string): string {
+  if (/^gpt-oss/i.test(model)) {
+    return model;
+  }
+  return model.replace(/-(minimal|low|medium|high|xhigh)$/i, "");
+}
+
 function shouldCacheThinkingSignatures(model?: string): boolean {
   if (typeof model !== "string") return false;
   const lower = model.toLowerCase();
-  // Both Claude and Gemini 3 models require thought signature caching
+  // Claude, Gemini 3, and Gemini 4 models require thought signature caching
   // for multi-turn conversations with function calling
-  return lower.includes("claude") || lower.includes("gemini-3");
+  return lower.includes("claude") || isGemini3Or4Model(model);
 }
 
 /**
  * Returns the project component to use in the thinking-signature cache key.
  *
- * Gemini 3 thought signatures are content-derived (not project/account-scoped)
+ * Gemini 3 and Gemini 4 thought signatures are content-derived (not project/account-scoped)
  * and the API only strictly validates function calls in the current turn, so we
- * keep Gemini-3's signature cache key project-independent. This preserves
+ * keep Gemini 3/4's signature cache key project-independent. This preserves
  * reasoning continuity across quota-driven account/project switches: otherwise
  * the key changes on a switch, the cache misses, the validation-bypass sentinel
  * is sent instead of the real signature, and the model loses its chain-of-thought
@@ -123,7 +137,7 @@ function signatureCacheProjectKey(
   model: string | undefined,
   projectKey: string | undefined,
 ): string | undefined {
-  if (typeof model === "string" && model.toLowerCase().includes("gemini-3")) {
+  if (isGemini3Or4Model(model)) {
     return undefined;
   }
   return projectKey;
@@ -768,12 +782,27 @@ function generateSyntheticProjectId(): string {
   return `${adj}-${noun}-${randomPart}`;
 }
 
+function defaultGeminiThinkingLevelForModel(model: string): string {
+  const lower = model.toLowerCase();
+  if (lower.includes("gemini-4")) {
+    return lower.endsWith("-xhigh") ? "xhigh" : "high";
+  }
+  return "low";
+}
+
+function budgetToGeminiLevelForModel(model: string, budget: number): string {
+  if (budget <= 8192) return "low";
+  if (budget <= 16384) return "medium";
+  if (model.toLowerCase().includes("gemini-4") && budget > 32768) return "xhigh";
+  return "high";
+}
+
 function ensureDefaultGemini3ThinkingLevel(
   requestPayload: Record<string, unknown>,
   effectiveModel: string,
   thinkingLevel?: string,
 ): void {
-  if (!effectiveModel.toLowerCase().includes("gemini-3") || isImageGenerationModel(effectiveModel)) {
+  if (!isGemini3Or4Model(effectiveModel) || isImageGenerationModel(effectiveModel)) {
     return;
   }
 
@@ -786,8 +815,8 @@ function ensureDefaultGemini3ThinkingLevel(
       ? (generationConfig.thinkingConfig as Record<string, unknown>)
       : {};
 
-  if (typeof thinkingConfig.thinkingLevel !== "string") {
-    thinkingConfig.thinkingLevel = thinkingLevel ?? "low";
+  if (typeof thinkingConfig.thinkingLevel !== "string" || !thinkingConfig.thinkingLevel.trim()) {
+    thinkingConfig.thinkingLevel = thinkingLevel ?? defaultGeminiThinkingLevelForModel(effectiveModel);
   }
   if (typeof thinkingConfig.includeThoughts !== "boolean") {
     thinkingConfig.includeThoughts = true;
@@ -1010,11 +1039,12 @@ export function prepareAntigravityRequest(
   // Tier-based thinking configuration from model resolver (can be overridden by variant config)
   let tierThinkingBudget = resolved.thinkingBudget;
   let tierThinkingLevel = resolved.thinkingLevel;
+  const initialModelForCacheKey = stripThinkingTierSuffixForCacheKey(effectiveModel);
   let signatureSessionKey = buildSignatureSessionKey(
     PLUGIN_SESSION_ID,
-    effectiveModel,
+    initialModelForCacheKey,
     undefined,
-    signatureCacheProjectKey(effectiveModel, resolveProjectKey(projectId)),
+    signatureCacheProjectKey(initialModelForCacheKey, resolveProjectKey(projectId)),
   );
 
   let body = baseInit.body;
@@ -1043,7 +1073,7 @@ export function prepareAntigravityRequest(
           }
         }
 
-        if (effectiveModel.toLowerCase().includes("gemini-3")) {
+        if (isGemini3Or4Model(effectiveModel)) {
           for (const req of requestObjects) {
             const variantConfig = extractVariantThinkingConfig(
               (req as any).providerOptions as Record<string, unknown> | undefined,
@@ -1055,8 +1085,7 @@ export function prepareAntigravityRequest(
               break;
             }
             if (typeof variantConfig?.thinkingBudget === "number") {
-              tierThinkingLevel = variantConfig.thinkingBudget <= 8192 ? "low"
-                : variantConfig.thinkingBudget <= 16384 ? "medium" : "high";
+              tierThinkingLevel = budgetToGeminiLevelForModel(effectiveModel, variantConfig.thinkingBudget);
               tierThinkingBudget = undefined;
               break;
             }
@@ -1064,20 +1093,27 @@ export function prepareAntigravityRequest(
         }
 
         if (headerStyle === "antigravity") {
-          const gemini35FlashBackendModel = resolveAntigravityGemini35FlashBackendModel(
-            rawModel,
-            tierThinkingLevel,
-          );
-          if (gemini35FlashBackendModel) {
-            effectiveModel = gemini35FlashBackendModel;
-            wrappedBody.model = gemini35FlashBackendModel;
+          const gemini4Backend = resolveAntigravityGemini4BackendModel(rawModel, tierThinkingLevel);
+          if (gemini4Backend) {
+            effectiveModel = gemini4Backend.actualModel;
+            tierThinkingLevel = gemini4Backend.thinkingLevel;
+            wrappedBody.model = gemini4Backend.actualModel;
+          } else {
+            const gemini35FlashBackendModel = resolveAntigravityGemini35FlashBackendModel(
+              rawModel,
+              tierThinkingLevel,
+            );
+            if (gemini35FlashBackendModel) {
+              effectiveModel = gemini35FlashBackendModel;
+              wrappedBody.model = gemini35FlashBackendModel;
+            }
           }
         }
 
         const conversationKey = resolveConversationKeyFromRequests(requestObjects);
         // Strip tier suffix from model for cache key to prevent cache misses on tier change
-        // e.g., "claude-opus-4-6-thinking-high" -> "claude-opus-4-6-thinking"
-        const modelForCacheKey = effectiveModel.replace(/-(minimal|low|medium|high)$/i, "");
+        // e.g., "claude-opus-4-6-thinking-high" -> "claude-opus-4-6-thinking", "gemini-4-neon-xhigh" -> "gemini-4-neon"
+        const modelForCacheKey = stripThinkingTierSuffixForCacheKey(effectiveModel);
         signatureSessionKey = buildSignatureSessionKey(PLUGIN_SESSION_ID, modelForCacheKey, conversationKey, signatureCacheProjectKey(modelForCacheKey, resolveProjectKey(parsedBody.project)));
 
         if (requestObjects.length > 0) {
@@ -1138,20 +1174,19 @@ export function prepareAntigravityRequest(
           requestPayload.providerOptions as Record<string, unknown> | undefined,
           rawGenerationConfig
         );
-        const isGemini3 = effectiveModel.toLowerCase().includes("gemini-3");
+        const isGemini3Or4 = isGemini3Or4Model(effectiveModel);
 
         log.debug(`[ThinkingResolution] rawModel=${rawModel} resolvedModel=${effectiveModel} resolvedTier=${tierThinkingLevel ?? "none"} variantLevel=${variantConfig?.thinkingLevel ?? "none"} variantBudget=${variantConfig?.thinkingBudget ?? "none"} providerOptions.google=${JSON.stringify((requestPayload.providerOptions as any)?.google ?? null)} generationConfig.thinkingConfig=${JSON.stringify((rawGenerationConfig as any)?.thinkingConfig ?? null)}`);
 
-        if (variantConfig?.thinkingLevel && isGemini3) {
-          // Gemini 3 native format - use thinkingLevel directly
+        if (variantConfig?.thinkingLevel && isGemini3Or4) {
+          // Gemini 3/4 native format - use thinkingLevel directly
           tierThinkingLevel = variantConfig.thinkingLevel;
           tierThinkingBudget = undefined;
         } else if (variantConfig?.thinkingBudget) {
-          if (isGemini3) {
-            // Legacy format for Gemini 3 - convert with deprecation warning
-            log.warn("[Deprecated] Using thinkingBudget for Gemini 3 model. Use thinkingLevel instead.");
-            tierThinkingLevel = variantConfig.thinkingBudget <= 8192 ? "low"
-              : variantConfig.thinkingBudget <= 16384 ? "medium" : "high";
+          if (isGemini3Or4) {
+            // Legacy format for Gemini 3/4 - convert with deprecation warning
+            log.warn("[Deprecated] Using thinkingBudget for Gemini 3/4 model. Use thinkingLevel instead.");
+            tierThinkingLevel = budgetToGeminiLevelForModel(effectiveModel, variantConfig.thinkingBudget);
             tierThinkingBudget = undefined;
           } else {
             // Claude / Gemini 2.5 - use budget directly
@@ -1161,12 +1196,18 @@ export function prepareAntigravityRequest(
         }
 
         if (headerStyle === "antigravity") {
-          const gemini35FlashBackendModel = resolveAntigravityGemini35FlashBackendModel(
-            rawModel,
-            tierThinkingLevel,
-          );
-          if (gemini35FlashBackendModel) {
-            effectiveModel = gemini35FlashBackendModel;
+          const gemini4Backend = resolveAntigravityGemini4BackendModel(rawModel, tierThinkingLevel);
+          if (gemini4Backend) {
+            effectiveModel = gemini4Backend.actualModel;
+            tierThinkingLevel = gemini4Backend.thinkingLevel;
+          } else {
+            const gemini35FlashBackendModel = resolveAntigravityGemini35FlashBackendModel(
+              rawModel,
+              tierThinkingLevel,
+            );
+            if (gemini35FlashBackendModel) {
+              effectiveModel = gemini35FlashBackendModel;
+            }
           }
         }
 
@@ -1545,7 +1586,8 @@ export function prepareAntigravityRequest(
         }
 
         const conversationKey = resolveConversationKey(requestPayload);
-        signatureSessionKey = buildSignatureSessionKey(PLUGIN_SESSION_ID, effectiveModel, conversationKey, signatureCacheProjectKey(effectiveModel, resolveProjectKey(projectId)));
+        const unwrappedModelForCacheKey = stripThinkingTierSuffixForCacheKey(effectiveModel);
+        signatureSessionKey = buildSignatureSessionKey(PLUGIN_SESSION_ID, unwrappedModelForCacheKey, conversationKey, signatureCacheProjectKey(unwrappedModelForCacheKey, resolveProjectKey(projectId)));
 
         // For Claude models, filter out unsigned thinking blocks (required by Claude API)
         // Attempts to restore signatures from cache for multi-turn conversations

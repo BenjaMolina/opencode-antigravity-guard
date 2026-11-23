@@ -150,9 +150,9 @@ export function isApiKeyAuth(auth: unknown): auth is ApiKeyAuthDetails {
  */
 function canRouteAsPublicGeminiApiModel(model: string): boolean {
   const m = model.toLowerCase();
-  if (m.includes("claude")) return false;
+  if (m.includes("claude") || m.includes("gemini-4") || m.includes("gpt-oss")) return false;
   const isAntigravityPrefixed = m.startsWith("antigravity-");
-  const stripped = m.replace(/^antigravity-/, "").replace(/-(minimal|low|medium|high)$/, "");
+  const stripped = m.replace(/^antigravity-/, "").replace(/-(minimal|low|medium|high|xhigh)$/, "");
 
   // Explicit translation (e.g. gemini-3.1-pro → gemini-3.1-pro-preview) → routable.
   if (mapAntigravityModelToPublicApi(stripped)) return true;
@@ -275,6 +275,8 @@ export function isLikelyAntigravityOnlyModel(model: string): boolean {
   const m = model.toLowerCase();
   if (m.startsWith("antigravity-")) return true;
   if (m.includes("claude")) return true;
+  if (m.includes("gemini-4")) return true;
+  if (m.includes("gpt-oss")) return true;
   return ANTIGRAVITY_ONLY_BARE_GEMINI_IDS.has(m);
 }
 
@@ -419,7 +421,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function toThinkingTier(value: string | undefined): ThinkingTier | undefined {
-  if (value === "low" || value === "medium" || value === "high") return value;
+  if (value === "low" || value === "medium" || value === "high" || value === "xhigh") return value;
   return undefined;
 }
 

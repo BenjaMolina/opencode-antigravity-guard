@@ -25,11 +25,17 @@ describe("OPENCODE_MODEL_DEFINITIONS", () => {
       "antigravity-gemini-3-pro",
       "antigravity-gemini-3.1-pro",
       "antigravity-gemini-3.5-flash",
+      "antigravity-gemini-3.5-flash-lite",
       "antigravity-gemini-3.6-flash-tiered",
       "antigravity-gemini-3.7-flash",
       "antigravity-gemini-3.7-flash-tiered",
       "antigravity-gemini-3.8-flash",
       "antigravity-gemini-3.8-flash-tiered",
+      "antigravity-gemini-4-argon",
+      "antigravity-gemini-4-carbon",
+      "antigravity-gemini-4-hydrogen",
+      "antigravity-gemini-4-neon",
+      "antigravity-gpt-oss-120b-medium",
       "gemini-2.5-flash",
       "gemini-2.5-pro",
       "gemini-3-flash-preview",
@@ -40,6 +46,51 @@ describe("OPENCODE_MODEL_DEFINITIONS", () => {
       "gemini-3.7-flash",
       "gemini-3.8-flash",
     ]);
+  });
+
+  it("defines Gemini 4, 3.5 Flash Lite, and GPT-OSS limits and xhigh variants", () => {
+    expect(getModel("antigravity-gemini-4-argon")).toMatchObject({
+      limit: { context: 1048576, output: 65536 },
+      variants: {
+        low: { thinkingLevel: "low" },
+        medium: { thinkingLevel: "medium" },
+        high: { thinkingLevel: "high" },
+      },
+    });
+    expect(getModel("antigravity-gemini-4-carbon")).toMatchObject({
+      limit: { context: 1048576, output: 262144 },
+      variants: {
+        low: { thinkingLevel: "low" },
+        medium: { thinkingLevel: "medium" },
+        high: { thinkingLevel: "high" },
+      },
+    });
+    expect(getModel("antigravity-gemini-4-neon")).toMatchObject({
+      limit: { context: 1048576, output: 262144 },
+      variants: {
+        low: { thinkingLevel: "low" },
+        medium: { thinkingLevel: "medium" },
+        high: { thinkingLevel: "high" },
+        xhigh: { thinkingLevel: "xhigh" },
+      },
+    });
+    expect(getModel("antigravity-gemini-4-hydrogen")).toMatchObject({
+      limit: { context: 1048576, output: 262144 },
+      variants: {
+        low: { thinkingLevel: "low" },
+        medium: { thinkingLevel: "medium" },
+        high: { thinkingLevel: "high" },
+        xhigh: { thinkingLevel: "xhigh" },
+      },
+    });
+    expect(getModel("antigravity-gemini-3.5-flash-lite").limit).toEqual({
+      context: 1048576,
+      output: 65535,
+    });
+    expect(getModel("antigravity-gpt-oss-120b-medium").limit).toEqual({
+      context: 131072,
+      output: 32768,
+    });
   });
 
   it("defines Gemini 3 variants for Antigravity models", () => {
@@ -152,6 +203,19 @@ describe("dynamic model discovery helpers", () => {
     expect(models["antigravity-claude-sonnet-4-6"]).toMatchObject({
       name: "Claude Sonnet 4.6 (Antigravity)",
       limit: { context: 200000, output: 64000 },
+    });
+
+    const gemini4AndGpt = modelsFromAntigravityAvailableModels({
+      "gemini-4-neon-xhigh": { displayName: "Gemini 4 Neon XHigh" },
+      "gpt-oss-120b-medium": { displayName: "GPT-OSS 120B Medium" },
+    });
+    expect(gemini4AndGpt["antigravity-gemini-4-neon-xhigh"]?.limit).toEqual({
+      context: 1048576,
+      output: 262144,
+    });
+    expect(gemini4AndGpt["antigravity-gpt-oss-120b-medium"]?.limit).toEqual({
+      context: 131072,
+      output: 32768,
     });
   });
 });

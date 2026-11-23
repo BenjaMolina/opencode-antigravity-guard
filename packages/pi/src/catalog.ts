@@ -1,8 +1,8 @@
-export type StandardReasoningLevel = "off" | "minimal" | "low" | "medium" | "high"
+export type StandardReasoningLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh"
 
 const ANSWER_RESERVE = 1024
 
-type NativeThinkingLevel = "low" | "medium" | "high"
+type NativeThinkingLevel = "minimal" | "low" | "medium" | "high" | "xhigh"
 
 export interface ToolEvidenceRef {
   readonly record: string
@@ -36,7 +36,7 @@ export interface CatalogEntry {
   readonly publicId: string
   readonly descriptor: {
     readonly name: string
-    readonly thinkingLevelMap: Readonly<Record<"minimal" | "low" | "medium" | "high", string | null>>
+    readonly thinkingLevelMap: Readonly<Record<"minimal" | "low" | "medium" | "high", string | null> & { readonly xhigh?: string | null }>
     readonly contextWindow: number
     readonly maxTokens: number
   }
@@ -150,6 +150,86 @@ const CATALOG = freeze(defineCatalog([{
   },
   replay: { kind: "same-public-model" },
   response: { kind: "gemini-envelope", family: "gpt-oss" },
+}, {
+  publicId: "antigravity-gemini-4-argon",
+  descriptor: {
+    name: "Gemini 4 Argon (Antigravity, text only)",
+    thinkingLevelMap: { minimal: null, low: "low", medium: "medium", high: "high" },
+    contextWindow: 1_048_576,
+    maxTokens: 65_536,
+  },
+  routes: {
+    off: { wireModel: "gemini-4-argon-low", thinking: { kind: "budget", budget: 0, includeThoughts: false }, tools: enabled({ record: "pi-json-tool-loop", revision: "gemini-4-argon-off-v1", publicModelId: "antigravity-gemini-4-argon", reasoning: "off", wireModel: "gemini-4-argon-low" }, GEMINI_PARAMETERS_JSON_SCHEMA_PROFILE) },
+    low: { wireModel: "gemini-4-argon-low", thinking: { kind: "budget", budget: 1000, includeThoughts: true }, tools: enabled({ record: "pi-json-tool-loop", revision: "gemini-4-argon-low-v1", publicModelId: "antigravity-gemini-4-argon", reasoning: "low", wireModel: "gemini-4-argon-low" }, GEMINI_PARAMETERS_JSON_SCHEMA_PROFILE) },
+    medium: { wireModel: "gemini-4-argon-medium", thinking: { kind: "budget", budget: 4000, includeThoughts: true }, tools: enabled({ record: "pi-json-tool-loop", revision: "gemini-4-argon-medium-v1", publicModelId: "antigravity-gemini-4-argon", reasoning: "medium", wireModel: "gemini-4-argon-medium" }, GEMINI_PARAMETERS_JSON_SCHEMA_PROFILE) },
+    high: { wireModel: "gemini-4-argon-high", thinking: { kind: "budget", budget: -1, includeThoughts: true }, tools: enabled({ record: "pi-json-tool-loop", revision: "gemini-4-argon-high-v1", publicModelId: "antigravity-gemini-4-argon", reasoning: "high", wireModel: "gemini-4-argon-high" }, GEMINI_PARAMETERS_JSON_SCHEMA_PROFILE) },
+  },
+  replay: { kind: "same-public-model" },
+  response: { kind: "gemini-envelope", family: "gemini" },
+}, {
+  publicId: "antigravity-gemini-4-carbon",
+  descriptor: {
+    name: "Gemini 4 Carbon (Antigravity, text only)",
+    thinkingLevelMap: { minimal: null, low: "low", medium: "medium", high: "high" },
+    contextWindow: 1_048_576,
+    maxTokens: 262_144,
+  },
+  routes: {
+    off: { wireModel: "gemini-4-carbon-low", thinking: { kind: "budget", budget: 0, includeThoughts: false }, tools: enabled({ record: "pi-json-tool-loop", revision: "gemini-4-carbon-off-v1", publicModelId: "antigravity-gemini-4-carbon", reasoning: "off", wireModel: "gemini-4-carbon-low" }, GEMINI_PARAMETERS_JSON_SCHEMA_PROFILE) },
+    low: { wireModel: "gemini-4-carbon-low", thinking: { kind: "budget", budget: 1000, includeThoughts: true }, tools: enabled({ record: "pi-json-tool-loop", revision: "gemini-4-carbon-low-v1", publicModelId: "antigravity-gemini-4-carbon", reasoning: "low", wireModel: "gemini-4-carbon-low" }, GEMINI_PARAMETERS_JSON_SCHEMA_PROFILE) },
+    medium: { wireModel: "gemini-4-carbon-medium", thinking: { kind: "budget", budget: 4000, includeThoughts: true }, tools: enabled({ record: "pi-json-tool-loop", revision: "gemini-4-carbon-medium-v1", publicModelId: "antigravity-gemini-4-carbon", reasoning: "medium", wireModel: "gemini-4-carbon-medium" }, GEMINI_PARAMETERS_JSON_SCHEMA_PROFILE) },
+    high: { wireModel: "gemini-4-carbon-high", thinking: { kind: "budget", budget: -1, includeThoughts: true }, tools: enabled({ record: "pi-json-tool-loop", revision: "gemini-4-carbon-high-v1", publicModelId: "antigravity-gemini-4-carbon", reasoning: "high", wireModel: "gemini-4-carbon-high" }, GEMINI_PARAMETERS_JSON_SCHEMA_PROFILE) },
+  },
+  replay: { kind: "same-public-model" },
+  response: { kind: "gemini-envelope", family: "gemini" },
+}, {
+  publicId: "antigravity-gemini-4-neon",
+  descriptor: {
+    name: "Gemini 4 Neon (Antigravity, text only)",
+    thinkingLevelMap: { minimal: null, low: "low", medium: "medium", high: "high", xhigh: "xhigh" },
+    contextWindow: 1_048_576,
+    maxTokens: 262_144,
+  },
+  routes: {
+    off: { wireModel: "gemini-4-neon-low", thinking: { kind: "budget", budget: 0, includeThoughts: false }, tools: enabled({ record: "pi-json-tool-loop", revision: "gemini-4-neon-off-v1", publicModelId: "antigravity-gemini-4-neon", reasoning: "off", wireModel: "gemini-4-neon-low" }, GEMINI_PARAMETERS_JSON_SCHEMA_PROFILE) },
+    low: { wireModel: "gemini-4-neon-low", thinking: { kind: "budget", budget: 1000, includeThoughts: true }, tools: enabled({ record: "pi-json-tool-loop", revision: "gemini-4-neon-low-v1", publicModelId: "antigravity-gemini-4-neon", reasoning: "low", wireModel: "gemini-4-neon-low" }, GEMINI_PARAMETERS_JSON_SCHEMA_PROFILE) },
+    medium: { wireModel: "gemini-4-neon-medium", thinking: { kind: "budget", budget: 4000, includeThoughts: true }, tools: enabled({ record: "pi-json-tool-loop", revision: "gemini-4-neon-medium-v1", publicModelId: "antigravity-gemini-4-neon", reasoning: "medium", wireModel: "gemini-4-neon-medium" }, GEMINI_PARAMETERS_JSON_SCHEMA_PROFILE) },
+    high: { wireModel: "gemini-4-neon-high", thinking: { kind: "budget", budget: -1, includeThoughts: true }, tools: enabled({ record: "pi-json-tool-loop", revision: "gemini-4-neon-high-v1", publicModelId: "antigravity-gemini-4-neon", reasoning: "high", wireModel: "gemini-4-neon-high" }, GEMINI_PARAMETERS_JSON_SCHEMA_PROFILE) },
+    xhigh: { wireModel: "gemini-4-neon-xhigh", thinking: { kind: "budget", budget: -1, includeThoughts: true }, tools: enabled({ record: "pi-json-tool-loop", revision: "gemini-4-neon-xhigh-v1", publicModelId: "antigravity-gemini-4-neon", reasoning: "xhigh", wireModel: "gemini-4-neon-xhigh" }, GEMINI_PARAMETERS_JSON_SCHEMA_PROFILE) },
+  },
+  replay: { kind: "same-public-model" },
+  response: { kind: "gemini-envelope", family: "gemini" },
+}, {
+  publicId: "antigravity-gemini-4-hydrogen",
+  descriptor: {
+    name: "Gemini 4 Hydrogen (Antigravity, text only)",
+    thinkingLevelMap: { minimal: null, low: "low", medium: "medium", high: "high", xhigh: "xhigh" },
+    contextWindow: 1_048_576,
+    maxTokens: 262_144,
+  },
+  routes: {
+    off: { wireModel: "gemini-4-hydrogen-low", thinking: { kind: "budget", budget: 0, includeThoughts: false }, tools: enabled({ record: "pi-json-tool-loop", revision: "gemini-4-hydrogen-off-v1", publicModelId: "antigravity-gemini-4-hydrogen", reasoning: "off", wireModel: "gemini-4-hydrogen-low" }, GEMINI_PARAMETERS_JSON_SCHEMA_PROFILE) },
+    low: { wireModel: "gemini-4-hydrogen-low", thinking: { kind: "budget", budget: 1000, includeThoughts: true }, tools: enabled({ record: "pi-json-tool-loop", revision: "gemini-4-hydrogen-low-v1", publicModelId: "antigravity-gemini-4-hydrogen", reasoning: "low", wireModel: "gemini-4-hydrogen-low" }, GEMINI_PARAMETERS_JSON_SCHEMA_PROFILE) },
+    medium: { wireModel: "gemini-4-hydrogen-medium", thinking: { kind: "budget", budget: 4000, includeThoughts: true }, tools: enabled({ record: "pi-json-tool-loop", revision: "gemini-4-hydrogen-medium-v1", publicModelId: "antigravity-gemini-4-hydrogen", reasoning: "medium", wireModel: "gemini-4-hydrogen-medium" }, GEMINI_PARAMETERS_JSON_SCHEMA_PROFILE) },
+    high: { wireModel: "gemini-4-hydrogen-high", thinking: { kind: "budget", budget: -1, includeThoughts: true }, tools: enabled({ record: "pi-json-tool-loop", revision: "gemini-4-hydrogen-high-v1", publicModelId: "antigravity-gemini-4-hydrogen", reasoning: "high", wireModel: "gemini-4-hydrogen-high" }, GEMINI_PARAMETERS_JSON_SCHEMA_PROFILE) },
+    xhigh: { wireModel: "gemini-4-hydrogen-xhigh", thinking: { kind: "budget", budget: -1, includeThoughts: true }, tools: enabled({ record: "pi-json-tool-loop", revision: "gemini-4-hydrogen-xhigh-v1", publicModelId: "antigravity-gemini-4-hydrogen", reasoning: "xhigh", wireModel: "gemini-4-hydrogen-xhigh" }, GEMINI_PARAMETERS_JSON_SCHEMA_PROFILE) },
+  },
+  replay: { kind: "same-public-model" },
+  response: { kind: "gemini-envelope", family: "gemini" },
+}, {
+  publicId: "antigravity-gemini-3.5-flash-lite",
+  descriptor: {
+    name: "Gemini 3.5 Flash Lite (Antigravity, text only)",
+    thinkingLevelMap: { minimal: null, low: "low", medium: null, high: null },
+    contextWindow: 1_048_576,
+    maxTokens: 65_535,
+  },
+  routes: {
+    off: { wireModel: "gemini-3.5-flash-lite", thinking: { kind: "budget", budget: 0, includeThoughts: false }, tools: enabled({ record: "pi-json-tool-loop", revision: "gemini-3.5-flash-lite-off-v1", publicModelId: "antigravity-gemini-3.5-flash-lite", reasoning: "off", wireModel: "gemini-3.5-flash-lite" }, GEMINI_PARAMETERS_JSON_SCHEMA_PROFILE) },
+    low: { wireModel: "gemini-3.5-flash-lite", thinking: { kind: "budget", budget: 1000, includeThoughts: true }, tools: enabled({ record: "pi-json-tool-loop", revision: "gemini-3.5-flash-lite-low-v1", publicModelId: "antigravity-gemini-3.5-flash-lite", reasoning: "low", wireModel: "gemini-3.5-flash-lite" }, GEMINI_PARAMETERS_JSON_SCHEMA_PROFILE) },
+  },
+  replay: { kind: "same-public-model" },
+  response: { kind: "gemini-envelope", family: "gemini" },
 }] as const satisfies readonly CatalogEntry[]))
 
 type Catalog = typeof CATALOG
@@ -195,7 +275,7 @@ export function defineCatalog<T extends readonly {
       if (level !== "off" && !Object.hasOwn(entry.descriptor.thinkingLevelMap, level)) {
         throw new Error(`Route is outside descriptor map: ${entry.publicId}/${level}`)
       }
-      if (level !== "off" && entry.descriptor.thinkingLevelMap[level as keyof typeof entry.descriptor.thinkingLevelMap] === null) {
+      if (level !== "off" && entry.descriptor.thinkingLevelMap[level as keyof typeof entry.descriptor.thinkingLevelMap] == null) {
         throw new Error(`Route is hidden by descriptor: ${entry.publicId}/${level}`)
       }
       if (route.thinking.kind === "budget" && route.thinking.budget > 0 && Number.isFinite(route.thinking.budget) && route.thinking.budget + ANSWER_RESERVE > entry.descriptor.maxTokens) {

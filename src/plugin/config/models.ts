@@ -1,6 +1,6 @@
 import type { ProviderModel } from "../types";
 
-export type ModelThinkingLevel = "minimal" | "low" | "medium" | "high";
+export type ModelThinkingLevel = "minimal" | "low" | "medium" | "high" | "xhigh";
 
 export interface ModelThinkingConfig {
   thinkingBudget: number;
@@ -94,6 +94,17 @@ export const OPENCODE_MODEL_DEFINITIONS: OpencodeModelDefinitions = {
       high: { thinkingLevel: "high" },
     },
   },
+  "antigravity-gemini-3.5-flash-lite": {
+    name: "Gemini 3.5 Flash Lite (Antigravity)",
+    limit: { context: 1048576, output: 65535 },
+    modalities: DEFAULT_MODALITIES,
+    variants: {
+      minimal: { thinkingLevel: "minimal" },
+      low: { thinkingLevel: "low" },
+      medium: { thinkingLevel: "medium" },
+      high: { thinkingLevel: "high" },
+    },
+  },
   "antigravity-gemini-3.6-flash-tiered": {
     name: "Gemini 3.6 Flash Tiered (Antigravity)",
     limit: { context: 1048576, output: 65536 },
@@ -148,6 +159,53 @@ export const OPENCODE_MODEL_DEFINITIONS: OpencodeModelDefinitions = {
       medium: { thinkingLevel: "medium" },
       high: { thinkingLevel: "high" },
     },
+  },
+  "antigravity-gemini-4-argon": {
+    name: "Gemini 4 Argon (Antigravity)",
+    limit: { context: 1048576, output: 65536 },
+    modalities: DEFAULT_MODALITIES,
+    variants: {
+      low: { thinkingLevel: "low" },
+      medium: { thinkingLevel: "medium" },
+      high: { thinkingLevel: "high" },
+    },
+  },
+  "antigravity-gemini-4-carbon": {
+    name: "Gemini 4 Carbon (Antigravity)",
+    limit: { context: 1048576, output: 262144 },
+    modalities: DEFAULT_MODALITIES,
+    variants: {
+      low: { thinkingLevel: "low" },
+      medium: { thinkingLevel: "medium" },
+      high: { thinkingLevel: "high" },
+    },
+  },
+  "antigravity-gemini-4-neon": {
+    name: "Gemini 4 Neon (Antigravity)",
+    limit: { context: 1048576, output: 262144 },
+    modalities: DEFAULT_MODALITIES,
+    variants: {
+      low: { thinkingLevel: "low" },
+      medium: { thinkingLevel: "medium" },
+      high: { thinkingLevel: "high" },
+      xhigh: { thinkingLevel: "xhigh" },
+    },
+  },
+  "antigravity-gemini-4-hydrogen": {
+    name: "Gemini 4 Hydrogen (Antigravity)",
+    limit: { context: 1048576, output: 262144 },
+    modalities: DEFAULT_MODALITIES,
+    variants: {
+      low: { thinkingLevel: "low" },
+      medium: { thinkingLevel: "medium" },
+      high: { thinkingLevel: "high" },
+      xhigh: { thinkingLevel: "xhigh" },
+    },
+  },
+  "antigravity-gpt-oss-120b-medium": {
+    name: "GPT-OSS 120B Medium (Antigravity)",
+    limit: { context: 131072, output: 32768 },
+    modalities: DEFAULT_MODALITIES,
   },
   "antigravity-claude-sonnet-4-6": {
     name: "Claude Sonnet 4.6 (Antigravity)",
@@ -230,8 +288,22 @@ function titleFromModelId(modelId: string): string {
 }
 
 function defaultLimitForModel(modelId: string): ModelLimit {
-  if (modelId.includes("claude")) {
+  const lower = modelId.toLowerCase();
+  if (lower.includes("claude")) {
     return { context: 200000, output: 64000 };
+  }
+  if (lower.includes("gpt-oss")) {
+    return { context: 131072, output: 32768 };
+  }
+  if (
+    lower.includes("gemini-4-carbon") ||
+    lower.includes("gemini-4-neon") ||
+    lower.includes("gemini-4-hydrogen")
+  ) {
+    return { context: 1048576, output: 262144 };
+  }
+  if (lower.includes("gemini-3.5-flash-lite")) {
+    return { context: 1048576, output: 65535 };
   }
   return { context: 1048576, output: 65536 };
 }

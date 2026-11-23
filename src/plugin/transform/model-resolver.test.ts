@@ -465,5 +465,153 @@ describe("Issue #103: resolveModelForHeaderStyle", () => {
       const result = resolveModelForHeaderStyle("claude-opus-4-6-thinking", "antigravity");
       expect(result.actualModel).toBe("claude-opus-4-6-thinking");
     });
+
+    it("keeps gemini-4-* Antigravity-only without appending -preview", () => {
+      const antigravity = resolveModelForHeaderStyle("gemini-4-argon", "antigravity");
+      const cli = resolveModelForHeaderStyle("gemini-4-argon", "gemini-cli");
+      const neonXhigh = resolveModelForHeaderStyle("antigravity-gemini-4-neon-xhigh", "antigravity");
+
+      expect(antigravity.actualModel).toBe("gemini-4-argon-high");
+      expect(antigravity.thinkingLevel).toBe("high");
+      expect(antigravity.quotaPreference).toBe("antigravity");
+      expect(cli.actualModel).toBe("gemini-4-argon-high");
+      expect(cli.quotaPreference).toBe("antigravity");
+      expect(neonXhigh.actualModel).toBe("gemini-4-neon-xhigh");
+      expect(neonXhigh.thinkingLevel).toBe("xhigh");
+    });
+  });
+});
+
+describe("Gemini 4, xhigh, gemini-3.5-flash-lite, and gpt-oss-120b-medium resolution", () => {
+  it("resolves bare and tier-suffixed Gemini 4 Argon wire IDs and clamps xhigh to high", () => {
+    expect(resolveModelWithTier("gemini-4-argon")).toMatchObject({
+      actualModel: "gemini-4-argon-high",
+      thinkingLevel: "high",
+      isThinkingModel: true,
+      quotaPreference: "antigravity",
+      explicitQuota: true,
+    });
+    expect(resolveModelWithTier("antigravity-gemini-4-argon", { cli_first: true })).toMatchObject({
+      actualModel: "gemini-4-argon-high",
+      thinkingLevel: "high",
+      quotaPreference: "antigravity",
+      explicitQuota: true,
+    });
+    expect(resolveModelWithTier("gemini-4-argon", { cli_first: true })).toMatchObject({
+      actualModel: "gemini-4-argon-high",
+      quotaPreference: "antigravity",
+      explicitQuota: true,
+    });
+    expect(resolveModelWithTier("antigravity-gemini-4-argon-low")).toMatchObject({
+      actualModel: "gemini-4-argon-low",
+      thinkingLevel: "low",
+    });
+    expect(resolveModelWithTier("antigravity-gemini-4-argon-medium")).toMatchObject({
+      actualModel: "gemini-4-argon-medium",
+      thinkingLevel: "medium",
+    });
+    expect(resolveModelWithTier("antigravity-gemini-4-argon-xhigh")).toMatchObject({
+      actualModel: "gemini-4-argon-high",
+      thinkingLevel: "high",
+    });
+  });
+
+  it("resolves Gemini 4 Carbon wire IDs and clamps xhigh to high", () => {
+    expect(resolveModelWithTier("antigravity-gemini-4-carbon")).toMatchObject({
+      actualModel: "gemini-4-carbon-high",
+      thinkingLevel: "high",
+    });
+    expect(resolveModelWithTier("gemini-4-carbon-low")).toMatchObject({
+      actualModel: "gemini-4-carbon-low",
+      thinkingLevel: "low",
+    });
+    expect(resolveModelWithTier("gemini-4-carbon-medium")).toMatchObject({
+      actualModel: "gemini-4-carbon-medium",
+      thinkingLevel: "medium",
+    });
+    expect(resolveModelWithTier("gemini-4-carbon-xhigh")).toMatchObject({
+      actualModel: "gemini-4-carbon-high",
+      thinkingLevel: "high",
+    });
+  });
+
+  it("resolves Gemini 4 Neon and Hydrogen wire IDs including xhigh and special Hydrogen IDs", () => {
+    expect(resolveModelWithTier("antigravity-gemini-4-neon")).toMatchObject({
+      actualModel: "gemini-4-neon-high",
+      thinkingLevel: "high",
+    });
+    expect(resolveModelWithTier("antigravity-gemini-4-neon-xhigh")).toMatchObject({
+      actualModel: "gemini-4-neon-xhigh",
+      thinkingLevel: "xhigh",
+      tier: "xhigh",
+    });
+    expect(resolveModelWithTier("antigravity-gemini-4-hydrogen")).toMatchObject({
+      actualModel: "gemini-4-hydrogen-high",
+      thinkingLevel: "high",
+    });
+    expect(resolveModelWithTier("gemini-4-hydrogen-xhigh")).toMatchObject({
+      actualModel: "gemini-4-hydrogen-xhigh",
+      thinkingLevel: "xhigh",
+      tier: "xhigh",
+    });
+    expect(resolveModelWithTier("gemini-4-hydrogen-tiered-high")).toMatchObject({
+      actualModel: "gemini-4-hydrogen-tiered-high",
+      thinkingLevel: "high",
+    });
+    expect(resolveModelWithTier("antigravity-gemini-4-hydrogen-tiered-xhigh")).toMatchObject({
+      actualModel: "gemini-4-hydrogen-tiered-xhigh",
+      thinkingLevel: "xhigh",
+    });
+    expect(resolveModelWithTier("antigravity-gemini-4-hydrogen-sonar")).toMatchObject({
+      actualModel: "gemini-4-hydrogen-sonar",
+      thinkingLevel: "high",
+    });
+  });
+
+  it("preserves gemini-3.5-flash-lite and gpt-oss-120b-medium without stripping suffixes", () => {
+    expect(resolveModelWithTier("antigravity-gemini-3.5-flash-lite")).toMatchObject({
+      actualModel: "gemini-3.5-flash-lite",
+      thinkingLevel: "low",
+      isThinkingModel: true,
+    });
+    expect(resolveModelWithTier("gemini-3.5-flash-lite")).toMatchObject({
+      actualModel: "gemini-3.5-flash-lite",
+      thinkingLevel: "low",
+    });
+    expect(resolveModelWithTier("antigravity-gpt-oss-120b-medium")).toMatchObject({
+      actualModel: "gpt-oss-120b-medium",
+      isThinkingModel: false,
+      quotaPreference: "antigravity",
+      explicitQuota: true,
+    });
+    expect(resolveModelWithTier("gpt-oss-120b-medium")).toMatchObject({
+      actualModel: "gpt-oss-120b-medium",
+      isThinkingModel: false,
+      quotaPreference: "antigravity",
+      explicitQuota: true,
+    });
+  });
+
+  it("updates Gemini 4 wire ID suffix when variant overrides thinkingLevel or thinkingBudget", () => {
+    expect(resolveModelWithVariant("antigravity-gemini-4-neon", { thinkingLevel: "xhigh" })).toMatchObject({
+      actualModel: "gemini-4-neon-xhigh",
+      thinkingLevel: "xhigh",
+      configSource: "variant",
+    });
+    expect(resolveModelWithVariant("antigravity-gemini-4-argon", { thinkingLevel: "low" })).toMatchObject({
+      actualModel: "gemini-4-argon-low",
+      thinkingLevel: "low",
+      configSource: "variant",
+    });
+    expect(resolveModelWithVariant("antigravity-gemini-4-argon", { thinkingLevel: "xhigh" })).toMatchObject({
+      actualModel: "gemini-4-argon-high",
+      thinkingLevel: "high",
+      configSource: "variant",
+    });
+    expect(resolveModelWithVariant("antigravity-gemini-4-carbon", { thinkingBudget: 8000 })).toMatchObject({
+      actualModel: "gemini-4-carbon-low",
+      thinkingLevel: "low",
+      configSource: "variant",
+    });
   });
 });

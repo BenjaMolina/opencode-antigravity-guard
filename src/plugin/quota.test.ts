@@ -47,4 +47,30 @@ describe("Antigravity quota aggregation", () => {
     expect(summary.groups["gemini-flash"]?.remainingFraction).toBe(0.1);
     expect(summary.groups["gemini-flash"]?.resetTime).toBe("2026-05-26T18:00:00Z");
   });
+
+  it("includes Gemini 4 models in the gemini-pro quota group", () => {
+    const summary = __testExports.aggregateQuota({
+      "gemini-4-argon-high": {
+        displayName: "Gemini 4 Argon High",
+        quotaInfo: {
+          remainingFraction: 0.75,
+          resetTime: "2026-11-23T00:00:00Z",
+        },
+      },
+      "gemini-4-neon-xhigh": {
+        displayName: "Gemini 4 Neon XHigh",
+        quotaInfo: {
+          remainingFraction: 0.4,
+          resetTime: "2026-11-22T22:00:00Z",
+        },
+      },
+    });
+
+    expect(summary.groups["gemini-pro"]).toEqual({
+      remainingFraction: 0.4,
+      resetTime: "2026-11-22T22:00:00Z",
+      modelCount: 2,
+    });
+    expect(summary.modelCount).toBe(2);
+  });
 });

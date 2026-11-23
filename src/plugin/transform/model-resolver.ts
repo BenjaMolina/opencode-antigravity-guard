@@ -16,22 +16,24 @@ export interface ModelResolverOptions {
  * Claude and Gemini 2.5 Pro use numeric budgets.
  */
 export const THINKING_TIER_BUDGETS = {
-  claude: { low: 8192, medium: 16384, high: 32768 },
-  "gemini-2.5-pro": { low: 8192, medium: 16384, high: 32768 },
-  "gemini-2.5-flash": { low: 6144, medium: 12288, high: 24576 },
-  default: { low: 4096, medium: 8192, high: 16384 },
+  claude: { low: 8192, medium: 16384, high: 32768, xhigh: 32768 },
+  "gemini-2.5-pro": { low: 8192, medium: 16384, high: 32768, xhigh: 32768 },
+  "gemini-2.5-flash": { low: 6144, medium: 12288, high: 24576, xhigh: 24576 },
+  default: { low: 4096, medium: 8192, high: 16384, xhigh: 16384 },
 } as const;
 
 /**
- * Gemini 3 uses thinkingLevel strings instead of numeric budgets.
+ * Gemini 3 and Gemini 4 use thinkingLevel strings instead of numeric budgets.
  * Flash supports: minimal, low, medium, high
  * Pro supports: low, high (no minimal/medium)
+ * Gemini 4 Neon/Hydrogen also support: xhigh
  */
 export const GEMINI_3_THINKING_LEVELS = [
   "minimal",
   "low",
   "medium",
   "high",
+  "xhigh",
 ] as const;
 
 /**
@@ -64,7 +66,7 @@ export const MODEL_ALIASES: Record<string, string> = {
   // Reference: Antigravity-Manager/src-tauri/src/proxy/common/model_mapping.rs
 };
 
-const TIER_REGEX = /-(minimal|low|medium|high)$/;
+const TIER_REGEX = /-(minimal|low|medium|high|xhigh)$/;
 const QUOTA_PREFIX_REGEX = /^antigravity-/i;
 const GEMINI_3_PRO_REGEX = /^gemini-3(?:\.\d+)?-pro/i;
 const GEMINI_3_FLASH_REGEX = /^gemini-3(?:\.\d+)?-flash/i;
@@ -72,6 +74,10 @@ const GEMINI_3_BASE_PRO_REGEX = /^gemini-3-pro/i;
 const GEMINI_35_FLASH_REGEX = /^gemini-3\.5-flash(?:-(minimal|low|medium|high))?$/i;
 const GEMINI_35_FLASH_LOW_MODEL = "gemini-3.5-flash-low";
 const GEMINI_35_FLASH_HIGH_MODEL = "gemini-3-flash-agent";
+const GEMINI_4_PREFIX_REGEX = /^gemini-4-/i;
+const GEMINI_4_FAMILY_REGEX = /^gemini-4-(argon|carbon|neon|hydrogen)(?:-(minimal|low|medium|high|xhigh))?$/i;
+const GEMINI_4_HYDROGEN_SPECIAL_REGEX = /^gemini-4-hydrogen-(tiered-high|tiered-xhigh|sonar)$/i;
+const GPT_OSS_PREFIX_REGEX = /^gpt-oss/i;
 /**
  * Dotted-minor Gemini generations (gemini-3.1, gemini-3.5, ...) use BARE model
  * names on the Gemini CLI backend, unlike the legacy 3.0 line (gemini-3-pro) which
@@ -98,6 +104,7 @@ const IMAGE_GENERATION_MODELS = /image|imagen/i;
 function supportsThinkingTiers(model: string): boolean {
   const lower = model.toLowerCase();
   return (
+    lower.includes("gemini-4") ||
     lower.includes("gemini-3") ||
     lower.includes("gemini-2.5") ||
     (lower.includes("claude") && lower.includes("thinking"))
@@ -140,6 +147,7 @@ function isThinkingCapableModel(model: string): boolean {
   const lower = model.toLowerCase();
   return (
     lower.includes("thinking") ||
+    lower.includes("gemini-4") ||
     lower.includes("gemini-3") ||
     lower.includes("gemini-2.5")
   );
@@ -180,6 +188,70 @@ export function resolveAntigravityGemini35FlashBackendModel(
   return level === "high" ? GEMINI_35_FLASH_HIGH_MODEL : GEMINI_35_FLASH_LOW_MODEL;
 }
 
+type Gemini4Family = "argon" | "carbon" | "neon" | "hydrogen";
+
+function normalizeGemini4ThinkingTier(
+  family: Gemini4Family,
+  rawLevel?: string,
+): ThinkingTier {
+  const normalized = rawLevel?.toLowerCase();
+  const supportsXhigh = family === "neon" || family === "hydrogen";
+  if (normalized === "xhigh") {
+    return supportsXhigh ? "xhigh" : "high";
+  }
+  if (normalized === "minimal" || normalized === "low") {
+    return "low";
+  }
+  if (normalized === "medium") {
+    return "medium";
+  }
+  return "high";
+}
+
+export interface Gemini4ResolvedBackend {
+  actualModel: string;
+  thinkingLevel: ThinkingTier;
+  tier?: ThinkingTier;
+}
+
+/**
+ * Cloud Code requires tier-suffixed wire IDs for `gemini-4-{argon,carbon,neon,hydrogen}`,
+ * defaulting bare names to `-high`, clamping `xhigh` to `high` on Argon/Carbon, and
+ * preserving explicit `gemini-4-hydrogen-tiered-{high,xhigh}` and `gemini-4-hydrogen-sonar`.
+ */
+export function resolveAntigravityGemini4BackendModel(
+  model: string,
+  overrideThinkingLevel?: string,
+): Gemini4ResolvedBackend | undefined {
+  const stripped = model.replace(QUOTA_PREFIX_REGEX, "").trim();
+  const specialMatch = stripped.match(GEMINI_4_HYDROGEN_SPECIAL_REGEX);
+  if (specialMatch) {
+    const suffix = specialMatch[1]!.toLowerCase();
+    const actualModel = `gemini-4-hydrogen-${suffix}`;
+    if (suffix === "tiered-xhigh") {
+      return { actualModel, thinkingLevel: "xhigh", tier: "xhigh" };
+    }
+    if (suffix === "tiered-high") {
+      return { actualModel, thinkingLevel: "high", tier: "high" };
+    }
+    return { actualModel, thinkingLevel: "high" };
+  }
+
+  const match = stripped.match(GEMINI_4_FAMILY_REGEX);
+  if (!match) {
+    return undefined;
+  }
+
+  const family = match[1]!.toLowerCase() as Gemini4Family;
+  const rawSuffix = match[2]?.toLowerCase();
+  const effectiveTier = normalizeGemini4ThinkingTier(family, overrideThinkingLevel ?? rawSuffix);
+  return {
+    actualModel: `gemini-4-${family}-${effectiveTier}`,
+    thinkingLevel: effectiveTier,
+    tier: rawSuffix ? effectiveTier : undefined,
+  };
+}
+
 /**
  * Resolves a model name with optional tier suffix and quota prefix to its actual API model name
  * and corresponding thinking configuration.
@@ -214,6 +286,8 @@ export function resolveModelWithTier(
 
   const isImageModel = IMAGE_GENERATION_MODELS.test(modelWithoutQuota);
   const isClaudeModel = modelWithoutQuota.toLowerCase().includes("claude");
+  const isGemini4Model = GEMINI_4_PREFIX_REGEX.test(modelWithoutQuota);
+  const isGptOssModel = GPT_OSS_PREFIX_REGEX.test(modelWithoutQuota);
 
   // All models default to Antigravity quota unless cli_first is enabled
   // Fallback to gemini-cli happens at the account rotation level when Antigravity is exhausted
@@ -221,11 +295,36 @@ export function resolveModelWithTier(
     options.cli_first === true &&
     !isAntigravity &&
     !isImageModel &&
-    !isClaudeModel;
+    !isClaudeModel &&
+    !isGemini4Model &&
+    !isGptOssModel;
   const quotaPreference = preferGeminiCli
     ? ("gemini-cli" as const)
     : ("antigravity" as const);
-  const explicitQuota = isAntigravity || isImageModel;
+  const explicitQuota = isAntigravity || isImageModel || isGemini4Model || isGptOssModel;
+
+  const gemini4Backend = resolveAntigravityGemini4BackendModel(modelWithoutQuota);
+  if (gemini4Backend) {
+    return {
+      actualModel: gemini4Backend.actualModel,
+      thinkingLevel: gemini4Backend.thinkingLevel,
+      ...(gemini4Backend.tier ? { tier: gemini4Backend.tier } : {}),
+      isThinkingModel: true,
+      quotaPreference: "antigravity",
+      explicitQuota: true,
+    };
+  }
+
+  if (isGemini4Model) {
+    return {
+      actualModel: modelWithoutQuota,
+      thinkingLevel: tier ?? "high",
+      ...(tier ? { tier } : {}),
+      isThinkingModel: true,
+      quotaPreference: "antigravity",
+      explicitQuota: true,
+    };
+  }
 
   const isGemini3 = modelWithoutQuota.toLowerCase().startsWith("gemini-3");
   const skipAlias = isAntigravity && isGemini3;
@@ -359,6 +458,7 @@ export function getModelFamily(
  */
 export interface VariantConfig {
   thinkingBudget?: number;
+  thinkingLevel?: ThinkingTier | "minimal";
   googleSearch?: GoogleSearchConfig;
 }
 
@@ -370,6 +470,13 @@ function budgetToGemini3Level(budget: number): "low" | "medium" | "high" {
   if (budget <= 8192) return "low";
   if (budget <= 16384) return "medium";
   return "high";
+}
+
+function budgetToGemini4Level(budget: number): ThinkingTier {
+  if (budget <= 8192) return "low";
+  if (budget <= 16384) return "medium";
+  if (budget <= 32768) return "high";
+  return "xhigh";
 }
 
 /**
@@ -405,9 +512,9 @@ const ANTIGRAVITY_TO_PUBLIC_API_MODEL_MAP: ReadonlyMap<string, string> = new Map
 
 export function mapAntigravityModelToPublicApi(model: string): string | undefined {
   const stripped = model.toLowerCase().replace(/^antigravity-/, "");
-  // Strip tier suffixes (-minimal/-low/-medium/-high) so
+  // Strip tier suffixes (-minimal/-low/-medium/-high/-xhigh) so
   // `antigravity-gemini-3.1-pro-high` maps the same as `antigravity-gemini-3.1-pro`.
-  const base = stripped.replace(/-(minimal|low|medium|high)$/, "");
+  const base = stripped.replace(/-(minimal|low|medium|high|xhigh)$/, "");
   return ANTIGRAVITY_TO_PUBLIC_API_MODEL_MAP.get(base);
 }
 
@@ -421,7 +528,7 @@ export function resolveModelForHeaderStyle(
   if (headerStyle === "agy-sdk") {
     const modelWithTier = requestedModel
       .replace(/^antigravity-/i, "");
-    const stripped = modelWithTier.replace(/-(minimal|low|medium|high)$/i, "");
+    const stripped = modelWithTier.replace(/-(minimal|low|medium|high|xhigh)$/i, "");
     // Translate Antigravity-only ids (e.g. `gemini-3.1-pro`) to the public Gemini
     // API equivalent (`gemini-3.1-pro-preview`). Falls back to the bare stripped
     // name when no translation exists (covers `gemini-3.5-flash`, etc.).
@@ -451,7 +558,7 @@ export function resolveModelForHeaderStyle(
   if (headerStyle === "gemini-cli") {
     let transformedModel = requestedModel
       .replace(/^antigravity-/i, "")
-      .replace(/-(minimal|low|medium|high)$/i, "");
+      .replace(/-(minimal|low|medium|high|xhigh)$/i, "");
 
     // Only the legacy 3.0 line takes a "-preview" suffix on the Gemini CLI backend.
     // Dotted-minor generations (gemini-3.1+, gemini-3.5, ...) use bare names there.
@@ -492,22 +599,51 @@ export function resolveModelWithVariant(
     base.configSource = "variant";
   }
 
-  if (!variantConfig.thinkingBudget) {
+  if (!variantConfig.thinkingLevel && !variantConfig.thinkingBudget) {
     return base;
   }
 
-  const budget = variantConfig.thinkingBudget;
-  const isGemini3 = base.actualModel.toLowerCase().includes("gemini-3");
+  const lowerActual = base.actualModel.toLowerCase();
+  const isGemini4 = lowerActual.includes("gemini-4");
+  if (isGemini4) {
+    const requestedLevel = variantConfig.thinkingLevel
+      ?? budgetToGemini4Level(variantConfig.thinkingBudget!);
+    const gemini4Backend = resolveAntigravityGemini4BackendModel(requestedModel, requestedLevel);
+    if (gemini4Backend) {
+      return {
+        ...base,
+        actualModel: gemini4Backend.actualModel,
+        thinkingLevel: gemini4Backend.thinkingLevel,
+        thinkingBudget: undefined,
+        configSource: "variant",
+      };
+    }
+    return {
+      ...base,
+      thinkingLevel: requestedLevel,
+      thinkingBudget: undefined,
+      configSource: "variant",
+    };
+  }
+
+  const isGemini3 = lowerActual.includes("gemini-3");
 
   if (isGemini3) {
-    const level = budgetToGemini3Level(budget);
+    const level = variantConfig.thinkingLevel
+      ?? budgetToGemini3Level(variantConfig.thinkingBudget!);
     const isAntigravityGemini3BasePro = base.quotaPreference === "antigravity" &&
       isGemini3BaseProModel(base.actualModel);
 
     let actualModel = base.actualModel;
+    if (base.explicitQuota) {
+      const gemini35FlashBackend = resolveAntigravityGemini35FlashBackendModel(requestedModel, level);
+      if (gemini35FlashBackend) {
+        actualModel = gemini35FlashBackend;
+      }
+    }
     if (isAntigravityGemini3BasePro) {
       // Only gemini-3-pro (3.0) uses tier suffix in model name
-      const baseModel = base.actualModel.replace(/-(low|medium|high)$/, "");
+      const baseModel = base.actualModel.replace(/-(low|medium|high|xhigh)$/, "");
       actualModel = `${baseModel}-${level}`;
     }
 
@@ -522,7 +658,7 @@ export function resolveModelWithVariant(
 
   return {
     ...base,
-    thinkingBudget: budget,
+    ...(variantConfig.thinkingBudget !== undefined ? { thinkingBudget: variantConfig.thinkingBudget } : {}),
     configSource: "variant",
   };
 }
