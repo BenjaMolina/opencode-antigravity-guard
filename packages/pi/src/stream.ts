@@ -1,6 +1,6 @@
 import { calculateCost, createAssistantMessageEventStream } from "@earendil-works/pi-ai"
 import type { AssistantMessage, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai"
-import { ANTIGRAVITY_ENDPOINTS } from "@benjamolina/antigravity-guard-core"
+import { ANTIGRAVITY_ENDPOINTS, formatAntigravityHubUserAgent } from "@benjamolina/antigravity-guard-core"
 
 import { getCatalogEntry, resolveGenerationSelection, type GenerationSelection } from "./catalog.ts"
 import { ContextSerializationError, serializeContext, type GenerationRequest } from "./context.ts"
@@ -13,7 +13,7 @@ import { SseFrameError, SseFramer } from "./sse.ts"
 const TOTAL_TIMEOUT_MS = 120_000
 const INACTIVITY_TIMEOUT_MS = 30_000
 const MAX_ERROR_BYTES = 64 * 1024
-const ANTIGRAVITY_USER_AGENT = "antigravity/cli/1.1.23 (aidev_client; os_type=linux; arch=amd64; cl=974125021; auth_method=consumer)"
+const ANTIGRAVITY_USER_AGENT = formatAntigravityHubUserAgent()
 const ENDPOINT = `${ANTIGRAVITY_ENDPOINTS.daily}/v1internal:streamGenerateContent?alt=sse`
 const API = "antigravity-guard-sse"
 const PROTECTED_HEADERS = new Set(["authorization", "host", "content-type", "content-length"])

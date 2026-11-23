@@ -51,6 +51,7 @@ describe("fixed Antigravity SSE transport", () => {
         Authorization: "Bearer access-token",
         Accept: "text/event-stream",
         "Content-Type": "application/json",
+        "User-Agent": "antigravity/hub/2.34.0 darwin/arm64",
         "X-Trace": "safe",
       }),
       body: expect.stringMatching(/"project":"stored-project".*"model":"gemini-3\.8-flash-low"|"model":"gemini-3\.8-flash-low".*"project":"stored-project"/),
@@ -198,9 +199,10 @@ describe("fixed Antigravity SSE transport", () => {
         Authorization: "Bearer access-token",
         Accept: "text/event-stream",
         "Content-Type": "application/json",
-        "User-Agent": "antigravity/cli/1.1.23 (aidev_client; os_type=linux; arch=amd64; cl=974125021; auth_method=consumer)",
+        "User-Agent": "antigravity/hub/2.34.0 darwin/arm64",
       },
     }))
+    expect(JSON.stringify(fetch.mock.calls[0]?.[1]?.headers)).not.toContain("antigravity/cli/1.1.23")
   })
 
   it("rejects a mixed declaration set before payload hooks and fetch", async () => {

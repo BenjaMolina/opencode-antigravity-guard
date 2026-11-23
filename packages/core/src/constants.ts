@@ -26,7 +26,53 @@ export const ANTIGRAVITY_OAUTH_CLIENT: OAuthClientConfig = Object.freeze({
   tokenEndpoint: ANTIGRAVITY_ENDPOINTS.token,
 })
 
-export const ANTIGRAVITY_VERSION_FALLBACK = "1.19.4"
+export const ANTIGRAVITY_MIN_VERSION = "2.9.1"
+
+export const ANTIGRAVITY_VERSION_FALLBACK = "2.34.0"
+
+export const ANTIGRAVITY_HUB_MANIFEST_URL =
+  "https://antigravity-hub-auto-updater-974169037036.us-central1.run.app/manifest/latest-arm64-mac.yml"
+
+export const ANTIGRAVITY_HUB_PLATFORM = "darwin/arm64"
+
+const SEMVER_TRIPLE_REGEX = /^(\d+)\.(\d+)\.(\d+)$/
+const HUB_MANIFEST_VERSION_REGEX = /^\s*version\s*:\s*['"]?(\d+\.\d+\.\d+)['"]?\s*$/m
+
+export function compareAntigravityVersions(left: string, right: string): number {
+  const leftMatch = SEMVER_TRIPLE_REGEX.exec(left.trim())
+  const rightMatch = SEMVER_TRIPLE_REGEX.exec(right.trim())
+  if (!leftMatch || !rightMatch) {
+    return Number.NaN
+  }
+
+  for (let index = 1; index <= 3; index += 1) {
+    const leftPart = Number(leftMatch[index] ?? "0")
+    const rightPart = Number(rightMatch[index] ?? "0")
+    if (leftPart > rightPart) return 1
+    if (leftPart < rightPart) return -1
+  }
+  return 0
+}
+
+export function isSupportedAntigravityVersion(
+  version: string,
+  minVersion = ANTIGRAVITY_MIN_VERSION,
+): boolean {
+  const comparison = compareAntigravityVersions(version, minVersion)
+  return !Number.isNaN(comparison) && comparison >= 0
+}
+
+export function parseAntigravityHubManifestVersion(
+  manifestYaml: string,
+  minVersion = ANTIGRAVITY_MIN_VERSION,
+): string | null {
+  const match = HUB_MANIFEST_VERSION_REGEX.exec(manifestYaml)
+  const candidate = match?.[1]
+  if (!candidate || !isSupportedAntigravityVersion(candidate, minVersion)) {
+    return null
+  }
+  return candidate
+}
 
 export const GEMINI_CLI_HEADERS = Object.freeze({
   "User-Agent": "google-api-nodejs-client/9.15.1",

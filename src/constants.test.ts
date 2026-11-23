@@ -5,10 +5,14 @@ import {
   GEMINI_CLI_HEADERS as CORE_GEMINI_CLI_HEADERS,
 } from "@benjamolina/antigravity-guard-core"
 import {
+  ANTIGRAVITY_HEADERS,
   ANTIGRAVITY_SCOPES,
+  ANTIGRAVITY_VERSION_FALLBACK,
   GEMINI_CLI_HEADERS,
   getAntigravityHeaders,
+  getAntigravityVersion,
   getRandomizedHeaders,
+  setAntigravityVersion,
   type HeaderSet,
 } from "./constants.ts"
 
@@ -36,7 +40,7 @@ describe("root compatibility wrappers", () => {
     first["User-Agent"] = "temporary-root-agent"
 
     expect(first["User-Agent"]).toBe("temporary-root-agent")
-    expect(second["User-Agent"]).toContain("Antigravity/1.19.4")
+    expect(second["User-Agent"]).toContain("Antigravity/2.34.0")
     expect(second).not.toBe(first)
   })
 })
@@ -55,11 +59,15 @@ describe("getAntigravityHeaders", () => {
   it("preserves the deterministic legacy header values", () => {
     const headers = getAntigravityHeaders()
 
-    expect(headers["User-Agent"]).toContain("Antigravity/1.19.4")
+    expect(headers["User-Agent"]).toContain("Antigravity/2.34.0")
     expect(headers["X-Goog-Api-Client"]).toBe("google-cloud-sdk vscode_cloudshelleditor/0.1")
     expect(headers["Client-Metadata"]).toBe(
       `{"ideType":"ANTIGRAVITY","platform":"${process.platform === "win32" ? "WINDOWS" : "MACOS"}","pluginType":"GEMINI"}`,
     )
+  })
+
+  it("exposes Hub User-Agent on ANTIGRAVITY_HEADERS", () => {
+    expect(ANTIGRAVITY_HEADERS["User-Agent"]).toBe("antigravity/hub/2.34.0 darwin/arm64")
   })
 })
 
@@ -88,9 +96,24 @@ describe("getRandomizedHeaders", () => {
       expect(headers["Client-Metadata"]).toBeDefined()
     })
 
-    it("returns User-Agent in antigravity format", () => {
+    it("returns User-Agent in antigravity Hub format", () => {
       const headers = getRandomizedHeaders("antigravity")
-      expect(headers["User-Agent"]).toMatch(/^antigravity\//)
+      expect(headers["User-Agent"]).toBe(`antigravity/hub/${getAntigravityVersion()} darwin/arm64`)
+    })
+
+    it("reflects valid runtime version updates and ignores unsupported versions", () => {
+      setAntigravityVersion("2.0.6")
+      expect(getAntigravityVersion()).toBe(ANTIGRAVITY_VERSION_FALLBACK)
+
+      setAntigravityVersion("2.35.1")
+      expect(getAntigravityVersion()).toBe("2.35.1")
+      expect(getRandomizedHeaders("antigravity")["User-Agent"]).toBe("antigravity/hub/2.35.1 darwin/arm64")
+
+      setAntigravityVersion("1.19.4")
+      expect(getAntigravityVersion()).toBe("2.35.1")
+
+      setAntigravityVersion(ANTIGRAVITY_VERSION_FALLBACK)
+      expect(getAntigravityVersion()).toBe(ANTIGRAVITY_VERSION_FALLBACK)
     })
 
     it("aligns Client-Metadata platform with User-Agent platform", () => {

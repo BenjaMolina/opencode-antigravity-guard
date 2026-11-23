@@ -1223,8 +1223,9 @@ export class AccountManager {
       }
     }
 
-    // Restore the fingerprint
+    // Restore the fingerprint and ensure its userAgent carries a supported Hub version
     account.fingerprint = { ...fingerprintToRestore, createdAt: nowMs() };
+    updateFingerprintVersion(account.fingerprint);
     
     this.requestSaveToDisk();
     

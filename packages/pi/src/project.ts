@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto"
 
+import { formatAntigravityHubUserAgent } from "@benjamolina/antigravity-guard-core"
+
 const USER_INFO_ENDPOINT = "https://www.googleapis.com/oauth2/v1/userinfo?alt=json"
 const PROJECT_ENDPOINTS = [
   "https://daily-cloudcode-pa.googleapis.com",
@@ -8,7 +10,7 @@ const PROJECT_ENDPOINTS = [
 ]
 const MAX_BODY_BYTES = 64 * 1024
 const REQUEST_TIMEOUT_MS = 10_000
-const ANTIGRAVITY_USER_AGENT = "antigravity/cli/1.1.23 (aidev_client; os_type=linux; arch=amd64; cl=974125021; auth_method=consumer)"
+const ANTIGRAVITY_USER_AGENT = formatAntigravityHubUserAgent()
 
 export interface LoginProjectOptions {
   accessToken: string
