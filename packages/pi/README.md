@@ -14,7 +14,7 @@ Choose browser login, or choose manual login and paste the complete callback URL
 
 ## Text registration is not tool enablement
 
-All seven rows below are registered for text. The exact `antigravity-gemini-3.8-flash` `off` route is enabled for tools from recorded direct evidence; every other production route is **not enabled for tools**, so its context with a declaration, assistant tool call, or tool result fails locally before any network request. Text-only requests retain their released behavior.
+All twelve rows below are registered for text. The exact `antigravity-gemini-3.8-flash` `off` route is enabled for tools from recorded direct evidence; every other production route is **not enabled for tools**, so its context with a declaration, assistant tool call, or tool result fails locally before any network request. Text-only requests retain their released behavior.
 
 | Public ID | Exposed Pi levels | Tool state | Admission |
 |---|---|---|---|
@@ -25,6 +25,11 @@ All seven rows below are registered for text. The exact `antigravity-gemini-3.8-
 | `antigravity-claude-sonnet-4.6` | off, high | Enabled (off, high) | pi-json-tool-loop/claude-sonnet-4.6-off-v1 |
 | `antigravity-claude-opus-4.6-thinking` | off, high | Enabled (off, high) | pi-json-tool-loop/claude-opus-4.6-thinking-off-v1 |
 | `antigravity-gpt-oss-120b` | off, medium | Enabled (off, medium) | pi-json-tool-loop/gpt-oss-120b-off-v1 |
+| `antigravity-gemini-4-argon` | off, low, medium, high | Enabled (off, low, medium, high) | pi-json-tool-loop/gemini-4-argon-off-v1 |
+| `antigravity-gemini-4-carbon` | off, low, medium, high | Enabled (off, low, medium, high) | pi-json-tool-loop/gemini-4-carbon-off-v1 |
+| `antigravity-gemini-4-neon` | off, low, medium, high, xhigh | Enabled (off, low, medium, high, xhigh) | pi-json-tool-loop/gemini-4-neon-off-v1 |
+| `antigravity-gemini-4-hydrogen` | off, low, medium, high, xhigh | Enabled (off, low, medium, high, xhigh) | pi-json-tool-loop/gemini-4-hydrogen-off-v1 |
+| `antigravity-gemini-3.5-flash-lite` | off, low | Enabled (off, low) | pi-json-tool-loop/gemini-3.5-flash-lite-off-v1 |
 
 `off` is available for every row even though it is omitted from Pi's level map; omitted reasoning also selects that row's `off` route. Unsupported levels are not advertised and are rejected before transport. `antigravity-gemini-3.5-flash` is not registered or advertised as supported because its recorded HTTP-200 response lacks the strict terminal metadata required for admission. A future `fixture-qualified` route remains disabled for ordinary tool use; only separately authorized direct validation for the exact route may make it enabled.
 
@@ -51,6 +56,11 @@ Only the evidence-enabled Gemini 3.8 Flash `off` route uses the `parametersJsonS
 | `antigravity-claude-sonnet-4.6` | off, high | 250,000 / 64,000 |
 | `antigravity-claude-opus-4.6-thinking` | off, high | 250,000 / 64,000 |
 | `antigravity-gpt-oss-120b` | off, medium | 131,072 / 32,768 |
+| `antigravity-gemini-4-argon` | off, low, medium, high | 1,048,576 / 65,536 |
+| `antigravity-gemini-4-carbon` | off, low, medium, high | 1,048,576 / 262,144 |
+| `antigravity-gemini-4-neon` | off, low, medium, high, xhigh | 1,048,576 / 262,144 |
+| `antigravity-gemini-4-hydrogen` | off, low, medium, high, xhigh | 1,048,576 / 262,144 |
+| `antigravity-gemini-3.5-flash-lite` | off, low | 1,048,576 / 65,535 |
 
 An explicit `maxTokens` must be a positive integer no greater than the row's output limit. For a route with a positive finite thinking budget, it must also be greater than that budget. When `maxTokens` is omitted, the provider uses 4,096 unless a larger finite thinking budget needs a 1,024-token answer reserve, always bounded by the row's output limit. Custom `thinkingBudgets` are unsupported and rejected.
 

@@ -10,6 +10,11 @@
 
 import * as crypto from "node:crypto";
 import * as os from "node:os";
+import {
+  ANTIGRAVITY_HUB_PLATFORM,
+  formatAntigravityHubUserAgent,
+  isSupportedAntigravityVersion,
+} from "@benjamolina/antigravity-guard-core";
 import { getAntigravityVersion } from "../constants";
 
 const OS_VERSIONS: Record<string, string[]> = {
@@ -96,12 +101,15 @@ function generateSessionToken(): string {
 export function generateFingerprint(): Fingerprint {
   const platform = randomFrom(PLATFORM_CHOICES);
   const arch = randomFrom(ARCHITECTURES);
-  const osVersion = randomFrom(OS_VERSIONS[platform] ?? OS_VERSIONS.darwin!);
+  const _osVersion = randomFrom(OS_VERSIONS[platform] ?? OS_VERSIONS.darwin!);
 
   return {
     deviceId: generateDeviceId(),
     sessionToken: generateSessionToken(),
-    userAgent: `antigravity/${getAntigravityVersion()} ${platform}/${arch}`,
+    userAgent: formatAntigravityHubUserAgent({
+      version: getAntigravityVersion(),
+      platform: `${platform}/${arch}`,
+    }),
     apiClient: randomFrom(SDK_CLIENTS),
     clientMetadata: {
       ideType: randomFrom(IDE_TYPES),
@@ -123,7 +131,10 @@ export function collectCurrentFingerprint(): Fingerprint {
   return {
     deviceId: generateDeviceId(),
     sessionToken: generateSessionToken(),
-    userAgent: `antigravity/${getAntigravityVersion()} ${platform}/${arch}`,
+    userAgent: formatAntigravityHubUserAgent({
+      version: getAntigravityVersion(),
+      platform: `${platform}/${arch}`,
+    }),
     apiClient: "google-cloud-sdk vscode_cloudshelleditor/0.1",
     clientMetadata: {
       ideType: "ANTIGRAVITY",
@@ -134,21 +145,47 @@ export function collectCurrentFingerprint(): Fingerprint {
   };
 }
 
-/**
- * Update the version in a fingerprint's userAgent to match the current runtime version.
- * Called after version fetcher resolves so saved fingerprints always carry the latest version.
- * Returns true if the userAgent was changed.
- */
-export function updateFingerprintVersion(fingerprint: Fingerprint): boolean {
-  const currentVersion = getAntigravityVersion();
-  const versionPattern = /^(antigravity\/)([\d.]+)/;
-  const match = fingerprint.userAgent.match(versionPattern);
+const DIRECT_ANTIGRAVITY_UA_REGEX =
+  /^antigravity\/(?:hub\/|cli\/)?[\d.]+(?:\s+([a-z0-9_-]+\/[a-z0-9_-]+)(?:\s+.*)?|\s+.*)?$/i;
+const BROWSER_ANTIGRAVITY_UA_REGEX = /\bAntigravity\/[\d.]+/i;
 
-  if (!match || match[2] === currentVersion) {
+/**
+ * Update the version and Hub family in a fingerprint's userAgent to match the target version.
+ * Migrates Hub (`antigravity/hub/<ver> <os>/<arch>`), legacy (`antigravity/<ver> <os>/<arch>`),
+ * CLI (`antigravity/cli/<ver> (...)`), and browser-style (`... Antigravity/<ver> ...`) shapes.
+ * Rejects versions below the minimum supported floor (`2.9.1`) or malformed semver strings.
+ * Returns true whenever `fingerprint.userAgent` changed.
+ */
+export function updateFingerprintVersion(
+  fingerprint: Fingerprint,
+  version = getAntigravityVersion(),
+): boolean {
+  const trimmedVersion = version.trim();
+  if (!isSupportedAntigravityVersion(trimmedVersion)) {
     return false;
   }
 
-  fingerprint.userAgent = fingerprint.userAgent.replace(versionPattern, `$1${currentVersion}`);
+  const directMatch = DIRECT_ANTIGRAVITY_UA_REGEX.exec(fingerprint.userAgent.trim());
+  let nextUserAgent: string | null = null;
+
+  if (directMatch) {
+    const platform = directMatch[1] ?? ANTIGRAVITY_HUB_PLATFORM;
+    nextUserAgent = formatAntigravityHubUserAgent({
+      version: trimmedVersion,
+      platform,
+    });
+  } else if (BROWSER_ANTIGRAVITY_UA_REGEX.test(fingerprint.userAgent)) {
+    nextUserAgent = formatAntigravityHubUserAgent({
+      version: trimmedVersion,
+      platform: ANTIGRAVITY_HUB_PLATFORM,
+    });
+  }
+
+  if (!nextUserAgent || nextUserAgent === fingerprint.userAgent) {
+    return false;
+  }
+
+  fingerprint.userAgent = nextUserAgent;
   return true;
 }
 

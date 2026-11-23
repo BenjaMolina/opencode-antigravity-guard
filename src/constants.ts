@@ -1,9 +1,14 @@
 import {
   ANTIGRAVITY_ENDPOINTS,
+  ANTIGRAVITY_HUB_MANIFEST_URL as CORE_ANTIGRAVITY_HUB_MANIFEST_URL,
+  ANTIGRAVITY_HUB_PLATFORM as CORE_ANTIGRAVITY_HUB_PLATFORM,
+  ANTIGRAVITY_MIN_VERSION as CORE_ANTIGRAVITY_MIN_VERSION,
   ANTIGRAVITY_OAUTH_CLIENT,
   ANTIGRAVITY_VERSION_FALLBACK as CORE_ANTIGRAVITY_VERSION_FALLBACK,
   buildAntigravityHeaders,
+  formatAntigravityHubUserAgent,
   GEMINI_CLI_HEADERS as CORE_GEMINI_CLI_HEADERS,
+  isSupportedAntigravityVersion,
 } from "@benjamolina/antigravity-guard-core";
 
 /**
@@ -72,20 +77,22 @@ export const GEMINI_CLI_ENDPOINT = ANTIGRAVITY_ENDPOINT_PROD;
  */
 export const ANTIGRAVITY_DEFAULT_PROJECT_ID = "rising-fact-p41fc";
 
+export const ANTIGRAVITY_MIN_VERSION = CORE_ANTIGRAVITY_MIN_VERSION;
+export const ANTIGRAVITY_HUB_MANIFEST_URL = CORE_ANTIGRAVITY_HUB_MANIFEST_URL;
+export const ANTIGRAVITY_HUB_PLATFORM = CORE_ANTIGRAVITY_HUB_PLATFORM;
 export const ANTIGRAVITY_VERSION_FALLBACK = CORE_ANTIGRAVITY_VERSION_FALLBACK;
 let antigravityVersion = ANTIGRAVITY_VERSION_FALLBACK;
-let versionLocked = false;
 
 export function getAntigravityVersion(): string { return antigravityVersion; }
 
 /**
- * Set the runtime Antigravity version. Can only be called once (at startup).
- * Subsequent calls are silently ignored to prevent accidental mutation.
+ * Set the runtime Antigravity version when it meets the supported Hub floor (>= 2.9.1).
+ * Unsupported or malformed versions are ignored; later valid Hub updates overwrite the fallback.
  */
 export function setAntigravityVersion(version: string): void {
-  if (versionLocked) return;
-  antigravityVersion = version;
-  versionLocked = true;
+  const trimmed = version.trim();
+  if (!isSupportedAntigravityVersion(trimmed)) return;
+  antigravityVersion = trimmed;
 }
 
 /** @deprecated Use getAntigravityVersion() for runtime access. */
@@ -102,9 +109,9 @@ export function getAntigravityHeaders(): HeaderSet & { "Client-Metadata": string
 
 /** @deprecated Use getAntigravityHeaders() for runtime access. */
 export const ANTIGRAVITY_HEADERS = {
-  "User-Agent": `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Antigravity/${ANTIGRAVITY_VERSION} Chrome/138.0.7204.235 Electron/37.3.1 Safari/537.36`,
+  "User-Agent": formatAntigravityHubUserAgent({ version: ANTIGRAVITY_VERSION }),
   "X-Goog-Api-Client": "google-cloud-sdk vscode_cloudshelleditor/0.1",
-  "Client-Metadata": `{"ideType":"ANTIGRAVITY","platform":"${process.platform === "win32" ? "WINDOWS" : "MACOS"}","pluginType":"GEMINI"}`,
+  "Client-Metadata": '{"ideType":"ANTIGRAVITY","platform":"MACOS","pluginType":"GEMINI"}',
 } as const;
 
 export const GEMINI_CLI_HEADERS: {
@@ -112,8 +119,6 @@ export const GEMINI_CLI_HEADERS: {
   "X-Goog-Api-Client": string;
   "Client-Metadata": string;
 } = { ...CORE_GEMINI_CLI_HEADERS };
-
-const ANTIGRAVITY_PLATFORMS = ["windows/amd64", "darwin/arm64", "darwin/amd64"] as const;
 
 const ANTIGRAVITY_API_CLIENTS = [
   "google-cloud-sdk vscode_cloudshelleditor/0.1",
@@ -131,7 +136,7 @@ export type HeaderSet = {
   "Client-Metadata"?: string;
 };
 
-export function getRandomizedHeaders(style: HeaderStyle, model?: string): HeaderSet {
+export function getRandomizedHeaders(style: HeaderStyle, _model?: string): HeaderSet {
   if (style === "gemini-cli") {
     return {
       "User-Agent": GEMINI_CLI_HEADERS["User-Agent"],
@@ -139,12 +144,10 @@ export function getRandomizedHeaders(style: HeaderStyle, model?: string): Header
       "Client-Metadata": GEMINI_CLI_HEADERS["Client-Metadata"],
     };
   }
-  const platform = randomFrom(ANTIGRAVITY_PLATFORMS);
-  const metadataPlatform = platform.startsWith("windows") ? "WINDOWS" : "MACOS";
   return {
-    "User-Agent": `antigravity/${getAntigravityVersion()} ${platform}`,
+    "User-Agent": formatAntigravityHubUserAgent({ version: getAntigravityVersion() }),
     "X-Goog-Api-Client": randomFrom(ANTIGRAVITY_API_CLIENTS),
-    "Client-Metadata": `{"ideType":"ANTIGRAVITY","platform":"${metadataPlatform}","pluginType":"GEMINI"}`,
+    "Client-Metadata": '{"ideType":"ANTIGRAVITY","platform":"MACOS","pluginType":"GEMINI"}',
   };
 }
 

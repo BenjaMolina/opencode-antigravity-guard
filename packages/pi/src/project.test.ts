@@ -1,3 +1,4 @@
+import { formatAntigravityHubUserAgent } from "@benjamolina/antigravity-guard-core"
 import { describe, expect, it, vi } from "vitest"
 
 import { defaultProjectId, resolveLoginProject } from "./project.ts"
@@ -13,7 +14,7 @@ const listEndpoints = origins.map((origin) => `${origin}/v1internal:listCloudAIC
 const antigravityHeaders = {
   Authorization: "Bearer access-token",
   "Content-Type": "application/json",
-  "User-Agent": "antigravity/cli/1.1.23 (aidev_client; os_type=linux; arch=amd64; cl=974125021; auth_method=consumer)",
+  "User-Agent": "antigravity/hub/2.34.0 darwin/arm64",
 }
 
 function requestOptions(fetch: typeof globalThis.fetch, overrides: Record<string, unknown> = {}) {
@@ -43,6 +44,8 @@ describe("Pi credential project discovery", () => {
       headers: antigravityHeaders,
       body: JSON.stringify({ metadata: { ideType: "ANTIGRAVITY" } }),
     }))
+    expect(antigravityHeaders["User-Agent"]).toBe(formatAntigravityHubUserAgent())
+    expect(JSON.stringify(fetch.mock.calls[1]?.[1]?.headers)).not.toContain("antigravity/cli/1.1.23")
     expect(fetch.mock.calls.map(([url]) => url)).not.toContain(expect.stringContaining("onboardUser"))
   })
 

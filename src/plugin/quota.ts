@@ -117,8 +117,12 @@ function classifyQuotaGroup(modelName: string, displayName?: string): QuotaGroup
   if (combined.includes("claude")) {
     return "claude";
   }
-  const isGemini3 = combined.includes("gemini-3") || combined.includes("gemini 3");
-  if (!isGemini3) {
+  const isGemini3Or4 =
+    combined.includes("gemini-3") ||
+    combined.includes("gemini 3") ||
+    combined.includes("gemini-4") ||
+    combined.includes("gemini 4");
+  if (!isGemini3Or4) {
     return null;
   }
   const family = getModelFamily(modelName);
@@ -457,5 +461,6 @@ export async function refreshSingleAccountQuota(
 
 export const __testExports = {
   aggregateQuota,
+  classifyQuotaGroup,
 };
 

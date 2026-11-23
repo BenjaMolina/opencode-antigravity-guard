@@ -8,7 +8,8 @@ import { hasToolContext, prepareToolContext, replayToolHistory, type ToolReplayD
 const MAX_TEXT_BYTES = 8 * 1024 * 1024
 const PROVIDER = "antigravity-guard"
 const RESERVED_HEADERS = new Set(["authorization", "host", "content-type", "content-length"])
-const THINKING_LEVELS = ["low", "medium", "high"] as const
+const THINKING_LEVELS = ["minimal", "low", "medium", "high", "xhigh"] as const
+const PI_HARNESS_MARKER = "operating inside pi, a coding agent harness"
 
 type ThinkingLevel = typeof THINKING_LEVELS[number]
 
@@ -43,7 +44,7 @@ export interface GenerationRequest {
       temperature: number
       maxOutputTokens: number
       thinkingConfig?:
-        | { thinkingLevel: "low" | "medium" | "high", includeThoughts: boolean }
+        | { thinkingLevel: ThinkingLevel, includeThoughts: boolean }
         | { thinkingBudget: number, includeThoughts: boolean }
     }
     sessionId?: string
@@ -63,6 +64,28 @@ export interface SerializeTextContextInput {
 }
 
 export class ContextSerializationError extends Error {}
+
+const PI_DOCS_BLOCK_REGEX =
+  /Pi documentation \(read only when the user asks about pi[^)]*\):\r?\n- Main documentation: ([^\r\n]+)\r?\n- Additional docs: ([^\r\n]+)\r?\n- Examples: ([^\r\n]+)[^\r\n]*\r?\n- When asked about:[^\r\n]+\r?\n(?:- When working on pi topics[^\r\n]+\r?\n)?- Always read pi \.md files completely[^\r\n]+/g
+
+export function sanitizeAntigravitySystemPrompt(systemPrompt: string): string {
+  if (!systemPrompt.includes(PI_HARNESS_MARKER)) return systemPrompt
+  return systemPrompt
+    .replaceAll(PI_HARNESS_MARKER, "working on software projects")
+    .replace(
+      PI_DOCS_BLOCK_REGEX,
+      [
+        "Local harness documentation (read only when the user explicitly asks about local agent customization):",
+        "<reference_paths>",
+        "- Main reference: $1",
+        "- Additional docs: $2",
+        "- Examples: $3",
+        "</reference_paths>",
+      ].join("\n"),
+    )
+    .replace(/Pi documentation \(read only when the user asks about pi[^)]*\):/g, "Local harness documentation (read only when the user explicitly asks about local agent customization):")
+    .replace(/<docs>([\s\S]*?)<\/docs>/g, "<reference_paths>$1</reference_paths>")
+}
 
 export function serializeContext(input: SerializeTextContextInput, injectedSelection?: GenerationSelection, onDiagnostics?: (diagnostics: ToolReplayDiagnostics) => void): GenerationRequest {
   const context = input.context as unknown
@@ -138,11 +161,12 @@ export function serializeTextContext(input: SerializeTextContextInput): Generati
     const selection = resolveGenerationSelection(entry, option(options, "reasoning"))
     const route = selection.route
     if (isToolBearingContext(context) && selection.tools.state !== "enabled") fail(capabilityError(entry.publicId, selection.level, selection.tools))
-    const systemPrompt = field(context, "systemPrompt")
+    const rawSystemPrompt = field(context, "systemPrompt")
     const tools = field(context, "tools")
-    if (systemPrompt !== undefined && typeof systemPrompt !== "string") fail("Text-only context is required.")
+    if (rawSystemPrompt !== undefined && typeof rawSystemPrompt !== "string") fail("Text-only context is required.")
     if (tools !== undefined && isDenseArray(tools).length) fail("Tools are not supported by this text-only provider.")
-    validateOptions(options)
+    validateOptions(options, entry.descriptor.maxTokens)
+    const systemPrompt = rawSystemPrompt === undefined ? undefined : sanitizeAntigravitySystemPrompt(rawSystemPrompt)
     let textBytes = byteLength(systemPrompt ?? "")
     const contents: Content[] = []
     for (const message of isDenseArray(field(context, "messages", true))) {
@@ -244,7 +268,7 @@ function isSameProviderAndModel(message: Record<string, unknown>, publicId: stri
 }
 
 function serializeThinkingConfig(thinking: ReturnType<typeof resolveGenerationSelection>["route"]["thinking"]):
-  | { thinkingLevel: "low" | "medium" | "high", includeThoughts: boolean }
+  | { thinkingLevel: ThinkingLevel, includeThoughts: boolean }
   | { thinkingBudget: number, includeThoughts: boolean }
   | undefined {
   if (thinking.kind === "native-level") return { thinkingLevel: thinking.thinkingLevel, includeThoughts: thinking.includeThoughts }
@@ -273,17 +297,17 @@ function validThoughtSignature(value: unknown): string | undefined {
   return /^[A-Za-z0-9+/]+={0,2}$/.test(value) ? value : undefined
 }
 
-function validateOptions(options: unknown): void {
+function validateOptions(options: unknown, maxAllowedTokens: number): void {
   if (options === undefined) return
   if (!isRecord(options)) fail("Invalid generation options.")
   const reasoning = option(options, "reasoning"), budgets = option(options, "thinkingBudgets"), deferred = option(options, "deferred"), toolChoice = option(options, "toolChoice"), sampling = option(options, "samplingParams"), temperature = option(options, "temperature"), maxTokens = option(options, "maxTokens"), headers = option(options, "headers")
-  if (reasoning !== undefined && reasoning !== "off" && !isThinkingLevel(reasoning) && reasoning !== "minimal") fail("Unsupported reasoning level.")
+  if (reasoning !== undefined && reasoning !== "off" && !isThinkingLevel(reasoning)) fail("Unsupported reasoning level.")
   if (budgets !== undefined) fail("Thinking budgets are not supported.")
   if (deferred) fail("Deferred requests are not supported.")
   if (toolChoice !== undefined && toolChoice !== "none") fail("Tools are not supported by this text-only provider.")
   if (sampling !== undefined) fail("Custom generation options are not supported.")
   if (temperature !== undefined && (typeof temperature !== "number" || !Number.isFinite(temperature) || temperature < 0 || temperature > 2)) fail("Temperature must be finite and between 0 and 2.")
-  if (maxTokens !== undefined && (typeof maxTokens !== "number" || !Number.isInteger(maxTokens) || maxTokens <= 0 || maxTokens > 65_536)) fail("maxTokens must be a positive integer no greater than 65536.")
+  if (maxTokens !== undefined && (typeof maxTokens !== "number" || !Number.isInteger(maxTokens) || maxTokens <= 0 || maxTokens > maxAllowedTokens)) fail(`maxTokens must be a positive integer no greater than ${maxAllowedTokens}.`)
   if (headers !== undefined && !isRecord(headers)) fail("Invalid generation options.")
   for (const name of headers ? Object.keys(headers) : []) if (RESERVED_HEADERS.has(name.toLowerCase())) fail("Custom headers cannot replace protected request headers.")
 }

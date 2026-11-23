@@ -1591,4 +1591,129 @@ describe("signatureCacheProjectKey (Defect 2: project-independent key for Gemini
     expect(signatureCacheProjectKey("claude-opus-4-6-thinking", "project-A")).toBe("project-A");
     expect(signatureCacheProjectKey("gemini-2.5-pro", "project-A")).toBe("project-A");
   });
+
+  it("drops the project component for Gemini-4 models too", () => {
+    expect(signatureCacheProjectKey("gemini-4-argon-high", "project-A")).toBeUndefined();
+    expect(signatureCacheProjectKey("antigravity-gemini-4-neon-xhigh", "project-B")).toBeUndefined();
+  });
+});
+
+describe("Gemini 4 and xhigh request transformation", () => {
+  it("resolves bare gemini-4-argon to gemini-4-argon-high with thinkingLevel high", async () => {
+    const result = await prepareAntigravityRequest(
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-4-argon:streamGenerateContent?alt=sse",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: "hello" }] }],
+        }),
+      },
+      "test-token",
+      "proj-1",
+    );
+
+    const parsed = JSON.parse(String(result.init.body));
+    expect(parsed.model).toBe("gemini-4-argon-high");
+    expect(parsed.request.generationConfig.thinkingConfig).toMatchObject({
+      thinkingLevel: "high",
+    });
+  });
+
+  it("updates Gemini 4 Neon wire model to gemini-4-neon-xhigh when variant sets xhigh and strips -xhigh from session key", async () => {
+    const result = await prepareAntigravityRequest(
+      "https://generativelanguage.googleapis.com/v1beta/models/antigravity-gemini-4-neon:streamGenerateContent?alt=sse",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: "hello" }] }],
+          providerOptions: {
+            google: {
+              thinkingLevel: "xhigh",
+            },
+          },
+        }),
+      },
+      "test-token",
+      "proj-1",
+    );
+
+    const parsed = JSON.parse(String(result.init.body));
+    expect(parsed.model).toBe("gemini-4-neon-xhigh");
+    expect(parsed.request.generationConfig.thinkingConfig).toMatchObject({
+      thinkingLevel: "xhigh",
+    });
+    expect(parsed.request.sessionId).toContain(":gemini-4-neon:default:");
+  });
+
+  it("preserves high/xhigh thinkingLevel on pre-wrapped Gemini 4 requests and strips -xhigh from session key", async () => {
+    const result = await prepareAntigravityRequest(
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-4-neon-xhigh:streamGenerateContent?alt=sse",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          project: "proj-1",
+          model: "gemini-4-neon-xhigh",
+          request: {
+            contents: [{ role: "user", parts: [{ text: "hello" }] }],
+          },
+        }),
+      },
+      "test-token",
+      "proj-1",
+    );
+
+    const parsed = JSON.parse(String(result.init.body));
+    expect(parsed.model).toBe("gemini-4-neon-xhigh");
+    expect(parsed.request.generationConfig.thinkingConfig).toEqual({
+      includeThoughts: true,
+      thinkingLevel: "xhigh",
+    });
+    expect(parsed.request.sessionId).toContain(":gemini-4-neon:default:");
+  });
+
+  it("updates Gemini 4 backend wire ID on variant overrides even when headerStyle is gemini-cli", async () => {
+    const unwrapped = await prepareAntigravityRequest(
+      "https://generativelanguage.googleapis.com/v1beta/models/antigravity-gemini-4-neon:streamGenerateContent?alt=sse",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: "hello" }] }],
+          providerOptions: { google: { thinkingLevel: "xhigh" } },
+        }),
+      },
+      "test-token",
+      "proj-1",
+      undefined,
+      "gemini-cli",
+    );
+    const parsedUnwrapped = JSON.parse(String(unwrapped.init.body));
+    expect(parsedUnwrapped.model).toBe("gemini-4-neon-xhigh");
+    expect(parsedUnwrapped.request.generationConfig.thinkingConfig).toMatchObject({
+      thinkingLevel: "xhigh",
+    });
+
+    const wrapped = await prepareAntigravityRequest(
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-4-argon:streamGenerateContent?alt=sse",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          project: "proj-1",
+          model: "gemini-4-argon",
+          request: {
+            contents: [{ role: "user", parts: [{ text: "hello" }] }],
+            providerOptions: { google: { thinkingLevel: "low" } },
+          },
+        }),
+      },
+      "test-token",
+      "proj-1",
+      undefined,
+      "gemini-cli",
+    );
+    const parsedWrapped = JSON.parse(String(wrapped.init.body));
+    expect(parsedWrapped.model).toBe("gemini-4-argon-low");
+    expect(parsedWrapped.request.generationConfig.thinkingConfig).toMatchObject({
+      thinkingLevel: "low",
+    });
+  });
 });

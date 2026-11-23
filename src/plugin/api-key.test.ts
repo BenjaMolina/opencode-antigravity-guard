@@ -241,6 +241,8 @@ describe("api-key agy sdk support", () => {
     // Claude (and unmapped antigravity- prefixed ids) have no public-API equivalent.
     expect(isAgySdkSupportedRequest("https://generativelanguage.googleapis.com/v1beta/models/claude-opus-4-6-thinking:generateContent")).toBe(false);
     expect(isAgySdkSupportedRequest("https://generativelanguage.googleapis.com/v1beta/models/antigravity-claude-sonnet-4-6:generateContent")).toBe(false);
+    expect(isAgySdkSupportedRequest("https://generativelanguage.googleapis.com/v1beta/models/gemini-4-argon:generateContent")).toBe(false);
+    expect(isAgySdkSupportedRequest("https://generativelanguage.googleapis.com/v1beta/models/antigravity-gemini-4-neon-xhigh:streamGenerateContent")).toBe(false);
 
     // Non-model URLs and untrusted hosts are not routable.
     expect(isAgySdkSupportedRequest("https://generativelanguage.googleapis.com/v1beta/models")).toBe(false);
@@ -260,6 +262,8 @@ describe("api-key agy sdk support", () => {
     expect(isAntigravityOnlyGenerativeLanguageRequest("https://generativelanguage.googleapis.com/v1beta/models/claude-opus-4-6-thinking:generateContent")).toBe(true);
     expect(isAntigravityOnlyGenerativeLanguageRequest("https://generativelanguage.googleapis.com/v1beta/models/antigravity-claude-sonnet-4-6:generateContent")).toBe(true);
     expect(isAntigravityOnlyGenerativeLanguageRequest("https://generativelanguage.googleapis.com/v1beta/models/antigravity-mystery-model:generateContent")).toBe(true);
+    expect(isAntigravityOnlyGenerativeLanguageRequest("https://generativelanguage.googleapis.com/v1beta/models/gemini-4-argon:generateContent")).toBe(true);
+    expect(isAntigravityOnlyGenerativeLanguageRequest("https://generativelanguage.googleapis.com/v1beta/models/antigravity-gemini-4-neon-xhigh:generateContent")).toBe(true);
 
     // Translatable Antigravity-only Gemini ids → false. These fall through to
     // the api-key path via mapAntigravityModelToPublicApi.
@@ -370,11 +374,13 @@ describe("api-key agy sdk support", () => {
 });
 
 describe("isLikelyAntigravityOnlyModel", () => {
-  it("flags bare gemini-3 pro/flash ids as Antigravity-only", () => {
+  it("flags bare gemini-3 pro/flash and gemini-4 ids as Antigravity-only", () => {
     expect(isLikelyAntigravityOnlyModel("gemini-3-pro")).toBe(true);
     expect(isLikelyAntigravityOnlyModel("gemini-3.1-pro")).toBe(true);
     expect(isLikelyAntigravityOnlyModel("gemini-3-flash")).toBe(true);
     expect(isLikelyAntigravityOnlyModel("gemini-3.1-flash")).toBe(true);
+    expect(isLikelyAntigravityOnlyModel("gemini-4-argon")).toBe(true);
+    expect(isLikelyAntigravityOnlyModel("gemini-4-neon-xhigh")).toBe(true);
   });
 
   it("flags antigravity- and claude- prefixed ids as Antigravity-only", () => {

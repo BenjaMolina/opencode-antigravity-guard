@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest"
 
-import { buildAntigravityHeaders } from "./headers.ts"
+import {
+  buildAntigravityHeaders,
+  buildAntigravityHubHeaders,
+  formatAntigravityHubUserAgent,
+} from "./headers.ts"
 
 describe("buildAntigravityHeaders", () => {
   it("builds the legacy Windows header set from explicit inputs", () => {
@@ -18,5 +22,20 @@ describe("buildAntigravityHeaders", () => {
     expect(headers["Client-Metadata"]).toBe(
       '{"ideType":"ANTIGRAVITY","platform":"MACOS","pluginType":"GEMINI"}',
     )
+  })
+})
+
+describe("Antigravity Hub User-Agent and headers", () => {
+  it("builds the minimal Hub User-Agent header using fallback defaults", () => {
+    expect(formatAntigravityHubUserAgent()).toBe("antigravity/hub/2.34.0 darwin/arm64")
+    expect(buildAntigravityHubHeaders()).toEqual({
+      "User-Agent": "antigravity/hub/2.34.0 darwin/arm64",
+    })
+  })
+
+  it("allows explicit version and platform overrides", () => {
+    expect(
+      formatAntigravityHubUserAgent({ version: "2.35.0", platform: "win32/x64" }),
+    ).toBe("antigravity/hub/2.35.0 win32/x64")
   })
 })

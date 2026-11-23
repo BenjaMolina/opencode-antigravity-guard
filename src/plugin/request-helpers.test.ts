@@ -170,10 +170,12 @@ describe("isThinkingCapableModel", () => {
     expect(isThinkingCapableModel("model-thinking-v1")).toBe(true);
   });
 
-  it("returns true for models with 'gemini-3' in name", () => {
+  it("returns true for models with 'gemini-3' or 'gemini-4' in name", () => {
     expect(isThinkingCapableModel("gemini-3-pro")).toBe(true);
     expect(isThinkingCapableModel("GEMINI-3-flash")).toBe(true);
     expect(isThinkingCapableModel("gemini-3")).toBe(true);
+    expect(isThinkingCapableModel("gemini-4-argon-high")).toBe(true);
+    expect(isThinkingCapableModel("gemini-4-neon-xhigh")).toBe(true);
   });
 
   it("returns true for models with 'opus' in name", () => {

@@ -82,6 +82,11 @@ describe("transform/gemini", () => {
       expect(isGemini3Model("GEMINI-3-PRO")).toBe(true);
     });
 
+    it("returns true for gemini-4 wire models", () => {
+      expect(isGemini3Model("gemini-4-argon-high")).toBe(true);
+      expect(isGemini3Model("gemini-4-neon-xhigh")).toBe(true);
+    });
+
     it("returns false for gemini-2.5-pro", () => {
       expect(isGemini3Model("gemini-2.5-pro")).toBe(false);
     });
@@ -147,6 +152,21 @@ describe("transform/gemini", () => {
       expect(config).toEqual({
         includeThoughts: true,
         thinkingLevel: "medium",
+      });
+    });
+
+    it("builds config with includeThoughts true and xhigh tier for Gemini 4", () => {
+      const payload: RequestPayload = {};
+      applyGeminiTransforms(payload, {
+        model: "gemini-4-neon-xhigh",
+        tierThinkingLevel: "xhigh",
+        normalizedThinking: { includeThoughts: true },
+      });
+      expect(payload.generationConfig).toEqual({
+        thinkingConfig: {
+          includeThoughts: true,
+          thinkingLevel: "xhigh",
+        },
       });
     });
 

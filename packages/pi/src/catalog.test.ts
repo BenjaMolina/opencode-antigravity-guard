@@ -73,6 +73,26 @@ describe("Antigravity model catalog", () => {
     expect(() => defineCatalog([{ ...definition, routes: {
       xhigh: { wireModel: "one", thinking: { kind: "budget" as const, budget: 1, includeThoughts: true } },
     } }])).toThrow("Route is outside descriptor map")
+    expect(() => defineCatalog([{
+      ...definition,
+      descriptor: {
+        ...definition.descriptor,
+        thinkingLevelMap: { minimal: null, low: "low", medium: null, high: null, xhigh: null },
+      },
+      routes: {
+        xhigh: { wireModel: "one", thinking: { kind: "budget" as const, budget: -1, includeThoughts: true } },
+      },
+    }])).toThrow("Route is hidden by descriptor")
+    expect(() => defineCatalog([{
+      ...definition,
+      descriptor: {
+        ...definition.descriptor,
+        thinkingLevelMap: { minimal: null, low: "low", medium: "medium", high: "high", xhigh: "xhigh" },
+      },
+      routes: {
+        xhigh: { wireModel: "one-xhigh", thinking: { kind: "budget" as const, budget: -1, includeThoughts: true } },
+      },
+    }])).not.toThrow()
     expect(() => defineCatalog([{ ...definition, routes: {
       max: { wireModel: "one", thinking: { kind: "budget" as const, budget: 1, includeThoughts: true } },
     } }])).toThrow("Route is outside descriptor map")
@@ -156,7 +176,17 @@ describe("Antigravity model catalog", () => {
   })
 
   it("enables the directly admitted Gemini family routes with gemini-parameters-json-schema", () => {
-    for (const publicId of ["antigravity-gemini-3.8-flash", "antigravity-gemini-3.7-flash", "antigravity-gemini-3.6-flash", "antigravity-gemini-3.1-pro"]) {
+    for (const publicId of [
+      "antigravity-gemini-3.8-flash",
+      "antigravity-gemini-3.7-flash",
+      "antigravity-gemini-3.6-flash",
+      "antigravity-gemini-3.1-pro",
+      "antigravity-gemini-4-argon",
+      "antigravity-gemini-4-carbon",
+      "antigravity-gemini-4-neon",
+      "antigravity-gemini-4-hydrogen",
+      "antigravity-gemini-3.5-flash-lite",
+    ]) {
       const entry = getCatalogEntry(publicId)!
       const capability = resolveGenerationSelection(entry, "off").tools
       expect(capability.state === "enabled" ? capability.schemaProfile : undefined).toBe("gemini-parameters-json-schema")
@@ -189,6 +219,11 @@ describe("Antigravity model catalog", () => {
       "antigravity-claude-sonnet-4.6",
       "antigravity-claude-opus-4.6-thinking",
       "antigravity-gpt-oss-120b",
+      "antigravity-gemini-4-argon",
+      "antigravity-gemini-4-carbon",
+      "antigravity-gemini-4-neon",
+      "antigravity-gemini-4-hydrogen",
+      "antigravity-gemini-3.5-flash-lite",
     ])
     expect(getCatalogEntry("antigravity-gemini-3.5-flash")).toBeUndefined()
     expect(toPiModelDescriptor(getCatalogEntry("antigravity-gemini-3.1-pro")!)).toMatchObject({
@@ -197,7 +232,7 @@ describe("Antigravity model catalog", () => {
       maxTokens: 65_535,
     })
 
-    const route = (model: string, level: "off" | "low" | "medium" | "high") =>
+    const route = (model: string, level: "off" | "low" | "medium" | "high" | "xhigh") =>
       resolveGenerationRoute(getCatalogEntry(model)!, level)
     expect(route("antigravity-gemini-3.7-flash", "off")).toEqual({ wireModel: "gemini-3.7-flash-low", thinking: { kind: "budget", budget: 0, includeThoughts: false } })
     expect(route("antigravity-gemini-3.7-flash", "medium")).toEqual({ wireModel: "gemini-3.7-flash-medium", thinking: { kind: "budget", budget: 4000, includeThoughts: true } })
@@ -209,5 +244,85 @@ describe("Antigravity model catalog", () => {
     expect(route("antigravity-gemini-3.1-pro", "low")).toEqual({ wireModel: "gemini-3.1-pro-low", thinking: { kind: "budget", budget: 1001, includeThoughts: true } })
     expect(route("antigravity-gemini-3.1-pro", "high")).toEqual({ wireModel: "gemini-pro-agent", thinking: { kind: "budget", budget: 10001, includeThoughts: true } })
     expect(() => route("antigravity-gemini-3.1-pro", "medium")).toThrow("Unsupported reasoning level")
+  })
+
+  it("registers Gemini 4 Argon, Carbon, Neon, Hydrogen, and Gemini 3.5 Flash Lite with exact limits and xhigh routing", () => {
+    expect(toPiModelDescriptor(getCatalogEntry("antigravity-gemini-4-argon")!)).toEqual({
+      id: "antigravity-gemini-4-argon",
+      name: "Gemini 4 Argon (Antigravity)",
+      reasoning: true,
+      thinkingLevelMap: { minimal: null, low: "low", medium: "medium", high: "high" },
+      input: ["text", "image"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 1_048_576,
+      maxTokens: 65_536,
+    })
+    expect(toPiModelDescriptor(getCatalogEntry("antigravity-gemini-4-carbon")!)).toEqual({
+      id: "antigravity-gemini-4-carbon",
+      name: "Gemini 4 Carbon (Antigravity)",
+      reasoning: true,
+      thinkingLevelMap: { minimal: null, low: "low", medium: "medium", high: "high" },
+      input: ["text", "image"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 1_048_576,
+      maxTokens: 262_144,
+    })
+    expect(toPiModelDescriptor(getCatalogEntry("antigravity-gemini-4-neon")!)).toEqual({
+      id: "antigravity-gemini-4-neon",
+      name: "Gemini 4 Neon (Antigravity)",
+      reasoning: true,
+      thinkingLevelMap: { minimal: null, low: "low", medium: "medium", high: "high", xhigh: "xhigh" },
+      input: ["text", "image"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 1_048_576,
+      maxTokens: 262_144,
+    })
+    expect(toPiModelDescriptor(getCatalogEntry("antigravity-gemini-4-hydrogen")!)).toEqual({
+      id: "antigravity-gemini-4-hydrogen",
+      name: "Gemini 4 Hydrogen (Antigravity)",
+      reasoning: true,
+      thinkingLevelMap: { minimal: null, low: "low", medium: "medium", high: "high", xhigh: "xhigh" },
+      input: ["text", "image"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 1_048_576,
+      maxTokens: 262_144,
+    })
+    expect(toPiModelDescriptor(getCatalogEntry("antigravity-gemini-3.5-flash-lite")!)).toEqual({
+      id: "antigravity-gemini-3.5-flash-lite",
+      name: "Gemini 3.5 Flash Lite (Antigravity)",
+      reasoning: true,
+      thinkingLevelMap: { minimal: null, low: "low", medium: null, high: null },
+      input: ["text", "image"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 1_048_576,
+      maxTokens: 65_535,
+    })
+
+    const route = (id: string, level: "off" | "low" | "medium" | "high" | "xhigh") =>
+      resolveGenerationRoute(getCatalogEntry(id)!, level)
+
+    for (const family of ["argon", "carbon"] as const) {
+      const id = `antigravity-gemini-4-${family}`
+      expect(route(id, "off")).toEqual({ wireModel: `gemini-4-${family}-low`, thinking: { kind: "budget", budget: 0, includeThoughts: false } })
+      expect(route(id, "low")).toEqual({ wireModel: `gemini-4-${family}-low`, thinking: { kind: "budget", budget: 1000, includeThoughts: true } })
+      expect(route(id, "medium")).toEqual({ wireModel: `gemini-4-${family}-medium`, thinking: { kind: "budget", budget: 4000, includeThoughts: true } })
+      expect(route(id, "high")).toEqual({ wireModel: `gemini-4-${family}-high`, thinking: { kind: "budget", budget: -1, includeThoughts: true } })
+      expect(() => route(id, "xhigh")).toThrow("Unsupported reasoning level")
+    }
+
+    for (const family of ["neon", "hydrogen"] as const) {
+      const id = `antigravity-gemini-4-${family}`
+      expect(route(id, "off")).toEqual({ wireModel: `gemini-4-${family}-low`, thinking: { kind: "budget", budget: 0, includeThoughts: false } })
+      expect(route(id, "low")).toEqual({ wireModel: `gemini-4-${family}-low`, thinking: { kind: "budget", budget: 1000, includeThoughts: true } })
+      expect(route(id, "medium")).toEqual({ wireModel: `gemini-4-${family}-medium`, thinking: { kind: "budget", budget: 4000, includeThoughts: true } })
+      expect(route(id, "high")).toEqual({ wireModel: `gemini-4-${family}-high`, thinking: { kind: "budget", budget: -1, includeThoughts: true } })
+      expect(route(id, "xhigh")).toEqual({ wireModel: `gemini-4-${family}-xhigh`, thinking: { kind: "budget", budget: -1, includeThoughts: true } })
+    }
+
+    expect(route("antigravity-gemini-3.5-flash-lite", "off")).toEqual({ wireModel: "gemini-3.5-flash-lite", thinking: { kind: "budget", budget: 0, includeThoughts: false } })
+    expect(route("antigravity-gemini-3.5-flash-lite", "low")).toEqual({ wireModel: "gemini-3.5-flash-lite", thinking: { kind: "budget", budget: 1000, includeThoughts: true } })
+    for (const unsupported of ["medium", "high", "xhigh"] as const) {
+      expect(() => route("antigravity-gemini-3.5-flash-lite", unsupported)).toThrow("Unsupported reasoning level")
+    }
   })
 })

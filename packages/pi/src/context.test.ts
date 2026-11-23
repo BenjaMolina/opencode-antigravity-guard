@@ -1,7 +1,7 @@
 import type { Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai"
 import { describe, expect, it } from "vitest"
 
-import { ContextSerializationError, serializeContext, serializeTextContext } from "./context.ts"
+import { ContextSerializationError, sanitizeAntigravitySystemPrompt, serializeContext, serializeTextContext } from "./context.ts"
 import { createEnabledToolCapability, getCatalogEntry, listCatalogEntries, resolveGenerationSelection } from "./catalog.ts"
 
 const model = { id: "antigravity-gemini-3.8-flash" } as Model<string>
@@ -285,7 +285,7 @@ describe("Pi text context serialization", () => {
 
         it("rejects tools, tool history, and images for every registered model before request serialization", () => {
           const catalog = listCatalogEntries()
-          expect(catalog).toHaveLength(7)
+          expect(catalog).toHaveLength(12)
           const unsupportedContexts = [
             { tools: [{}], messages: [{ role: "user", content: "x", timestamp: 0 }] },
             { messages: [{ role: "toolResult", content: [], timestamp: 0 }] },
@@ -643,5 +643,236 @@ describe("Pi text context serialization", () => {
     const geminiSelection = resolveGenerationSelection(geminiEntry, "off")
     const geminiSerialized = serializeContext({ context, model: { id: "antigravity-gemini-3.8-flash" } as Model<string>, project: "p", requestId: "r" }, geminiSelection)
     expect(geminiSerialized.request.toolConfig).toBeUndefined()
+  })
+
+  it("serializes xhigh reasoning on antigravity-gemini-4-neon with 262144 output limits while rejecting unsupported xhigh models", () => {
+    const context = { messages: [{ role: "user", content: "solve", timestamp: 1 }] } as Context
+    const neonModel = { id: "antigravity-gemini-4-neon" } as Model<string>
+
+    const textSerialized = serializeTextContext({
+      context,
+      model: neonModel,
+      options: { reasoning: "xhigh", maxTokens: 262_144 },
+      project: "proj-4",
+      requestId: "agent-11111111-2222-3333-4444-555555555555",
+    })
+    expect(textSerialized).toMatchObject({
+      model: "gemini-4-neon-xhigh",
+      request: {
+        generationConfig: {
+          temperature: 1,
+          maxOutputTokens: 262_144,
+          thinkingConfig: { thinkingBudget: -1, includeThoughts: true },
+        },
+        labels: expect.objectContaining({
+          model_enum: "MODEL_PLACEHOLDER_M535",
+          used_claude: "false",
+          used_non_gemini_model: "false",
+        }),
+      },
+    })
+
+    const toolContext = {
+      tools: [{ name: "read_file", description: "Read file", parameters: { type: "object", properties: { path: { type: "string" } } } }],
+      messages: [{ role: "user", content: "solve", timestamp: 1 }],
+    } as Context
+    const neonSelection = resolveGenerationSelection(getCatalogEntry("antigravity-gemini-4-neon")!, "xhigh")
+    const toolSerialized = serializeContext({
+      context: toolContext,
+      model: neonModel,
+      options: { reasoning: "xhigh" },
+      project: "proj-4",
+      requestId: "agent-id",
+    }, neonSelection)
+    expect(toolSerialized).toMatchObject({
+      model: "gemini-4-neon-xhigh",
+      request: {
+        generationConfig: {
+          maxOutputTokens: 4096,
+          thinkingConfig: { thinkingBudget: -1, includeThoughts: true },
+        },
+        labels: expect.objectContaining({ model_enum: "MODEL_PLACEHOLDER_M535" }),
+      },
+    })
+
+    expect(() => serializeTextContext({
+      context,
+      model: neonModel,
+      options: { reasoning: "xhigh", maxTokens: 262_145 },
+      project: "proj-4",
+      requestId: "agent-id",
+    })).toThrow("maxTokens must be a positive integer no greater than 262144.")
+    expect(() => serializeTextContext({
+      context,
+      model,
+      options: { maxTokens: 65_537 },
+      project: "proj-4",
+      requestId: "agent-id",
+    })).toThrow("maxTokens must be a positive integer no greater than 65536.")
+    expect(() => serializeTextContext({
+      context,
+      model: { id: "antigravity-gemini-4-argon" } as Model<string>,
+      options: { reasoning: "xhigh" },
+      project: "proj-4",
+      requestId: "agent-id",
+    })).toThrow(ContextSerializationError)
+  })
+
+  it("enforces signed tool replay on antigravity-gemini-4-argon", () => {
+    const argonEntry = getCatalogEntry("antigravity-gemini-4-argon")!
+    const selection = resolveGenerationSelection(argonEntry, "high")
+    const signedContext = {
+      tools: [{ name: "read_file", description: "Read file", parameters: { type: "object", properties: { path: { type: "string" } } } }],
+      messages: [
+        { role: "user", content: "read file", timestamp: 0 },
+        {
+          ...assistant([{ type: "toolCall", id: "call-argon-1", name: "read_file", arguments: { path: "README.md" }, thoughtSignature: "c2ln" }]),
+          provider: "antigravity-guard",
+          model: "antigravity-gemini-4-argon",
+          stopReason: "toolUse",
+        },
+        {
+          role: "toolResult",
+          toolCallId: "call-argon-1",
+          toolName: "read_file",
+          content: [{ type: "text", text: "ok" }],
+          isError: false,
+          timestamp: 0,
+        },
+      ],
+    } as Context
+    const serialized = serializeContext({
+      context: signedContext,
+      model: { id: "antigravity-gemini-4-argon" } as Model<string>,
+      options: { reasoning: "high" },
+      project: "proj-argon",
+      requestId: "req-argon",
+    }, selection)
+    expect(serialized.model).toBe("gemini-4-argon-high")
+    expect(serialized.request.labels?.model_enum).toBe("MODEL_PLACEHOLDER_M417")
+    expect(serialized.request.contents).toEqual([
+      { role: "user", parts: [{ text: "read file" }] },
+      { role: "model", parts: [{ functionCall: { name: "read_file", args: { path: "README.md" } }, thoughtSignature: "c2ln" }] },
+      { role: "user", parts: [{ functionResponse: { name: "read_file", response: { output: "ok" } } }] },
+    ])
+
+    const unsignedContext = {
+      messages: [
+        {
+          ...assistant([{ type: "toolCall", id: "call-argon-2", name: "read_file", arguments: {} }]),
+          provider: "antigravity-guard",
+          model: "antigravity-gemini-4-argon",
+          stopReason: "toolUse",
+        },
+        {
+          role: "toolResult",
+          toolCallId: "call-argon-2",
+          toolName: "read_file",
+          content: [{ type: "text", text: "fallback" }],
+          isError: false,
+          timestamp: 0,
+        },
+      ],
+    } as Context
+    expect(serializeContext({
+      context: unsignedContext,
+      model: { id: "antigravity-gemini-4-argon" } as Model<string>,
+      options: { reasoning: "high" },
+      project: "proj-argon",
+      requestId: "req-argon",
+    }, selection).request.contents).toEqual([
+      { role: "user", parts: [{ text: "[Observation from `read_file`:\nfallback]" }] },
+    ])
+  })
+
+  it("sanitizes Pi native harness system prompts in both text and tool contexts while preserving reference paths and non-Pi prompts", () => {
+    const piPrompt = [
+      "You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files.",
+      "",
+      "Pi documentation (read only when the user asks about pi itself, its SDK, extensions, themes, skills, or TUI):",
+      "<docs>",
+      "- Main documentation: /opt/pi/README.md",
+      "- Additional docs: /opt/pi/docs",
+      "</docs>",
+      "",
+      "<project_context>",
+      "<project_instructions path=\"/repo/AGENTS.md\">",
+      "Follow strict TDD.",
+      "</project_instructions>",
+      "</project_context>",
+      "<available_skills><skill><name>sdd-apply</name></skill></available_skills>",
+      "Current date and time: 2026-11-22T12:00:00Z",
+      "Current working directory: /repo",
+    ].join("\n")
+
+    const expectedSanitized = [
+      "You are an expert coding assistant working on software projects. You help users by reading files.",
+      "",
+      "Local harness documentation (read only when the user explicitly asks about local agent customization):",
+      "<reference_paths>",
+      "- Main documentation: /opt/pi/README.md",
+      "- Additional docs: /opt/pi/docs",
+      "</reference_paths>",
+      "",
+      "<project_context>",
+      "<project_instructions path=\"/repo/AGENTS.md\">",
+      "Follow strict TDD.",
+      "</project_instructions>",
+      "</project_context>",
+      "<available_skills><skill><name>sdd-apply</name></skill></available_skills>",
+      "Current date and time: 2026-11-22T12:00:00Z",
+      "Current working directory: /repo",
+    ].join("\n")
+
+    expect(sanitizeAntigravitySystemPrompt(piPrompt)).toBe(expectedSanitized)
+
+    const textInputContext = { systemPrompt: piPrompt, messages: [{ role: "user", content: "hi", timestamp: 0 }] } as Context
+    const beforeText = structuredClone(textInputContext)
+    const textResult = serializeTextContext({
+      context: textInputContext,
+      model: { id: "antigravity-gemini-4-argon" } as Model<string>,
+      project: "proj",
+      requestId: "req",
+    })
+    expect(textResult.request.systemInstruction).toEqual({
+      role: "user",
+      parts: [{ text: expectedSanitized }],
+    })
+    expect(textInputContext).toEqual(beforeText)
+
+    const toolInputContext = {
+      systemPrompt: piPrompt,
+      tools: [{ name: "read_file", description: "Read file", parameters: { type: "object", properties: { path: { type: "string" } } } }],
+      messages: [{ role: "user", content: "hi", timestamp: 0 }],
+    } as Context
+    const beforeTool = structuredClone(toolInputContext)
+    const selection = resolveGenerationSelection(getCatalogEntry("antigravity-gemini-4-argon")!, "off")
+    const toolResult = serializeContext({
+      context: toolInputContext,
+      model: { id: "antigravity-gemini-4-argon" } as Model<string>,
+      project: "proj",
+      requestId: "req",
+    }, selection)
+    expect(toolResult.request.systemInstruction).toEqual({
+      role: "user",
+      parts: [{ text: expectedSanitized }],
+    })
+    expect(toolInputContext).toEqual(beforeTool)
+
+    const nonPiPrompts = [
+      "You are a custom assistant.\nPi documentation (read only when the user asks about pi):\n<docs>/keep/verbatim</docs>",
+      "  exact whitespace and bytes \n\t<docs>untouched</docs>  ",
+      "",
+    ]
+    for (const raw of nonPiPrompts) {
+      expect(sanitizeAntigravitySystemPrompt(raw)).toBe(raw)
+      const res = serializeTextContext({
+        context: { systemPrompt: raw, messages: [{ role: "user", content: "hi", timestamp: 0 }] } as Context,
+        model,
+        project: "proj",
+        requestId: "req",
+      })
+      expect(res.request.systemInstruction).toEqual({ role: "user", parts: [{ text: raw }] })
+    }
   })
 })
