@@ -184,4 +184,66 @@ describe("Antigravity Guard provider registration", () => {
     expect(events.map((event) => event.type)).toEqual(["start", "error"])
     expect(fetch).not.toHaveBeenCalled()
   })
+
+  it("streams Pi 1.4+ TranscriptContext requests end-to-end with sanitized sections and toolsAdded", async () => {
+    const registerProvider = vi.fn()
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(new Response(
+      'data: {"response":{"candidates":[{"content":{"parts":[{"text":"ARGON_HUB_OK"}]}}]}}\n\ndata: {"response":{"candidates":[{"finishReason":"STOP"}]}}\n\n',
+      { headers: { "Content-Type": "text/event-stream" } },
+    ))
+    registerAntigravityProvider({ registerProvider })
+    const [, config] = registerProvider.mock.calls[0] ?? []
+    const argon = {
+      ...config.models.find((entry: { id: string }) => entry.id === "antigravity-gemini-4-argon"),
+      api: config.api,
+      provider: "antigravity-guard",
+    }
+
+    const stream = config.streamSimple(
+      argon,
+      {
+        messages: [
+          {
+            role: "system",
+            content: "",
+            sections: {
+              preamble: "You are an expert coding assistant operating inside pi, a coding agent harness.",
+            },
+            toolsAdded: [
+              { name: "read_file", description: "Read file", parameters: { type: "object", properties: { path: { type: "string" } }, required: ["path"] } },
+            ],
+            timestamp: 0,
+          },
+          {
+            role: "user",
+            content: [{ type: "text", text: "Reply ARGON_HUB_OK" }],
+            timestamp: 1795434974808,
+          },
+        ],
+      },
+      { apiKey: '{"token":"stored-access","projectId":"stored-project"}', fetch, reasoning: "low" },
+    )
+
+    const events = []
+    for await (const event of stream) events.push(event)
+    expect(events.map((event) => event.type)).toEqual(["start", "text_start", "text_delta", "text_end", "done"])
+    expect(fetch).toHaveBeenCalledOnce()
+    const sentBody = JSON.parse(String(fetch.mock.calls[0]?.[1]?.body))
+    expect(sentBody).toMatchObject({
+      project: "stored-project",
+      model: "gemini-4-argon-low",
+      request: {
+        systemInstruction: {
+          role: "user",
+          parts: [{ text: "You are an expert coding assistant working on software projects." }],
+        },
+        contents: [
+          { role: "user", parts: [{ text: "Reply ARGON_HUB_OK" }] },
+        ],
+        tools: [
+          { functionDeclarations: [{ name: "read_file", description: "Read file" }] },
+        ],
+      },
+    })
+  })
 })

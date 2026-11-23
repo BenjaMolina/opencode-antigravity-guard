@@ -46,7 +46,7 @@ function normalizeDeclaration(value: unknown, index: number, names: Set<string>)
   const description = ownData(tool, "description", name, path)
   if (typeof description !== "string" || !description.trim()) fail("PI_TOOL_DECLARATION_INVALID", name, `${path}.description`)
   const constrainedSampling = ownData(tool, "constrainedSampling", name, path)
-  if (constrainedSampling !== undefined && constrainedSampling !== false) fail("PI_TOOL_CONSTRAINED_SAMPLING_UNSUPPORTED", name, `${path}.constrainedSampling`)
+  if (!isAdmittedConstrainedSampling(constrainedSampling, name, `${path}.constrainedSampling`)) fail("PI_TOOL_CONSTRAINED_SAMPLING_UNSUPPORTED", name, `${path}.constrainedSampling`)
   const root = plainObject(ownData(tool, "parameters", name, path), name, "$")
   if (ownData(root, "type", name, "$") !== "object") fail("PI_TOOL_SCHEMA_INVALID", name, "$.type")
   const snapshot = snapshotJson(root, name, "$", { ancestors: new Set(), nodes: 0 })
@@ -55,6 +55,13 @@ function normalizeDeclaration(value: unknown, index: number, names: Set<string>)
   if (!isJsonObject(parameters) || parameters.type !== "object") fail("PI_TOOL_SCHEMA_INVALID", name, "$.type")
   if (Buffer.byteLength(JSON.stringify(parameters), "utf8") > MAX_SCHEMA_BYTES) fail("PI_TOOL_SCHEMA_LIMIT", name, "$")
   return freeze({ name, description, parameters })
+}
+
+function isAdmittedConstrainedSampling(value: unknown, declaration: string, path: string): boolean {
+  if (value === undefined || value === false) return true
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false
+  const config = plainObject(value, declaration, path)
+  return ownData(config, "type", declaration, path) === "json_schema" && ownData(config, "strict", declaration, path) === "prefer"
 }
 
 function snapshotJson(value: unknown, declaration: string, path: string, state: SchemaState, depth = 0): JsonValue {

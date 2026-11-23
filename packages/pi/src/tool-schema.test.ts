@@ -141,9 +141,12 @@ describe("Pi tool schema normalization", () => {
     }])).toHaveLength(1)
   })
 
-  it("rejects unsupported constrained sampling while accepting its only admitted value", () => {
+  it("rejects unsupported constrained sampling while accepting false and optional json_schema prefer", () => {
     const tool = { name: "tool", description: "A tool", parameters: { type: "object", properties: { value: { type: "string" } } } }
     expect(normalizeToolDeclarations([{ ...tool, constrainedSampling: false }])).toHaveLength(1)
+    expect(normalizeToolDeclarations([{ ...tool, constrainedSampling: { type: "json_schema", strict: "prefer" } }])).toHaveLength(1)
+    expect(() => normalizeToolDeclarations([{ ...tool, constrainedSampling: { type: "json_schema", strict: "require" } }])).toThrow(/PI_TOOL_CONSTRAINED_SAMPLING_UNSUPPORTED/)
+    expect(() => normalizeToolDeclarations([{ ...tool, constrainedSampling: { type: "grammar", variants: {} } }])).toThrow(/PI_TOOL_CONSTRAINED_SAMPLING_UNSUPPORTED/)
     expect(() => normalizeToolDeclarations([{ ...tool, constrainedSampling: { type: "object" } }])).toThrow(/PI_TOOL_CONSTRAINED_SAMPLING_UNSUPPORTED/)
   })
 

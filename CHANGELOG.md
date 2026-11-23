@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.1 (2026-11-23)
+
+- Add Pi `1.4.0+` `TranscriptContext` compatibility in `@benjamolina/pi-antigravity-guard@0.5.1` (`role: "system"` messages with `content`, `sections`, `toolsAdded`, and `toolsRemoved`), keeping session trajectory IDs anchored on the first conversation turn.
+- Admit Pi `1.4.0+` optional `constrainedSampling: { type: "json_schema", strict: "prefer" }` hints on built-in tools (`read`, `bash`, `edit`, `write`) while continuing to reject `strict: "require"` and grammar-constrained tools.
+- Extend internal Pi `<docs>` boilerplate sanitization in `packages/pi/src/context.ts` for Pi `1.4.0+` section layouts without producing nested `<reference_paths>` tags.
+
 ## 1.2.0 (2026-11-23)
 
 - Migrate Antigravity version updater, request headers, and persisted account fingerprints from legacy `antigravity/<version>` to Antigravity Hub (`antigravity/hub/<version> darwin/arm64`, fallback `2.34.0`, minimum floor `2.9.1`) across `@benjamolina/antigravity-guard-core@0.2.0`, `@benjamolina/pi-antigravity-guard@0.5.0`, and `@benjamolina/opencode-antigravity-guard@1.2.0`.
