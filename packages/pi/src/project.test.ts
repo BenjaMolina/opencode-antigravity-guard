@@ -214,4 +214,17 @@ describe("Pi credential project discovery", () => {
     ))
     await expect(pendingFetch).resolves.toEqual({})
   })
+
+  it("forwards a dynamic Hub User-Agent when provided by PiGuardRuntime", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ email: "dev@example.com" })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ cloudaicompanionProject: "dynamic-project" })))
+
+    await expect(
+      resolveLoginProject(requestOptions(fetch, { userAgent: "antigravity/hub/2.40.0 win32/x64" })),
+    ).resolves.toEqual({ email: "dev@example.com", projectId: "dynamic-project" })
+
+    const headers = fetch.mock.calls[1]?.[1]?.headers as Record<string, string> | undefined
+    expect(headers?.["User-Agent"]).toBe("antigravity/hub/2.40.0 win32/x64")
+  })
 })

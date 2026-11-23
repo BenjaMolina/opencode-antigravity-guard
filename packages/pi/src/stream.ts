@@ -61,9 +61,11 @@ export interface StreamTransportInput {
   onSemantic: (semantic: StreamSemantic) => void | Promise<void>
   platform: string
   requestId: string
+  requestJitterMaxMs?: number
   selection?: GenerationSelection
   signal?: AbortSignal
   timeoutMs?: number
+  userAgent?: string
 }
 
 export interface PiStreamLifecycleInput {
@@ -227,6 +229,7 @@ export async function executeStreamTransport(input: StreamTransportInput): Promi
     )
     if (hasToolContext(input.context)) await deliver(input.onSemantic, { type: "toolDiagnostics", details: toolDiagnostics(entry.publicId, selection, replayDiagnostics, "accepted") })
     const payload = await payloadHook(input, original, signal)
+    await applyRequestJitter(input.requestJitterMaxMs, signal)
     const response = await abortable(input.fetch(ENDPOINT, { method: "POST", redirect: "error", headers, body: JSON.stringify(payload), signal }), signal)
     await responseHook(input, response, signal)
     responseBody = response.body
@@ -318,15 +321,30 @@ async function responseHook(input: StreamTransportInput, response: Response, sig
   }
 }
 
+const OVERRIDDEN_HEADERS = new Set(["accept", "user-agent"])
+
 function requestHeaders(input: StreamTransportInput): Record<string, string> {
-  for (const name of Object.keys(input.headers ?? {})) if (PROTECTED_HEADERS.has(name.toLowerCase())) throw streamError("response", "Custom headers cannot replace protected request headers.")
+  const callerHeaders: Record<string, string> = {}
+  for (const [name, value] of Object.entries(input.headers ?? {})) {
+    const lower = name.toLowerCase()
+    if (PROTECTED_HEADERS.has(lower)) throw streamError("response", "Custom headers cannot replace protected request headers.")
+    if (OVERRIDDEN_HEADERS.has(lower)) continue
+    callerHeaders[name] = value
+  }
   return {
-    ...input.headers,
+    ...callerHeaders,
     Authorization: `Bearer ${input.accessToken}`,
     Accept: "text/event-stream",
     "Content-Type": "application/json",
-    "User-Agent": ANTIGRAVITY_USER_AGENT,
+    "User-Agent": input.userAgent ?? ANTIGRAVITY_USER_AGENT,
   }
+}
+
+async function applyRequestJitter(maxMs: number | undefined, signal: AbortSignal): Promise<void> {
+  if (!maxMs || maxMs <= 0) return
+  const delayMs = Math.floor(Math.random() * maxMs)
+  if (delayMs <= 0) return
+  await abortable(new Promise<void>((resolve) => { setTimeout(resolve, delayMs) }), signal)
 }
 
 async function consume(body: ReadableStream<Uint8Array>, signal: AbortSignal, onSemantic: StreamTransportInput["onSemantic"], inactivityMs: number, policy: ToolResponsePolicy): Promise<void> {
