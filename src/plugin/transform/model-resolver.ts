@@ -522,6 +522,11 @@ export function resolveModelForHeaderStyle(
   requestedModel: string,
   headerStyle: "antigravity" | "gemini-cli" | "agy-sdk",
 ): ResolvedModel {
+  const withoutQuota = requestedModel.replace(QUOTA_PREFIX_REGEX, "");
+  if (GEMINI_4_PREFIX_REGEX.test(withoutQuota) || GPT_OSS_PREFIX_REGEX.test(withoutQuota)) {
+    return resolveModelWithTier(requestedModel);
+  }
+
   const lower = requestedModel.toLowerCase();
   const isGemini3 = lower.includes("gemini-3");
 

@@ -466,18 +466,45 @@ describe("Issue #103: resolveModelForHeaderStyle", () => {
       expect(result.actualModel).toBe("claude-opus-4-6-thinking");
     });
 
-    it("keeps gemini-4-* Antigravity-only without appending -preview", () => {
-      const antigravity = resolveModelForHeaderStyle("gemini-4-argon", "antigravity");
-      const cli = resolveModelForHeaderStyle("gemini-4-argon", "gemini-cli");
-      const neonXhigh = resolveModelForHeaderStyle("antigravity-gemini-4-neon-xhigh", "antigravity");
-
-      expect(antigravity.actualModel).toBe("gemini-4-argon-high");
-      expect(antigravity.thinkingLevel).toBe("high");
-      expect(antigravity.quotaPreference).toBe("antigravity");
-      expect(cli.actualModel).toBe("gemini-4-argon-high");
-      expect(cli.quotaPreference).toBe("antigravity");
-      expect(neonXhigh.actualModel).toBe("gemini-4-neon-xhigh");
-      expect(neonXhigh.thinkingLevel).toBe("xhigh");
+    it("keeps gemini-4-* and gpt-oss-* Antigravity-only without mangling suffixes across all header styles", () => {
+      for (const style of ["antigravity", "gemini-cli", "agy-sdk"] as const) {
+        expect(resolveModelForHeaderStyle("gemini-4-argon", style)).toMatchObject({
+          actualModel: "gemini-4-argon-high",
+          thinkingLevel: "high",
+          quotaPreference: "antigravity",
+          explicitQuota: true,
+        });
+        expect(resolveModelForHeaderStyle("gemini-4-argon-low", style)).toMatchObject({
+          actualModel: "gemini-4-argon-low",
+          thinkingLevel: "low",
+          quotaPreference: "antigravity",
+          explicitQuota: true,
+        });
+        expect(resolveModelForHeaderStyle("antigravity-gemini-4-neon-xhigh", style)).toMatchObject({
+          actualModel: "gemini-4-neon-xhigh",
+          thinkingLevel: "xhigh",
+          quotaPreference: "antigravity",
+          explicitQuota: true,
+        });
+        expect(resolveModelForHeaderStyle("gemini-4-hydrogen-tiered-high", style)).toMatchObject({
+          actualModel: "gemini-4-hydrogen-tiered-high",
+          thinkingLevel: "high",
+          quotaPreference: "antigravity",
+          explicitQuota: true,
+        });
+        expect(resolveModelForHeaderStyle("gemini-4-hydrogen-tiered-xhigh", style)).toMatchObject({
+          actualModel: "gemini-4-hydrogen-tiered-xhigh",
+          thinkingLevel: "xhigh",
+          quotaPreference: "antigravity",
+          explicitQuota: true,
+        });
+        expect(resolveModelForHeaderStyle("gpt-oss-120b-medium", style)).toMatchObject({
+          actualModel: "gpt-oss-120b-medium",
+          isThinkingModel: false,
+          quotaPreference: "antigravity",
+          explicitQuota: true,
+        });
+      }
     });
   });
 });

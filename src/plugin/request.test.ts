@@ -1670,4 +1670,50 @@ describe("Gemini 4 and xhigh request transformation", () => {
     });
     expect(parsed.request.sessionId).toContain(":gemini-4-neon:default:");
   });
+
+  it("updates Gemini 4 backend wire ID on variant overrides even when headerStyle is gemini-cli", async () => {
+    const unwrapped = await prepareAntigravityRequest(
+      "https://generativelanguage.googleapis.com/v1beta/models/antigravity-gemini-4-neon:streamGenerateContent?alt=sse",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: "hello" }] }],
+          providerOptions: { google: { thinkingLevel: "xhigh" } },
+        }),
+      },
+      "test-token",
+      "proj-1",
+      undefined,
+      "gemini-cli",
+    );
+    const parsedUnwrapped = JSON.parse(String(unwrapped.init.body));
+    expect(parsedUnwrapped.model).toBe("gemini-4-neon-xhigh");
+    expect(parsedUnwrapped.request.generationConfig.thinkingConfig).toMatchObject({
+      thinkingLevel: "xhigh",
+    });
+
+    const wrapped = await prepareAntigravityRequest(
+      "https://generativelanguage.googleapis.com/v1beta/models/gemini-4-argon:streamGenerateContent?alt=sse",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          project: "proj-1",
+          model: "gemini-4-argon",
+          request: {
+            contents: [{ role: "user", parts: [{ text: "hello" }] }],
+            providerOptions: { google: { thinkingLevel: "low" } },
+          },
+        }),
+      },
+      "test-token",
+      "proj-1",
+      undefined,
+      "gemini-cli",
+    );
+    const parsedWrapped = JSON.parse(String(wrapped.init.body));
+    expect(parsedWrapped.model).toBe("gemini-4-argon-low");
+    expect(parsedWrapped.request.generationConfig.thinkingConfig).toMatchObject({
+      thinkingLevel: "low",
+    });
+  });
 });
