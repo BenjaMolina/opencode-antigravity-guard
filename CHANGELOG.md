@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.2.0 (2026-11-23)
+
+- Migrate Antigravity version updater, request headers, and persisted account fingerprints from legacy `antigravity/<version>` to Antigravity Hub (`antigravity/hub/<version> darwin/arm64`, fallback `2.34.0`, minimum floor `2.9.1`) across `@benjamolina/antigravity-guard-core@0.2.0`, `@benjamolina/pi-antigravity-guard@0.5.0`, and `@benjamolina/opencode-antigravity-guard@1.2.0`.
+- Add full `gemini-4-*` (`argon`, `carbon`, `neon`, `hydrogen`), `xhigh` reasoning tier, `gemini-3.5-flash-lite`, and `gpt-oss-120b-medium` wire-contract support across OpenCode and Pi (`262144` max output tokens for Carbon/Neon/Hydrogen, `65536` for Argon, verified `MODEL_PLACEHOLDER_*` envelope enums, and preservation of Gemini 4 / GPT-OSS wire IDs across all quota header styles).
+- Sanitize Pi competing-client harness boilerplate inside `packages/pi/src/context.ts` before serialization to prevent Cloud Code `429 RESOURCE_EXHAUSTED` rejections.
+
 ## 1.1.24 (2026-09-19)
 
 - Enforce explicit `toolConfig: { functionCallingConfig: { mode: "AUTO" } }` for Claude and GPT-OSS models when tools are declared, and sanitize image base64 data to strip `data:image/...;base64,` URI prefixes in Pi.

@@ -1,6 +1,6 @@
 {
     "name": "@benjamolina/opencode-antigravity-guard",
-    "version": "1.1.24",
+    "version": "1.2.0",
     "description": "Google Antigravity OAuth plugin for OpenCode with strict reset-time quota locking",
     "main": "./dist/index.js",
     "types": "./dist/index.d.ts",
@@ -80,7 +80,7 @@
         "zod-to-json-schema": "^3.25.1"
     },
     "dependencies": {
-        "@benjamolina/antigravity-guard-core": "0.1.0",
+        "@benjamolina/antigravity-guard-core": "0.2.0",
         "@openauthjs/openauth": "^0.4.3",
         "@opencode-ai/plugin": "^1.2.10",
         "proper-lockfile": "^4.1.2",
