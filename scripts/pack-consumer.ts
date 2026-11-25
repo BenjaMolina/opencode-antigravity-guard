@@ -23,6 +23,8 @@ const PI_RUNTIME_MODULES = [
   "tool-contract",
   "tool-context",
   "tool-schema",
+  "accounts",
+  "commands",
 ] as const
 
 const ROOT = process.cwd()

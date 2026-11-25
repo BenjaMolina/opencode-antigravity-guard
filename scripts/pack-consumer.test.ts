@@ -23,7 +23,7 @@ describe("Pi package archive contract", () => {
         { path: "src/tool-context.ts" },
         { path: "fixtures/tools/call.sse" },
         { path: "dist/tool-context.test.js" },
-        ...["catalog", "context", "extension", "oauth", "provider", "response", "stream", "tool-contract", "tool-context", "tool-schema"].map((name) => ({ path: `dist/${name}.js` })),
+        ...["accounts", "catalog", "commands", "context", "extension", "oauth", "provider", "response", "stream", "tool-contract", "tool-context", "tool-schema"].map((name) => ({ path: `dist/${name}.js` })),
       ],
     })).toThrow("source files")
   })
@@ -35,7 +35,7 @@ describe("Pi package archive contract", () => {
         { path: "LICENSE" },
         { path: "README.md" },
         { path: "package.json" },
-        ...["catalog", "context", "extension", "oauth", "provider", "response", "stream", "tool-contract", "tool-context", "tool-schema"].map((name) => ({ path: `dist/${name}.js` })),
+        ...["accounts", "catalog", "commands", "context", "extension", "oauth", "provider", "response", "stream", "tool-contract", "tool-context", "tool-schema"].map((name) => ({ path: `dist/${name}.js` })),
       ],
     })).not.toThrow()
   })
