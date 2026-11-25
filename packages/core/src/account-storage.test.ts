@@ -119,20 +119,64 @@ describe("Phase 2 core AccountStorageV4 persistence and migrations (S1, S3)", ()
     }
   })
 
-  it("B6: mergeAccountStorage deduplicates rotated refresh tokens for the same email", () => {
+  it("B6: mergeAccountStorage preserves multi-account slot indices, clears stale lockouts on token rotation, and acquireDefaultDirLock recovers legacy .lock files", async () => {
     const merged = mergeAccountStorage(
       {
         version: 4,
-        accounts: [{ email: "alice@example.com", refreshToken: "old-ref", projectId: "proj-1", addedAt: 1, lastUsed: 10 }],
+        accounts: [
+          {
+            email: "alice@example.com",
+            refreshToken: "old-ref",
+            projectId: "proj-1",
+            addedAt: 1,
+            lastUsed: 10,
+            enabled: false,
+            coolingDownUntil: Date.now() + 60_000,
+            cooldownReason: "validation-required",
+            verificationRequired: true,
+            verificationUrl: "https://accounts.google.com/signin/continue",
+            rateLimitResetTimes: { claude: Date.now() + 60_000 },
+          },
+          {
+            email: "bob@example.com",
+            refreshToken: "bob-ref",
+            projectId: "proj-2",
+            addedAt: 2,
+            lastUsed: 15,
+            enabled: true,
+          },
+        ],
         activeIndex: 0,
+        activeIndexByFamily: { claude: 0, gemini: 1 },
       },
       {
         version: 4,
-        accounts: [{ email: "alice@example.com", refreshToken: "new-ref", projectId: "proj-1", addedAt: 1, lastUsed: 20 }],
-        activeIndex: 0,
+        accounts: [
+          { email: "alice@example.com", refreshToken: "new-ref", projectId: "proj-1", addedAt: 1, lastUsed: 20 },
+          { email: "bob@example.com", refreshToken: "bob-ref", projectId: "proj-2", addedAt: 2, lastUsed: 15 },
+        ],
+        activeIndex: 1,
+        activeIndexByFamily: { claude: 0, gemini: 1 },
       },
     )
-    expect(merged.accounts).toHaveLength(1)
+    expect(merged.accounts.map((acc) => acc.email)).toEqual(["alice@example.com", "bob@example.com"])
     expect(merged.accounts[0]?.refreshToken).toBe("new-ref")
+    expect(merged.accounts[0]?.enabled).toBe(true)
+    expect(merged.accounts[0]?.verificationRequired).toBeUndefined()
+    expect(merged.accounts[0]?.coolingDownUntil).toBeUndefined()
+    expect(merged.accounts[0]?.rateLimitResetTimes).toBeUndefined()
+    expect(merged.activeIndex).toBe(1)
+    expect(merged.activeIndexByFamily).toEqual({ claude: 0, gemini: 1 })
+
+    const scratch = mkdtempSync(join(os.tmpdir(), "ag-core-p2-dirlock-"))
+    try {
+      const target = join(scratch, "antigravity-accounts.json")
+      writeFileSync(`${target}.lock`, "legacy-file-lock", "utf8")
+      const { acquireDefaultDirLock } = await import("./index.ts")
+      const release = await acquireDefaultDirLock(target)
+      await release()
+    } finally {
+      rmSync(scratch, { recursive: true, force: true })
+    }
   })
 })

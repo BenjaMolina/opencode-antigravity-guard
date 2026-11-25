@@ -254,13 +254,34 @@ async function sleep(ms: number): Promise<void> {
  */
 export async function acquireDefaultDirLock(path: string): Promise<() => Promise<void>> {
   const lockPath = getLockPath(path)
+  const ownerFilePath = join(lockPath, "owner")
+  const ownerToken = `${process.pid}:${Date.now()}:${randomBytes(6).toString("hex")}`
 
-  for (let attempt = 0; ; attempt += 1) {
+  let retriesUsed = 0
+  while (true) {
     try {
       await fs.mkdir(lockPath)
+      try {
+        await fs.writeFile(ownerFilePath, ownerToken, {
+          encoding: "utf-8",
+          mode: 0o600,
+        })
+      } catch {
+        // Best-effort owner stamp inside newly created lock directory
+      }
+      const heartbeat = setInterval(() => {
+        const now = new Date()
+        fs.utimes(lockPath, now, now).catch(() => undefined)
+      }, Math.max(1_000, Math.floor(STALE_LOCK_MS / 3)))
+      heartbeat.unref?.()
+
       return async () => {
+        clearInterval(heartbeat)
         try {
-          await fs.rm(lockPath, { recursive: true, force: true })
+          const currentOwner = await fs.readFile(ownerFilePath, "utf-8").catch(() => null)
+          if (currentOwner === null || currentOwner === ownerToken) {
+            await fs.rm(lockPath, { recursive: true, force: true })
+          }
         } catch {
           // Best-effort unlock
         }
@@ -271,15 +292,23 @@ export async function acquireDefaultDirLock(path: string): Promise<() => Promise
         throw error
       }
 
-      // Check for stale directory lock (> 10s old)
+      // Check for stale directory lock (> 10s old) or legacy regular lock file
       try {
         const stat = await fs.lstat(lockPath)
         if (stat.isDirectory() && Date.now() - stat.mtimeMs > STALE_LOCK_MS) {
-          await fs.rm(lockPath, { recursive: true, force: true })
-          continue
+          const evictedPath = `${lockPath}.stale.${randomBytes(4).toString("hex")}`
+          try {
+            await fs.rename(lockPath, evictedPath)
+            await fs.rm(evictedPath, { recursive: true, force: true })
+            continue
+          } catch {
+            // Another contender already evicted or replaced the stale lock
+          }
         }
         if (stat.isFile()) {
-          // Surface ELOCKED immediately so acquireFileLock's legacy .lock file recovery handles it cleanly
+          if (await tryRecoverLegacyLockfile(path)) {
+            continue
+          }
           const locked = Object.assign(new Error("Lock file is already being held"), {
             code: "ELOCKED",
           })
@@ -294,7 +323,7 @@ export async function acquireDefaultDirLock(path: string): Promise<() => Promise
         }
       }
 
-      if (attempt >= DEFAULT_LOCK_RETRIES) {
+      if (retriesUsed >= DEFAULT_LOCK_RETRIES) {
         const locked = Object.assign(new Error("Lock file is already being held"), {
           code: "ELOCKED",
         })
@@ -303,8 +332,9 @@ export async function acquireDefaultDirLock(path: string): Promise<() => Promise
 
       const waitMs = Math.min(
         DEFAULT_LOCK_MAX_TIMEOUT_MS,
-        DEFAULT_LOCK_MIN_TIMEOUT_MS * 2 ** attempt,
+        DEFAULT_LOCK_MIN_TIMEOUT_MS * 2 ** retriesUsed,
       )
+      retriesUsed += 1
       await sleep(waitMs)
     }
   }
@@ -406,78 +436,198 @@ async function withFileLock<T>(
   }
 }
 
+function isNewerAccountTimestamp(
+  candidate: { lastUsed?: number; addedAt?: number },
+  reference: { lastUsed?: number; addedAt?: number },
+): boolean {
+  const candLastUsed = candidate.lastUsed || 0
+  const refLastUsed = reference.lastUsed || 0
+  const candAddedAt = candidate.addedAt || 0
+  const refAddedAt = reference.addedAt || 0
+  return (
+    candLastUsed > refLastUsed ||
+    (candLastUsed === refLastUsed && candAddedAt > refAddedAt)
+  )
+}
+
+function clampIndexToAccounts(
+  index: number | undefined,
+  accountCount: number,
+): number {
+  if (typeof index !== "number" || !Number.isFinite(index) || accountCount <= 0) {
+    return 0
+  }
+  return Math.max(0, Math.min(Math.floor(index), accountCount - 1))
+}
+
+function remapAccountIndex(
+  desiredIndex: number | undefined,
+  incomingAccounts: AccountMetadataV3[],
+  finalAccounts: AccountMetadataV3[],
+): number {
+  if (finalAccounts.length === 0) {
+    return 0
+  }
+  const clampedIncoming = clampIndexToAccounts(desiredIndex, incomingAccounts.length)
+  const target = incomingAccounts[clampedIncoming]
+  if (target) {
+    const byToken = finalAccounts.findIndex(
+      (acc) => acc.refreshToken === target.refreshToken,
+    )
+    if (byToken >= 0) {
+      return byToken
+    }
+    if (target.email) {
+      const byEmail = finalAccounts.findIndex((acc) => acc.email === target.email)
+      if (byEmail >= 0) {
+        return byEmail
+      }
+    }
+  }
+  return clampIndexToAccounts(desiredIndex, finalAccounts.length)
+}
+
 export function mergeAccountStorage(
   existing: AccountStorageV4,
   incoming: AccountStorageV4,
 ): AccountStorageV4 {
-  const accountMap = new Map<string, AccountMetadataV3>()
+  const slots: AccountMetadataV3[] = []
+  const tokenToSlot = new Map<string, number>()
 
-  for (const acc of existing.accounts) {
-    if (acc.refreshToken) {
-      accountMap.set(acc.refreshToken, acc)
+  for (const acc of deduplicateAccountsByEmail(existing.accounts)) {
+    if (acc.refreshToken && !tokenToSlot.has(acc.refreshToken)) {
+      tokenToSlot.set(acc.refreshToken, slots.length)
+      slots.push(acc)
     }
   }
 
   for (const acc of incoming.accounts) {
-    if (acc.refreshToken) {
-      let existingAcc = accountMap.get(acc.refreshToken)
-      let staleRefreshTokenToDelete: string | undefined
-      if (!existingAcc && acc.email) {
-        for (const [token, candidate] of accountMap.entries()) {
-          if (candidate.email === acc.email) {
-            existingAcc = candidate
-            staleRefreshTokenToDelete = token
-            break
+    if (!acc.refreshToken) continue
+
+    let slotIndex = tokenToSlot.get(acc.refreshToken)
+    let staleRefreshTokenToDelete: string | undefined
+
+    if (slotIndex === undefined && acc.email) {
+      for (let idx = 0; idx < slots.length; idx += 1) {
+        const candidate = slots[idx]
+        if (!candidate || candidate.email !== acc.email) continue
+        if (
+          slotIndex === undefined ||
+          isNewerAccountTimestamp(candidate, slots[slotIndex]!)
+        ) {
+          slotIndex = idx
+          staleRefreshTokenToDelete = candidate.refreshToken
+        }
+      }
+    }
+
+    const existingAcc = slotIndex !== undefined ? slots[slotIndex] : undefined
+    if (existingAcc && slotIndex !== undefined) {
+      const currLastUsed = acc.lastUsed || 0
+      const existLastUsed = existingAcc.lastUsed || 0
+      const currAddedAt = acc.addedAt || 0
+      const existAddedAt = existingAcc.addedAt || 0
+      const isRotatedToken = staleRefreshTokenToDelete !== undefined
+      const incomingIsOlderOnTokenChange =
+        isRotatedToken &&
+        (currLastUsed < existLastUsed ||
+          (currLastUsed === existLastUsed && currAddedAt < existAddedAt))
+
+      if (incomingIsOlderOnTokenChange) {
+        continue
+      }
+
+      if (staleRefreshTokenToDelete !== undefined) {
+        tokenToSlot.delete(staleRefreshTokenToDelete)
+      }
+
+      const incomingRateLimitResetTimes = acc.rateLimitResetTimes
+      const mergedRateLimitResetTimes =
+        incomingRateLimitResetTimes === undefined
+          ? isRotatedToken
+            ? undefined
+            : existingAcc.rateLimitResetTimes
+          : Object.keys(incomingRateLimitResetTimes).length === 0
+            ? undefined
+            : {
+                ...(isRotatedToken ? undefined : existingAcc.rateLimitResetTimes),
+                ...incomingRateLimitResetTimes,
+              }
+
+      const mergedRecord: AccountMetadataV3 = isRotatedToken
+        ? {
+            email: acc.email ?? existingAcc.email,
+            refreshToken: acc.refreshToken,
+            projectId: existingAcc.projectId ?? acc.projectId,
+            managedProjectId:
+              existingAcc.managedProjectId ?? acc.managedProjectId,
+            addedAt: acc.addedAt || existingAcc.addedAt,
+            lastUsed: Math.max(existLastUsed, currLastUsed),
+            enabled: acc.enabled ?? true,
+            lastSwitchReason: acc.lastSwitchReason,
+            rateLimitResetTimes: mergedRateLimitResetTimes,
+            coolingDownUntil: acc.coolingDownUntil,
+            cooldownReason: acc.cooldownReason,
+            verificationRequired: acc.verificationRequired,
+            verificationRequiredAt: acc.verificationRequiredAt,
+            verificationRequiredReason: acc.verificationRequiredReason,
+            verificationUrl: acc.verificationUrl,
+            cachedQuota: acc.cachedQuota ?? existingAcc.cachedQuota,
+            cachedQuotaUpdatedAt:
+              acc.cachedQuotaUpdatedAt ?? existingAcc.cachedQuotaUpdatedAt,
           }
-        }
-      }
-      if (existingAcc) {
-        const currLastUsed = acc.lastUsed || 0
-        const existLastUsed = existingAcc.lastUsed || 0
-        const currAddedAt = acc.addedAt || 0
-        const existAddedAt = existingAcc.addedAt || 0
-        const incomingIsOlderOnTokenChange =
-          staleRefreshTokenToDelete !== undefined &&
-          (currLastUsed < existLastUsed ||
-            (currLastUsed === existLastUsed && currAddedAt < existAddedAt))
+        : {
+            ...existingAcc,
+            ...acc,
+            projectId: existingAcc.projectId ?? acc.projectId,
+            managedProjectId:
+              existingAcc.managedProjectId ?? acc.managedProjectId,
+            rateLimitResetTimes: mergedRateLimitResetTimes,
+            lastUsed: Math.max(existLastUsed, currLastUsed),
+          }
 
-        if (incomingIsOlderOnTokenChange) {
-          continue
-        }
-
-        if (staleRefreshTokenToDelete !== undefined) {
-          accountMap.delete(staleRefreshTokenToDelete)
-        }
-
-        const incomingRateLimitResetTimes = acc.rateLimitResetTimes
-        const mergedRateLimitResetTimes =
-          incomingRateLimitResetTimes === undefined
-            ? existingAcc.rateLimitResetTimes
-            : Object.keys(incomingRateLimitResetTimes).length === 0
-              ? undefined
-              : {
-                  ...existingAcc.rateLimitResetTimes,
-                  ...incomingRateLimitResetTimes,
-                }
-        accountMap.set(acc.refreshToken, {
-          ...existingAcc,
-          ...acc,
-          projectId: existingAcc.projectId ?? acc.projectId,
-          managedProjectId: existingAcc.managedProjectId ?? acc.managedProjectId,
-          rateLimitResetTimes: mergedRateLimitResetTimes,
-          lastUsed: Math.max(existLastUsed, currLastUsed),
-        })
-      } else {
-        accountMap.set(acc.refreshToken, acc)
-      }
+      slots[slotIndex] = mergedRecord
+      tokenToSlot.set(acc.refreshToken, slotIndex)
+    } else {
+      tokenToSlot.set(acc.refreshToken, slots.length)
+      slots.push(acc)
     }
   }
 
+  const accounts = deduplicateAccountsByEmail(slots)
+  const activeIndex = remapAccountIndex(
+    incoming.activeIndex,
+    incoming.accounts,
+    accounts,
+  )
+  const activeIndexByFamily = incoming.activeIndexByFamily
+    ? {
+        ...(incoming.activeIndexByFamily.claude !== undefined
+          ? {
+              claude: remapAccountIndex(
+                incoming.activeIndexByFamily.claude,
+                incoming.accounts,
+                accounts,
+              ),
+            }
+          : {}),
+        ...(incoming.activeIndexByFamily.gemini !== undefined
+          ? {
+              gemini: remapAccountIndex(
+                incoming.activeIndexByFamily.gemini,
+                incoming.accounts,
+                accounts,
+              ),
+            }
+          : {}),
+      }
+    : undefined
+
   return {
     version: 4,
-    accounts: deduplicateAccountsByEmail(Array.from(accountMap.values())),
-    activeIndex: incoming.activeIndex,
-    activeIndexByFamily: incoming.activeIndexByFamily,
+    accounts,
+    activeIndex,
+    activeIndexByFamily,
   }
 }
 
@@ -718,23 +868,36 @@ export async function loadAccountsFromPath(
 
     const deduplicatedAccounts = deduplicateAccountsByEmail(validAccounts)
 
-    let activeIndex =
-      typeof storage.activeIndex === "number" &&
-      Number.isFinite(storage.activeIndex)
-        ? storage.activeIndex
-        : 0
-    if (deduplicatedAccounts.length > 0) {
-      activeIndex = Math.min(activeIndex, deduplicatedAccounts.length - 1)
-      activeIndex = Math.max(activeIndex, 0)
-    } else {
-      activeIndex = 0
-    }
+    const activeIndex = clampIndexToAccounts(
+      storage.activeIndex,
+      deduplicatedAccounts.length,
+    )
+    const activeIndexByFamily = storage.activeIndexByFamily
+      ? {
+          ...(storage.activeIndexByFamily.claude !== undefined
+            ? {
+                claude: clampIndexToAccounts(
+                  storage.activeIndexByFamily.claude,
+                  deduplicatedAccounts.length,
+                ),
+              }
+            : {}),
+          ...(storage.activeIndexByFamily.gemini !== undefined
+            ? {
+                gemini: clampIndexToAccounts(
+                  storage.activeIndexByFamily.gemini,
+                  deduplicatedAccounts.length,
+                ),
+              }
+            : {}),
+        }
+      : undefined
 
     return {
       version: 4,
       accounts: deduplicatedAccounts,
       activeIndex,
-      activeIndexByFamily: storage.activeIndexByFamily,
+      activeIndexByFamily,
     }
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code

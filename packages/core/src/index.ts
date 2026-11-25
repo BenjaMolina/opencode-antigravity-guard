@@ -1,5 +1,38 @@
 export const CORE_PACKAGE_NAME = "@benjamolina/antigravity-guard-core"
 export {
+  DEFAULT_SOFT_QUOTA_NEAR_THRESHOLD_MARGIN,
+  DEFAULT_SOFT_QUOTA_REFRESH_TTL_MS,
+  accessTokenExpired,
+  calculateBackoffMs,
+  classifyModelQuotaFamily,
+  clearExpiredRateLimits,
+  computeSoftQuotaCacheTtlMs,
+  extractVerificationErrorDetails,
+  formatAccountLabel,
+  formatRefreshParts,
+  getQuotaKey,
+  isOverSoftQuotaThreshold,
+  isRateLimitedForFamily,
+  isRateLimitedForHeaderStyle,
+  isRateLimitedForQuotaKey,
+  needsActiveQuotaRefresh,
+  parseRateLimitReason,
+  parseRefreshParts,
+  resolveQuotaGroup,
+} from "./account-helpers.ts"
+export type {
+  BaseQuotaKey,
+  ManagedAccount,
+  OAuthAuthDetails,
+  QuotaGroup,
+  QuotaGroupSummary,
+  QuotaKey,
+  RateLimitBackoffResult,
+  RateLimitReason,
+  RefreshParts,
+  VerificationErrorDetails,
+} from "./account-helpers.ts"
+export {
   DEFAULT_SHARED_GUARD_CONFIG,
   loadSharedGuardConfig,
   resolveSharedGuardPaths,
@@ -61,6 +94,34 @@ export {
   buildRefreshForm,
 } from "./oauth.ts"
 export type { AuthorizationCodeExchange, OAuthClientConfig } from "./oauth.ts"
+export {
+  DEFAULT_PROACTIVE_REFRESH_CONFIG,
+  ProactiveRefreshQueue,
+} from "./refresh-queue.ts"
+export type {
+  ProactiveRefreshConfig,
+  ProactiveRefreshQueueOptions,
+  RefreshableAccountStore,
+} from "./refresh-queue.ts"
+export {
+  DEFAULT_HEALTH_SCORE_CONFIG,
+  DEFAULT_TOKEN_BUCKET_CONFIG,
+  HealthScoreTracker,
+  TokenBucketTracker,
+  addJitter,
+  getHealthTracker,
+  getTokenTracker,
+  initHealthTracker,
+  initTokenTracker,
+  randomDelay,
+  selectHybridAccount,
+  sortByLruWithHealth,
+} from "./rotation.ts"
+export type {
+  AccountWithMetrics,
+  HealthScoreConfig,
+  TokenBucketConfig,
+} from "./rotation.ts"
 export {
   GITIGNORE_ENTRIES,
   acquireDefaultDirLock,
