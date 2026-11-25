@@ -142,8 +142,9 @@ export function loadSharedGuardConfig(
   const paths = resolveSharedGuardPaths(options)
   let config = cloneDefaultSharedGuardConfig()
 
+  const hasExplicitOpencodeDir = Boolean(env.OPENCODE_CONFIG_DIR?.trim())
   const userConfigPath =
-    paths.source === "opencode" && !existsSync(paths.userConfigPath)
+    paths.source === "opencode" && !hasExplicitOpencodeDir && !existsSync(paths.userConfigPath)
       ? join(resolvePiAgentDir(env, home), "antigravity.json")
       : paths.userConfigPath
 

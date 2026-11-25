@@ -62,6 +62,38 @@ export {
 } from "./oauth.ts"
 export type { AuthorizationCodeExchange, OAuthClientConfig } from "./oauth.ts"
 export {
+  GITIGNORE_ENTRIES,
+  acquireDefaultDirLock,
+  clearAccountsAtPath,
+  deduplicateAccountsByEmail,
+  ensureGitignore,
+  ensureGitignoreSync,
+  loadAccountsFromPath,
+  mergeAccountStorage,
+  migrateV1ToV2,
+  migrateV2ToV3,
+  migrateV3ToV4,
+  saveAccountsReplaceToPath,
+  saveAccountsToPath,
+} from "./storage.ts"
+export type {
+  AccountMetadata,
+  AccountMetadataV1,
+  AccountMetadataV3,
+  AccountStorage,
+  AccountStorageIoOptions,
+  AccountStorageV1,
+  AccountStorageV3,
+  AccountStorageV4,
+  CooldownReason,
+  FileLockFn,
+  HeaderStyle,
+  ModelFamily,
+  RateLimitState,
+  RateLimitStateV3,
+  StorageLogger,
+} from "./storage.ts"
+export {
   createAntigravityVersionState,
   fetchAntigravityHubVersion,
 } from "./version.ts"
