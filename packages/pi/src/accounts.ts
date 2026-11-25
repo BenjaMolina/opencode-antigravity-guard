@@ -8,15 +8,21 @@ import {
   HealthScoreTracker,
   ProactiveRefreshQueue,
   TokenBucketTracker,
-  accessTokenExpired,
+  calculateBackoffMs,
   computeSoftQuotaCacheTtlMs,
+  createAccountFailureTracker,
+  createRateLimitBackoffTracker,
+  extractRateLimitTextInfo,
   extractVerificationErrorDetails,
   formatAccountLabel,
+  formatRefreshParts,
   generateFingerprint,
+  headerStyleToQuotaKey,
   loadAccountsFromPath,
   parseRateLimitReason,
   parseRefreshParts,
   resolveSharedGuardPaths,
+  retryAfterMsFromHeaders,
   saveAccountsReplaceToPath,
   saveAccountsToPath,
   updateFingerprintVersion,
@@ -31,8 +37,9 @@ import { AuthHttpError, refreshCredentials } from "./auth-http.ts"
 import { defaultProjectId } from "./project.ts"
 
 const PI_PROVIDER_KEY = "antigravity-guard"
-const SHARED_POOL_PLACEHOLDER_ACCESS = "shared-pool-pending-refresh"
+export const SHARED_POOL_PLACEHOLDER_ACCESS = "shared-pool-pending-refresh"
 const POOL_SYNCED_MARKER = "poolSynced"
+const ACCESS_TOKEN_EXPIRY_BUFFER_MS = 60_000
 
 export interface PiAuthJsonEntry {
   type: "oauth"
@@ -80,7 +87,10 @@ export function readPiAuthEntry(authJsonPath: string): PiAuthJsonEntry | null {
   }
 }
 
-function buildPiAuthEntryObject(account: ManagedAccount): Record<string, unknown> {
+function buildPiAuthEntryObject(
+  account: ManagedAccount,
+  nowMs = Date.now(),
+): Record<string, unknown> {
   const projectId =
     account.parts.projectId ??
     account.parts.managedProjectId ??
@@ -94,7 +104,7 @@ function buildPiAuthEntryObject(account: ManagedAccount): Record<string, unknown
     type: "oauth",
     refresh: account.parts.refreshToken,
     access: hasRealAccess ? account.access! : SHARED_POOL_PLACEHOLDER_ACCESS,
-    expires: hasRealAccess ? account.expires! : Date.now() + 365 * 24 * 60 * 60 * 1_000,
+    expires: hasRealAccess ? account.expires! : nowMs + 365 * 24 * 60 * 60 * 1_000,
     projectId,
     [POOL_SYNCED_MARKER]: true,
     ...(account.email ? { email: account.email } : {}),
@@ -207,10 +217,12 @@ export interface SelectedPoolCredentials {
   accessToken: string
   projectId: string
   userAgent: string
+  tokenConsumed?: boolean
 }
 
 export interface PiAccountPool {
   getManager(): AccountManager | null
+  hasManagedPoolHistory(): boolean
   getAccountsPath(): string
   loadOrRefresh(cwd?: string): Promise<AccountManager>
   recordLoginAccount(input: {
@@ -237,7 +249,9 @@ export interface PiAccountPool {
     modelId: string
     status?: number
     body?: string
+    headers?: Record<string, string>
     message?: string
+    tokenConsumed?: boolean
   }): Promise<{ rotated: boolean; quarantined: boolean }>
   stopBackgroundRefresh(): void
 }
@@ -247,10 +261,14 @@ export function resolvePiModelFamily(modelId: string): ModelFamily {
 }
 
 export function createPiAccountPool(options: PiAccountPoolOptions): PiAccountPool {
+  const nowFn = () => (options.now ?? Date.now)()
   const healthTracker = new HealthScoreTracker()
   const tokenTracker = new TokenBucketTracker()
+  const rateLimitTracker = createRateLimitBackoffTracker({ now: nowFn })
+  const failureTracker = createAccountFailureTracker({ now: nowFn })
   let currentCwd = options.cwd
   let manager: AccountManager | null = null
+  let managedPoolHistory = false
   let refreshQueue: ProactiveRefreshQueue | null = null
 
   const currentPaths = () =>
@@ -371,7 +389,11 @@ export function createPiAccountPool(options: PiAccountPoolOptions): PiAccountPoo
           const parsed = parseRefreshParts(auth.refresh)
           return {
             type: "oauth",
-            refresh: `${account.parts.refreshToken}|${parsed.projectId ?? ""}`,
+            refresh: formatRefreshParts({
+              refreshToken: account.parts.refreshToken,
+              projectId: parsed.projectId ?? account.parts.projectId,
+              managedProjectId: parsed.managedProjectId ?? account.parts.managedProjectId,
+            }),
             access: outcome.access,
             expires: outcome.expires,
           }
@@ -386,6 +408,9 @@ export function createPiAccountPool(options: PiAccountPoolOptions): PiAccountPoo
     getManager(): AccountManager | null {
       return manager
     },
+    hasManagedPoolHistory(): boolean {
+      return managedPoolHistory || (manager?.getTotalAccountCount() ?? 0) > 0
+    },
     getAccountsPath(): string {
       return currentPaths().accountsPath
     },
@@ -397,12 +422,15 @@ export function createPiAccountPool(options: PiAccountPoolOptions): PiAccountPoo
       const deps = makeManagerDeps(paths.accountsPath)
       const previousAccounts = manager?.getAccounts() ?? []
       const stored = await loadAccountsFromPath(paths.accountsPath)
+      if (stored !== null) {
+        managedPoolHistory = true
+      }
       manager = new AccountManager(undefined, stored, deps)
       for (const acc of manager.getAccounts()) {
         const prior = previousAccounts.find(
           (prev) => prev.parts.refreshToken === acc.parts.refreshToken,
         )
-        if (prior?.access && prior.expires && prior.expires > Date.now()) {
+        if (prior?.access && prior.expires && prior.expires > nowFn()) {
           acc.access = prior.access
           acc.expires = prior.expires
         }
@@ -421,7 +449,12 @@ export function createPiAccountPool(options: PiAccountPoolOptions): PiAccountPoo
             .find((acc) => acc.parts.refreshToken === refreshToken)
 
           if (standaloneAuth.poolSynced || stored !== null) {
-            if (existingByToken && standaloneAuth.access && standaloneAuth.expires > Date.now()) {
+            if (
+              existingByToken &&
+              standaloneAuth.access &&
+              standaloneAuth.expires > nowFn() &&
+              standaloneAuth.expires > (existingByToken.expires ?? 0)
+            ) {
               existingByToken.access = standaloneAuth.access
               existingByToken.expires = standaloneAuth.expires
             } else if (!existingByToken) {
@@ -447,10 +480,14 @@ export function createPiAccountPool(options: PiAccountPoolOptions): PiAccountPoo
         }
       }
 
+      if (manager.getTotalAccountCount() > 0) {
+        managedPoolHistory = true
+      }
       startOrUpdateProactiveRefresh(manager)
       return manager
     },
     async recordLoginAccount(input): Promise<void> {
+      managedPoolHistory = true
       const active = manager ?? (await this.loadOrRefresh())
       active.upsertAccount({
         refreshToken: input.refreshToken,
@@ -527,35 +564,61 @@ export function createPiAccountPool(options: PiAccountPoolOptions): PiAccountPoo
 
         triedRefreshTokens.add(candidate.parts.refreshToken)
 
-        if (accessTokenExpired({ access: candidate.access, expires: candidate.expires })) {
+        const isTokenExpired =
+          !candidate.access ||
+          typeof candidate.expires !== "number" ||
+          candidate.expires <= nowFn() + ACCESS_TOKEN_EXPIRY_BUFFER_MS
+        if (isTokenExpired) {
+          const priorCandidateToken = candidate.parts.refreshToken
           const refreshed = await refreshAccountAccessToken(
             candidate,
             input.fetch,
             input.signal,
           )
+          const liveManager = manager
+          if (!liveManager) {
+            return null
+          }
+          const liveCandidate =
+            liveManager
+              .getAccounts()
+              .find(
+                (acc) =>
+                  acc === candidate ||
+                  acc.parts.refreshToken === candidate.parts.refreshToken ||
+                  acc.parts.refreshToken === priorCandidateToken,
+              ) ?? candidate
+
           if (!refreshed.ok) {
             if (refreshed.aborted || input.signal.aborted) {
               throw new AuthHttpError("aborted", "Generation was cancelled.")
             }
             if (refreshed.invalidGrant) {
-              healthTracker.reset(candidate.index)
-              manager.removeAccount(candidate)
-              await manager.saveToDiskReplace()
-              syncPiAuthJsonWithPool(currentAuthJsonPath(), manager)
+              healthTracker.reset(liveCandidate.index)
+              liveManager.removeAccount(liveCandidate)
+              await liveManager.saveToDiskReplace()
+              syncPiAuthJsonWithPool(currentAuthJsonPath(), liveManager)
               continue
             }
-            healthTracker.recordFailure(candidate.index)
-            manager.markAccountCoolingDown(candidate, 60_000, "auth-failure")
+            healthTracker.recordFailure(liveCandidate.index)
+            liveManager.markAccountCoolingDown(liveCandidate, 60_000, "auth-failure")
             continue
           }
-          triedRefreshTokens.add(candidate.parts.refreshToken)
-          await manager.saveToDisk()
-          syncPiAuthJsonWithPool(currentAuthJsonPath(), manager)
+          if (liveCandidate !== candidate) {
+            liveCandidate.parts.refreshToken = candidate.parts.refreshToken
+            liveCandidate.access = candidate.access
+            liveCandidate.expires = candidate.expires
+            liveCandidate.lastUsed = Math.max(liveCandidate.lastUsed, candidate.lastUsed)
+          }
+          triedRefreshTokens.add(liveCandidate.parts.refreshToken)
+          await liveManager.saveToDisk()
+          syncPiAuthJsonWithPool(currentAuthJsonPath(), liveManager)
         }
 
-        if (cfg.account_selection_strategy === "hybrid") {
-          tokenTracker.consume(candidate.index)
-        }
+        const tokenConsumed =
+          cfg.account_selection_strategy === "hybrid"
+            ? tokenTracker.consume(candidate.index)
+            : false
 
         const projectId =
           candidate.parts.projectId ??
@@ -570,6 +633,7 @@ export function createPiAccountPool(options: PiAccountPoolOptions): PiAccountPoo
           accessToken: candidate.access!,
           projectId,
           userAgent,
+          tokenConsumed,
         }
       }
 
@@ -577,9 +641,15 @@ export function createPiAccountPool(options: PiAccountPoolOptions): PiAccountPoo
     },
     async recordSuccess(account): Promise<void> {
       if (!manager) return
-      healthTracker.recordSuccess(account.index)
-      manager.markAccountUsed(account.index)
-      manager.markRequestSuccess(account)
+      const liveAccount =
+        manager
+          .getAccounts()
+          .find((acc) => acc.parts.refreshToken === account.parts.refreshToken) ?? account
+      healthTracker.recordSuccess(liveAccount.index)
+      rateLimitTracker.resetAllForAccount(liveAccount.parts.refreshToken)
+      failureTracker.reset(liveAccount.parts.refreshToken)
+      manager.markAccountUsed(liveAccount.index)
+      manager.markRequestSuccess(liveAccount)
       manager.requestSaveToDisk()
     },
     async recordHttpFailure(input): Promise<{ rotated: boolean; quarantined: boolean }> {
@@ -588,18 +658,27 @@ export function createPiAccountPool(options: PiAccountPoolOptions): PiAccountPoo
       }
       const cfg = options.getConfig()
       const family = resolvePiModelFamily(input.modelId)
+      const liveAccount =
+        manager
+          .getAccounts()
+          .find((acc) => acc.parts.refreshToken === input.account.parts.refreshToken) ??
+        input.account
+
+      if (input.tokenConsumed) {
+        tokenTracker.refund(liveAccount.index)
+      }
 
       if (input.status === 403 && input.body) {
         const details = extractVerificationErrorDetails(input.body)
         if (details.validationRequired) {
-          healthTracker.recordFailure(input.account.index)
+          healthTracker.recordFailure(liveAccount.index)
           manager.markAccountVerificationRequired(
-            input.account.index,
+            liveAccount.index,
             details.message,
             details.verifyUrl,
           )
           manager.markAccountCoolingDown(
-            input.account,
+            liveAccount,
             10 * 60_000,
             "validation-required",
           )
@@ -609,29 +688,58 @@ export function createPiAccountPool(options: PiAccountPoolOptions): PiAccountPoo
       }
 
       if (input.status === 429 || input.status === 503 || input.status === 529) {
-        healthTracker.recordRateLimit(input.account.index)
-        const reason = parseRateLimitReason(undefined, input.body ?? input.message, input.status)
+        healthTracker.recordRateLimit(liveAccount.index)
+        const defaultRetryMs = (cfg.default_retry_after_seconds ?? 60) * 1_000
+        const maxBackoffMs = (cfg.max_backoff_seconds ?? 60) * 1_000
+        const headerRetryMs = retryAfterMsFromHeaders(input.headers, defaultRetryMs)
+        const bodyInfo = extractRateLimitTextInfo(input.body ?? "")
+        const serverRetryMs = bodyInfo.retryDelayMs ?? headerRetryMs
+        const reason = parseRateLimitReason(
+          bodyInfo.reason,
+          bodyInfo.message ?? input.body ?? input.message,
+          input.status,
+        )
+        const quotaKey = headerStyleToQuotaKey("antigravity", family)
+        const { delayMs } = rateLimitTracker.getBackoff(
+          liveAccount.parts.refreshToken,
+          quotaKey,
+          serverRetryMs,
+          maxBackoffMs,
+        )
+        const smartBackoffMs = calculateBackoffMs(
+          reason,
+          liveAccount.consecutiveFailures ?? 0,
+          serverRetryMs,
+        )
+        const effectiveDelayMs = Math.max(delayMs, smartBackoffMs)
+
         manager.markRateLimitedWithReason(
-          input.account,
+          liveAccount,
           family,
           "antigravity",
           input.modelId,
           reason,
-          null,
+          effectiveDelayMs,
           cfg.failure_ttl_seconds * 1_000,
         )
-        manager.requestSaveToDisk()
+        await manager.saveToDisk()
         return { rotated: manager.getAccountCount() > 0, quarantined: false }
       }
 
       if (input.status === 401) {
-        healthTracker.recordFailure(input.account.index)
-        input.account.access = undefined
-        input.account.expires = 0
+        healthTracker.recordFailure(liveAccount.index)
+        liveAccount.access = undefined
+        liveAccount.expires = 0
         return { rotated: manager.getAccountCount() > 0, quarantined: false }
       }
 
-      return { rotated: false, quarantined: false }
+      const tracked = failureTracker.trackFailure(liveAccount.parts.refreshToken)
+      if (tracked.shouldCooldown) {
+        healthTracker.recordFailure(liveAccount.index)
+        manager.markAccountCoolingDown(liveAccount, tracked.cooldownMs, "project-error")
+        await manager.saveToDisk()
+      }
+      return { rotated: manager.getAccountCount() > 1, quarantined: false }
     },
     stopBackgroundRefresh(): void {
       refreshQueue?.stop()

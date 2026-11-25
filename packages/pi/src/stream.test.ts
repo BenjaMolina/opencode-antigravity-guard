@@ -846,3 +846,122 @@ it("attaches bounded upstream responseBody on HTTP errors and aborts cleanly dur
     randomSpy.mockRestore()
   }
 })
+
+it("retries transient 503/529/MODEL_CAPACITY_EXHAUSTED on the same endpoint and fails over daily -> autopush -> prod pre-first-chunk without duplicating partial SSE", async () => {
+  const attemptedUrls: string[] = []
+  const backoffDelays: number[] = []
+  const failoverFetch = vi.fn<typeof globalThis.fetch>(async (url) => {
+    const urlStr = String(url)
+    attemptedUrls.push(urlStr)
+    if (urlStr.startsWith("https://daily-cloudcode-pa.sandbox.googleapis.com")) {
+      return new Response(
+        JSON.stringify({
+          error: {
+            message: "Model capacity exhausted",
+            details: [
+              {
+                "@type": "type.googleapis.com/google.rpc.ErrorInfo",
+                reason: "MODEL_CAPACITY_EXHAUSTED",
+              },
+            ],
+          },
+        }),
+        { status: 429 },
+      )
+    }
+    if (urlStr.startsWith("https://autopush-cloudcode-pa.sandbox.googleapis.com")) {
+      return new Response("upstream not found", { status: 404 })
+    }
+    return new Response(
+      'data: {"response":{"candidates":[{"content":{"parts":[{"text":"PROD_RECOVERED"}]}}]}}\n\ndata: {"response":{"candidates":[{"finishReason":"STOP"}]}}\n\n',
+      { headers: { "Content-Type": "text/event-stream" } },
+    )
+  })
+
+  const semantics: unknown[] = []
+  await executeStreamTransport({
+    accessToken: "access-token",
+    projectId: "stored-project",
+    context: context(),
+    fetch: failoverFetch,
+    model: model(),
+    now: () => 1_000,
+    onSemantic: (s) => {
+      semantics.push(s)
+    },
+    platform: "win32",
+    requestId: "req-failover-1",
+    endpoints: [
+      "https://daily-cloudcode-pa.sandbox.googleapis.com",
+      "https://autopush-cloudcode-pa.sandbox.googleapis.com",
+      "https://cloudcode-pa.sandbox.googleapis.com",
+    ],
+    maxCapacityRetriesPerEndpoint: 2,
+    sleep: async (ms) => {
+      backoffDelays.push(ms)
+    },
+  })
+
+  // daily initial + 2 capacity retries (3) + autopush 404 (1) + prod 200 (1) = 5 calls
+  expect(attemptedUrls).toEqual([
+    "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:streamGenerateContent?alt=sse",
+    "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:streamGenerateContent?alt=sse",
+    "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:streamGenerateContent?alt=sse",
+    "https://autopush-cloudcode-pa.sandbox.googleapis.com/v1internal:streamGenerateContent?alt=sse",
+    "https://cloudcode-pa.sandbox.googleapis.com/v1internal:streamGenerateContent?alt=sse",
+  ])
+  expect(backoffDelays).toHaveLength(2)
+  expect(backoffDelays[0]).toBeGreaterThanOrEqual(900)
+  expect(backoffDelays[0]).toBeLessThanOrEqual(1_100)
+  expect(backoffDelays[1]).toBeGreaterThanOrEqual(1_800)
+  expect(backoffDelays[1]).toBeLessThanOrEqual(2_200)
+  expect(semantics).toEqual([
+    { type: "text", text: "PROD_RECOVERED" },
+    { type: "finish", reason: "stop" },
+  ])
+
+  // Once 200 SSE starts emitting chunks and then corrupts mid-stream, never fail over or duplicate text!
+  let midStreamCalls = 0
+  const midStreamFetch = vi.fn<typeof globalThis.fetch>(async () => {
+    midStreamCalls += 1
+    const encoder = new TextEncoder()
+    const stream = new ReadableStream<Uint8Array>({
+      start(ctrl) {
+        ctrl.enqueue(
+          encoder.encode(
+            'data: {"response":{"candidates":[{"content":{"parts":[{"text":"PARTIAL"}]}}]}}\n\n',
+          ),
+        )
+        ctrl.enqueue(encoder.encode("data: {broken-json}\n\n"))
+        ctrl.close()
+      },
+    })
+    return new Response(stream, { headers: { "Content-Type": "text/event-stream" } })
+  })
+
+  const partialDelivered: unknown[] = []
+  await expect(
+    executeStreamTransport({
+      accessToken: "access-token",
+      projectId: "stored-project",
+      context: context(),
+      fetch: midStreamFetch,
+      model: model(),
+      now: () => 1_000,
+      onSemantic: (s) => {
+        partialDelivered.push(s)
+      },
+      platform: "win32",
+      requestId: "req-midstream-no-retry",
+      endpoints: [
+        "https://daily-cloudcode-pa.sandbox.googleapis.com",
+        "https://autopush-cloudcode-pa.sandbox.googleapis.com",
+        "https://cloudcode-pa.sandbox.googleapis.com",
+      ],
+      maxCapacityRetriesPerEndpoint: 3,
+      sleep: async () => undefined,
+    }),
+  ).rejects.toMatchObject({ kind: "response" })
+  expect(midStreamCalls).toBe(1)
+  expect(partialDelivered).toEqual([{ type: "text", text: "PARTIAL" }])
+})
