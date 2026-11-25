@@ -459,7 +459,12 @@ async function triggerAsyncQuotaRefreshForAccount(
     
     const results = await checkAccountsQuota([singleAccount], client, providerId);
     
-    if (results[0]?.status === "ok" && results[0]?.quota?.groups && results[0]?.refreshToken) {
+    if (
+      results[0]?.status === "ok" &&
+      results[0]?.quota?.groups &&
+      !results[0]?.quota?.error &&
+      results[0]?.refreshToken
+    ) {
       accountManager.updateQuotaCache(results[0].refreshToken, results[0].quota.groups);
     }
   } catch (err) {

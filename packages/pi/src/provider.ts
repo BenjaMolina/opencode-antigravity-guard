@@ -5,6 +5,7 @@ import {
   ANTIGRAVITY_ENDPOINT_FALLBACKS,
   DEFAULT_SHARED_GUARD_CONFIG,
   MAX_CAPACITY_RETRIES_PER_ENDPOINT,
+  abortableSleep,
   createAntigravityVersionState,
   createSessionFingerprintStore,
   fetchAntigravityHubVersion,
@@ -22,7 +23,12 @@ import { listCatalogEntries, toPiModelDescriptor } from "./catalog.ts"
 import { registerPiGuardCommands } from "./commands.ts"
 import { createPiOAuthLifecycle } from "./oauth.ts"
 import { resolveLoginProject } from "./project.ts"
-import { StreamTransportError, createPiLifecycleStream, executeStreamTransport } from "./stream.ts"
+import {
+  StreamTransportError,
+  createPiLifecycleStream,
+  createPoolUnavailableError,
+  executeStreamTransport,
+} from "./stream.ts"
 
 const PROVIDER = "antigravity-guard"
 const API = "antigravity-guard-sse"
@@ -136,6 +142,7 @@ export function registerAntigravityProvider(
   registerPiGuardCommands(pi, {
     pool: runtime.getAccountPool(),
     getConfig: () => runtime.getConfig(),
+    now: options?.now,
   })
 
   pi.registerProvider(PROVIDER, {
@@ -221,10 +228,12 @@ function streamText(
 
       if (activeManager && pool.hasManagedPoolHistory()) {
         if (activeManager.getTotalAccountCount() === 0) {
-          throw new Error(INVALID_CREDENTIALS)
+          throw createPoolUnavailableError({ reason: "no-accounts" })
         }
         const excludedRefreshTokens = new Set<string>()
         let lastError: unknown
+        let waitedForSoftQuota = false
+        let waitedForRateLimit = false
         while (true) {
           const selected = await pool.acquireCredentials({
             modelId: model.id,
@@ -234,7 +243,26 @@ function streamText(
           })
           if (!selected) {
             if (lastError) throw lastError
-            throw new Error("No available Antigravity Guard accounts in the shared pool.")
+            const unavailable = await pool.resolvePoolUnavailableOutcome({
+              modelId: model.id,
+              fetch: fetchFn,
+              signal,
+              alreadyWaitedForSoftQuota: waitedForSoftQuota,
+              alreadyWaitedForRateLimit: waitedForRateLimit,
+            })
+            if (unavailable.action === "wait-and-retry") {
+              if (unavailable.kind === "soft-quota") {
+                waitedForSoftQuota = true
+                await (runtimeOptions?.sleep ?? abortableSleep)(unavailable.waitMs, signal)
+                await pool.refreshQuotasLive({ fetch: fetchFn, signal })
+              } else {
+                waitedForRateLimit = true
+                await (runtimeOptions?.sleep ?? abortableSleep)(unavailable.waitMs, signal)
+              }
+              excludedRefreshTokens.clear()
+              continue
+            }
+            throw unavailable.error
           }
           excludedRefreshTokens.add(selected.account.parts.refreshToken)
 
@@ -265,7 +293,7 @@ function streamText(
               timeoutMs: options?.timeoutMs,
               userAgent: selected.userAgent,
             })
-            await pool.recordSuccess(selected.account)
+            await pool.recordSuccess(selected.account, fetchFn)
             return
           } catch (error) {
             lastError = error

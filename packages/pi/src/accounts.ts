@@ -4,18 +4,25 @@ import { homedir } from "node:os"
 import { dirname, join } from "node:path"
 
 import {
+  ANTIGRAVITY_DEFAULT_PROJECT_ID,
   AccountManager,
+  DEFAULT_POOL_QUOTA_REFRESH_COOLDOWN_MS,
+  DEFAULT_SOFT_QUOTA_NEAR_THRESHOLD_MARGIN,
+  DEFAULT_SOFT_QUOTA_REFRESH_TTL_MS,
   HealthScoreTracker,
   ProactiveRefreshQueue,
   TokenBucketTracker,
   calculateBackoffMs,
+  checkAccountsQuotaWithDeps,
   computeSoftQuotaCacheTtlMs,
   createAccountFailureTracker,
+  createPoolQuotaRefreshCoordinator,
   createRateLimitBackoffTracker,
   extractRateLimitTextInfo,
   extractVerificationErrorDetails,
   formatAccountLabel,
   formatRefreshParts,
+  formatWaitTime,
   generateFingerprint,
   headerStyleToQuotaKey,
   loadAccountsFromPath,
@@ -26,6 +33,8 @@ import {
   saveAccountsReplaceToPath,
   saveAccountsToPath,
   updateFingerprintVersion,
+  type AccountMetadataV3,
+  type AccountQuotaResult,
   type ManagedAccount,
   type ModelFamily,
   type OAuthAuthDetails,
@@ -35,6 +44,11 @@ import {
 
 import { AuthHttpError, refreshCredentials } from "./auth-http.ts"
 import { defaultProjectId } from "./project.ts"
+import {
+  createPoolUnavailableError,
+  type PoolUnavailableErrorDescriptor,
+  type StreamTransportError,
+} from "./stream.ts"
 
 const PI_PROVIDER_KEY = "antigravity-guard"
 export const SHARED_POOL_PLACEHOLDER_ACCESS = "shared-pool-pending-refresh"
@@ -133,6 +147,7 @@ function writeAuthJsonAtomic(authJsonPath: string, root: Record<string, unknown>
 export function seedPiAuthJsonIfMissing(
   authJsonPath: string,
   account: ManagedAccount,
+  nowMs = Date.now(),
 ): boolean {
   try {
     let existingRoot: Record<string, unknown> = {}
@@ -147,7 +162,7 @@ export function seedPiAuthJsonIfMissing(
       existingRoot = { ...parsed }
     }
 
-    existingRoot[PI_PROVIDER_KEY] = buildPiAuthEntryObject(account)
+    existingRoot[PI_PROVIDER_KEY] = buildPiAuthEntryObject(account, nowMs)
     writeAuthJsonAtomic(authJsonPath, existingRoot)
     return true
   } catch {
@@ -236,6 +251,22 @@ export interface PiAccountPool {
     index: number,
     cwd?: string,
   ): Promise<{ manager: AccountManager; removed: boolean }>
+  syncAuthAfterAccountToggle(activeManager?: AccountManager): void
+  refreshQuotasLive(input?: {
+    cwd?: string
+    fetch?: typeof globalThis.fetch
+    signal?: AbortSignal
+  }): Promise<{ manager: AccountManager; results: AccountQuotaResult[] | null }>
+  resolvePoolUnavailableOutcome(input: {
+    modelId: string
+    fetch: typeof globalThis.fetch
+    signal: AbortSignal
+    alreadyWaitedForSoftQuota?: boolean
+    alreadyWaitedForRateLimit?: boolean
+  }): Promise<
+    | { action: "wait-and-retry"; waitMs: number; kind: "soft-quota" | "rate-limit" }
+    | { action: "error"; error: StreamTransportError }
+  >
   acquireCredentials(input: {
     modelId: string
     fetch: typeof globalThis.fetch
@@ -243,7 +274,7 @@ export interface PiAccountPool {
     excludeIndices?: ReadonlySet<number>
     excludeRefreshTokens?: ReadonlySet<string>
   }): Promise<SelectedPoolCredentials | null>
-  recordSuccess(account: ManagedAccount): Promise<void>
+  recordSuccess(account: ManagedAccount, fetch?: typeof globalThis.fetch): Promise<void>
   recordHttpFailure(input: {
     account: ManagedAccount
     modelId: string
@@ -262,14 +293,20 @@ export function resolvePiModelFamily(modelId: string): ModelFamily {
 
 export function createPiAccountPool(options: PiAccountPoolOptions): PiAccountPool {
   const nowFn = () => (options.now ?? Date.now)()
+  const isOffline = () =>
+    /^(1|true|yes)$/i.test((options.env ?? process.env).PI_OFFLINE ?? "")
   const healthTracker = new HealthScoreTracker()
   const tokenTracker = new TokenBucketTracker()
   const rateLimitTracker = createRateLimitBackoffTracker({ now: nowFn })
   const failureTracker = createAccountFailureTracker({ now: nowFn })
+  const poolQuotaCoordinator = createPoolQuotaRefreshCoordinator({ now: nowFn })
+  const lastQuotaAttemptAtByToken = new Map<string, number>()
+  const quotaRefreshInProgressByToken = new Set<string>()
   let currentCwd = options.cwd
   let manager: AccountManager | null = null
   let managedPoolHistory = false
   let refreshQueue: ProactiveRefreshQueue | null = null
+  let stopped = false
 
   const currentPaths = () =>
     resolveSharedGuardPaths({
@@ -291,6 +328,7 @@ export function createPiAccountPool(options: PiAccountPoolOptions): PiAccountPoo
     getVersion: options.getVersion,
     healthTracker,
     tokenTracker,
+    now: nowFn,
   })
 
   const currentAuthJsonPath = () =>
@@ -404,6 +442,158 @@ export function createPiAccountPool(options: PiAccountPoolOptions): PiAccountPoo
     refreshQueue.start()
   }
 
+  const runQuotaCheck = async (
+    accountsMetadata: AccountMetadataV3[],
+    fetchFn: typeof globalThis.fetch,
+    signal?: AbortSignal,
+  ): Promise<AccountQuotaResult[]> => {
+    return checkAccountsQuotaWithDeps(accountsMetadata, {
+      fetch: fetchFn,
+      signal,
+      now: nowFn,
+      platform: process.platform,
+      arch: process.arch,
+      getUserAgent: () =>
+        generateFingerprint({ version: options.getVersion() }).userAgent,
+      refreshAuth: async (_auth, accMeta) => {
+        const liveManager = manager
+        const liveAccount = liveManager
+          ?.getAccounts()
+          .find((a) => a.parts.refreshToken === accMeta.refreshToken)
+
+        if (
+          liveAccount?.access &&
+          typeof liveAccount.expires === "number" &&
+          liveAccount.expires > nowFn() + ACCESS_TOKEN_EXPIRY_BUFFER_MS
+        ) {
+          return {
+            type: "oauth",
+            refresh: formatRefreshParts(liveAccount.parts),
+            access: liveAccount.access,
+            expires: liveAccount.expires,
+          }
+        }
+
+        const tempAccount: ManagedAccount =
+          liveAccount ?? {
+            index: 0,
+            email: accMeta.email,
+            addedAt: accMeta.addedAt,
+            lastUsed: accMeta.lastUsed,
+            parts: {
+              refreshToken: accMeta.refreshToken,
+              projectId: accMeta.projectId,
+              managedProjectId: accMeta.managedProjectId,
+            },
+            enabled: accMeta.enabled !== false,
+            rateLimitResetTimes: {},
+            touchedForQuota: {},
+          }
+
+        const priorToken = tempAccount.parts.refreshToken
+        const refreshed = await refreshAccountAccessToken(tempAccount, fetchFn, signal)
+        const postManager = manager ?? liveManager
+        const postAccount = postManager
+          ?.getAccounts()
+          .find(
+            (a) =>
+              a === liveAccount ||
+              a.parts.refreshToken === tempAccount.parts.refreshToken ||
+              a.parts.refreshToken === priorToken,
+          )
+
+        if (!refreshed.ok) {
+          if (refreshed.aborted || signal?.aborted) {
+            throw new AuthHttpError("aborted", "Generation was cancelled.")
+          }
+          if (refreshed.invalidGrant && postManager && postAccount) {
+            healthTracker.reset(postAccount.index)
+            if (postManager.removeAccount(postAccount)) {
+              await postManager.saveToDiskReplace()
+            }
+            syncPiAuthJsonWithPool(currentAuthJsonPath(), postManager)
+          }
+          return undefined
+        }
+
+        if (postAccount && postAccount !== tempAccount) {
+          postAccount.parts.refreshToken = tempAccount.parts.refreshToken
+          postAccount.access = tempAccount.access
+          postAccount.expires = tempAccount.expires
+          postAccount.lastUsed = Math.max(postAccount.lastUsed, tempAccount.lastUsed)
+        }
+        if (postManager) {
+          await postManager.saveToDisk()
+          syncPiAuthJsonWithPool(currentAuthJsonPath(), postManager)
+        }
+
+        return {
+          type: "oauth",
+          refresh: formatRefreshParts((postAccount ?? tempAccount).parts),
+          access: refreshed.access,
+          expires: refreshed.expires,
+        }
+      },
+      resolveProjectContext: async (auth, accMeta) => ({
+        auth,
+        effectiveProjectId:
+          accMeta.projectId ||
+          accMeta.managedProjectId ||
+          defaultProjectId(accMeta.email ?? ANTIGRAVITY_DEFAULT_PROJECT_ID),
+      }),
+    })
+  }
+
+  const triggerBackgroundQuotaRefreshForAccount = (
+    account: ManagedAccount,
+    fetchFn: typeof globalThis.fetch,
+  ): void => {
+    const cfg = options.getConfig()
+    if (stopped || isOffline() || cfg.quota_refresh_interval_minutes <= 0) {
+      return
+    }
+    if (account.enabled === false) {
+      return
+    }
+    const tokenKey = account.parts.refreshToken
+    if (!tokenKey || quotaRefreshInProgressByToken.has(tokenKey)) {
+      return
+    }
+
+    const now = nowFn()
+    const intervalMs = cfg.quota_refresh_interval_minutes * 60_000
+    const cacheAge =
+      account.cachedQuotaUpdatedAt != null ? now - account.cachedQuotaUpdatedAt : Infinity
+    const lastAttempt = lastQuotaAttemptAtByToken.get(tokenKey)
+    const attemptAge = lastAttempt != null ? now - lastAttempt : Infinity
+
+    if (cacheAge < intervalMs || attemptAge < intervalMs) {
+      return
+    }
+
+    quotaRefreshInProgressByToken.add(tokenKey)
+    lastQuotaAttemptAtByToken.set(tokenKey, now)
+
+    void (async () => {
+      try {
+        const activeManager = manager
+        if (!activeManager || stopped) return
+        const updated = await poolQuotaCoordinator.refreshSingle(
+          account,
+          activeManager,
+          (accs) => runQuotaCheck(accs, fetchFn),
+        )
+        if (updated && !stopped && manager === activeManager) {
+          await activeManager.saveToDisk()
+        }
+      } catch {
+        // Non-fatal background quota refresh
+      } finally {
+        quotaRefreshInProgressByToken.delete(tokenKey)
+      }
+    })()
+  }
+
   return {
     getManager(): AccountManager | null {
       return manager
@@ -415,6 +605,7 @@ export function createPiAccountPool(options: PiAccountPoolOptions): PiAccountPoo
       return currentPaths().accountsPath
     },
     async loadOrRefresh(cwd?: string): Promise<AccountManager> {
+      stopped = false
       if (cwd !== undefined) {
         currentCwd = cwd
       }
@@ -476,7 +667,7 @@ export function createPiAccountPool(options: PiAccountPoolOptions): PiAccountPoo
       } else {
         const firstEnabled = manager.getEnabledAccounts()[0]
         if (firstEnabled) {
-          seedPiAuthJsonIfMissing(authJsonPath, firstEnabled)
+          seedPiAuthJsonIfMissing(authJsonPath, firstEnabled, nowFn())
         }
       }
 
@@ -512,6 +703,181 @@ export function createPiAccountPool(options: PiAccountPoolOptions): PiAccountPoo
       }
       return { manager: active, removed }
     },
+    syncAuthAfterAccountToggle(activeManager?: AccountManager): void {
+      const target = activeManager ?? manager
+      if (!target) return
+      const authPath = currentAuthJsonPath()
+      if (existsSync(authPath)) {
+        syncPiAuthJsonWithPool(authPath, target)
+      } else {
+        const firstEnabled = target.getEnabledAccounts()[0]
+        if (firstEnabled) {
+          seedPiAuthJsonIfMissing(authPath, firstEnabled, nowFn())
+        }
+      }
+    },
+    async refreshQuotasLive(input): Promise<{
+      manager: AccountManager
+      results: AccountQuotaResult[] | null
+    }> {
+      const active = await this.loadOrRefresh(input?.cwd)
+      if (isOffline() || active.getTotalAccountCount() === 0) {
+        return { manager: active, results: null }
+      }
+
+      const fetchFn = input?.fetch ?? options.fetch ?? globalThis.fetch
+      const metadata = active.getAccountsForQuotaCheck()
+      const attemptNow = nowFn()
+      for (const meta of metadata) {
+        if (meta.refreshToken) {
+          lastQuotaAttemptAtByToken.set(meta.refreshToken, attemptNow)
+        }
+      }
+
+      const results = await runQuotaCheck(metadata, fetchFn, input?.signal)
+      const liveManager = manager ?? active
+      let anyUpdated = false
+      for (const res of results) {
+        if (res.status === "ok" && res.quota && !res.quota.error) {
+          const rotated = res.updatedAccount?.refreshToken
+          const targetToken =
+            rotated &&
+            liveManager.getAccounts().some((acc) => acc.parts.refreshToken === rotated)
+              ? rotated
+              : res.refreshToken
+          if (targetToken) {
+            liveManager.updateQuotaCache(targetToken, res.quota.groups)
+            anyUpdated = true
+          }
+        }
+      }
+      if (anyUpdated) {
+        await liveManager.saveToDisk()
+      }
+      return { manager: liveManager, results }
+    },
+    async resolvePoolUnavailableOutcome(input): Promise<
+      | { action: "wait-and-retry"; waitMs: number; kind: "soft-quota" | "rate-limit" }
+      | { action: "error"; error: StreamTransportError }
+    > {
+      const toUnavailableError = (
+        descriptor: PoolUnavailableErrorDescriptor,
+      ): { action: "error"; error: StreamTransportError } => ({
+        action: "error",
+        error: createPoolUnavailableError(descriptor),
+      })
+
+      if (!manager || manager.getTotalAccountCount() === 0) {
+        return toUnavailableError({ reason: "no-accounts" })
+      }
+
+      const enabledCount = manager.getAccountCount()
+      if (enabledCount === 0) {
+        return toUnavailableError({ reason: "no-enabled-accounts" })
+      }
+
+      const cfg = options.getConfig()
+      const family = resolvePiModelFamily(input.modelId)
+      const cacheTtlMs = computeSoftQuotaCacheTtlMs(
+        cfg.soft_quota_cache_ttl_minutes,
+        cfg.quota_refresh_interval_minutes,
+      )
+
+      if (
+        manager.areAllAccountsOverSoftQuota(
+          family,
+          cfg.soft_quota_threshold_percent,
+          cacheTtlMs,
+          input.modelId,
+        )
+      ) {
+        const threshold = cfg.soft_quota_threshold_percent
+        const softQuotaWaitMs = manager.getMinWaitTimeForSoftQuota(
+          family,
+          threshold,
+          cacheTtlMs,
+          input.modelId,
+        )
+        const maxWaitMs = (cfg.max_rate_limit_wait_seconds ?? 300) * 1_000
+
+        if (
+          !input.alreadyWaitedForSoftQuota &&
+          !isOffline() &&
+          softQuotaWaitMs !== null &&
+          softQuotaWaitMs > 0 &&
+          (maxWaitMs === 0 || softQuotaWaitMs <= maxWaitMs)
+        ) {
+          return { action: "wait-and-retry", waitMs: softQuotaWaitMs, kind: "soft-quota" }
+        }
+
+        if (
+          !isOffline() &&
+          !stopped &&
+          manager.shouldRefreshAllQuotas(family, threshold, cacheTtlMs, input.modelId)
+        ) {
+          const now = nowFn()
+          const hasUnattemptedRecently = manager
+            .getEnabledAccounts()
+            .some((acc) => {
+              const prev = lastQuotaAttemptAtByToken.get(acc.parts.refreshToken)
+              return prev === undefined || now - prev >= DEFAULT_POOL_QUOTA_REFRESH_COOLDOWN_MS
+            })
+          if (hasUnattemptedRecently) {
+            const activeRef = manager
+            void poolQuotaCoordinator
+              .triggerForAll(activeRef, (accs) => runQuotaCheck(accs, input.fetch))
+              .then(async () => {
+                if (!stopped && manager === activeRef) {
+                  await activeRef.saveToDisk()
+                }
+              })
+              .catch(() => undefined)
+          }
+        }
+
+        return toUnavailableError({
+          reason: "soft-quota",
+          accountCount: enabledCount,
+          thresholdPercent: threshold,
+          family,
+          waitMs: softQuotaWaitMs,
+        })
+      }
+
+      const rateLimitWaitMs = manager.getMinWaitTimeForFamily(
+        family,
+        input.modelId,
+        "antigravity",
+        true,
+      )
+      if (rateLimitWaitMs > 0) {
+        const maxWaitMs = (cfg.max_rate_limit_wait_seconds ?? 300) * 1_000
+        if (
+          !input.alreadyWaitedForRateLimit &&
+          !isOffline() &&
+          (maxWaitMs === 0 || rateLimitWaitMs <= maxWaitMs)
+        ) {
+          return {
+            action: "wait-and-retry",
+            waitMs: rateLimitWaitMs,
+            kind: "rate-limit",
+          }
+        }
+        return toUnavailableError({
+          reason: "rate-limited",
+          accountCount: enabledCount,
+          family,
+          waitMs: rateLimitWaitMs,
+        })
+      }
+
+      return toUnavailableError({
+        reason: "rate-limited",
+        accountCount: enabledCount,
+        family,
+        waitMs: 0,
+      })
+    },
     async acquireCredentials(input): Promise<SelectedPoolCredentials | null> {
       if (!manager || manager.getTotalAccountCount() === 0) {
         return null
@@ -530,6 +896,64 @@ export function createPiAccountPool(options: PiAccountPoolOptions): PiAccountPoo
           if (acc) {
             triedRefreshTokens.add(acc.parts.refreshToken)
           }
+        }
+      }
+
+      if (
+        !isOffline() &&
+        cfg.soft_quota_threshold_percent < 100 &&
+        triedRefreshTokens.size === 0
+      ) {
+        const enabledSnapshot = [...manager.getEnabledAccounts()]
+        let anyQuotaUpdated = false
+        for (const candidate of enabledSnapshot) {
+          if (input.signal.aborted) {
+            throw new AuthHttpError("aborted", "Generation was cancelled.")
+          }
+          const liveManager = manager
+          if (!liveManager) break
+          const liveCandidate = liveManager
+            .getEnabledAccounts()
+            .find((acc) => acc.parts.refreshToken === candidate.parts.refreshToken)
+          if (!liveCandidate) continue
+
+          if (
+            liveManager.needsActiveQuotaRefresh(
+              liveCandidate,
+              family,
+              cfg.soft_quota_threshold_percent,
+              DEFAULT_SOFT_QUOTA_REFRESH_TTL_MS,
+              DEFAULT_SOFT_QUOTA_NEAR_THRESHOLD_MARGIN,
+              input.modelId,
+            )
+          ) {
+            const tokenKey = liveCandidate.parts.refreshToken
+            if (liveCandidate.cachedQuota == null) {
+              const lastAttempt = lastQuotaAttemptAtByToken.get(tokenKey)
+              if (
+                lastAttempt !== undefined &&
+                nowFn() - lastAttempt >= 0 &&
+                nowFn() - lastAttempt < DEFAULT_POOL_QUOTA_REFRESH_COOLDOWN_MS
+              ) {
+                continue
+              }
+            }
+            lastQuotaAttemptAtByToken.set(tokenKey, nowFn())
+            const updated = await poolQuotaCoordinator.refreshSingle(
+              liveCandidate,
+              liveManager,
+              (accs) => runQuotaCheck(accs, input.fetch, input.signal),
+            )
+            if (input.signal.aborted) {
+              throw new AuthHttpError("aborted", "Generation was cancelled.")
+            }
+            if (updated) {
+              anyQuotaUpdated = true
+            }
+          }
+        }
+        if (anyQuotaUpdated && manager) {
+          await manager.saveToDisk()
         }
       }
 
@@ -639,7 +1063,7 @@ export function createPiAccountPool(options: PiAccountPoolOptions): PiAccountPoo
 
       return null
     },
-    async recordSuccess(account): Promise<void> {
+    async recordSuccess(account, fetchFn): Promise<void> {
       if (!manager) return
       const liveAccount =
         manager
@@ -651,6 +1075,10 @@ export function createPiAccountPool(options: PiAccountPoolOptions): PiAccountPoo
       manager.markAccountUsed(liveAccount.index)
       manager.markRequestSuccess(liveAccount)
       manager.requestSaveToDisk()
+      triggerBackgroundQuotaRefreshForAccount(
+        liveAccount,
+        fetchFn ?? options.fetch ?? globalThis.fetch,
+      )
     },
     async recordHttpFailure(input): Promise<{ rotated: boolean; quarantined: boolean }> {
       if (!manager) {
@@ -688,30 +1116,58 @@ export function createPiAccountPool(options: PiAccountPoolOptions): PiAccountPoo
       }
 
       if (input.status === 429 || input.status === 503 || input.status === 529) {
-        healthTracker.recordRateLimit(liveAccount.index)
-        const defaultRetryMs = (cfg.default_retry_after_seconds ?? 60) * 1_000
-        const maxBackoffMs = (cfg.max_backoff_seconds ?? 60) * 1_000
-        const headerRetryMs = retryAfterMsFromHeaders(input.headers, defaultRetryMs)
         const bodyInfo = extractRateLimitTextInfo(input.body ?? "")
-        const serverRetryMs = bodyInfo.retryDelayMs ?? headerRetryMs
         const reason = parseRateLimitReason(
           bodyInfo.reason,
           bodyInfo.message ?? input.body ?? input.message,
           input.status,
         )
+
+        if (reason === "MODEL_CAPACITY_EXHAUSTED" || reason === "SERVER_ERROR") {
+          const tracked = failureTracker.trackFailure(liveAccount.parts.refreshToken)
+          if (tracked.shouldCooldown) {
+            healthTracker.recordFailure(liveAccount.index)
+            manager.markAccountCoolingDown(
+              liveAccount,
+              tracked.cooldownMs,
+              "project-error",
+            )
+            await manager.saveToDisk()
+          }
+          return { rotated: manager.getAccountCount() > 1, quarantined: false }
+        }
+
+        healthTracker.recordRateLimit(liveAccount.index)
+        const defaultRetryMs = (cfg.default_retry_after_seconds ?? 60) * 1_000
+        const maxBackoffMs = (cfg.max_backoff_seconds ?? 60) * 1_000
+        const explicitHeaderRetryMs = retryAfterMsFromHeaders(input.headers, 0)
+        const explicitServerRetryMs =
+          bodyInfo.retryDelayMs ?? (explicitHeaderRetryMs > 0 ? explicitHeaderRetryMs : null)
+        const trackerSeedMs = explicitServerRetryMs ?? defaultRetryMs
+
         const quotaKey = headerStyleToQuotaKey("antigravity", family)
         const { delayMs } = rateLimitTracker.getBackoff(
           liveAccount.parts.refreshToken,
           quotaKey,
-          serverRetryMs,
+          trackerSeedMs,
           maxBackoffMs,
         )
+
+        const failureTtlMs = cfg.failure_ttl_seconds * 1_000
+        const priorFailures =
+          liveAccount.lastFailureTime !== undefined &&
+          nowFn() - liveAccount.lastFailureTime > failureTtlMs
+            ? 0
+            : (liveAccount.consecutiveFailures ?? 0)
         const smartBackoffMs = calculateBackoffMs(
           reason,
-          liveAccount.consecutiveFailures ?? 0,
-          serverRetryMs,
+          priorFailures,
+          explicitServerRetryMs,
         )
-        const effectiveDelayMs = Math.max(delayMs, smartBackoffMs)
+        const effectiveDelayMs =
+          reason === "UNKNOWN" && explicitServerRetryMs === null
+            ? Math.max(delayMs, smartBackoffMs)
+            : smartBackoffMs
 
         manager.markRateLimitedWithReason(
           liveAccount,
@@ -720,7 +1176,7 @@ export function createPiAccountPool(options: PiAccountPoolOptions): PiAccountPoo
           input.modelId,
           reason,
           effectiveDelayMs,
-          cfg.failure_ttl_seconds * 1_000,
+          failureTtlMs,
         )
         await manager.saveToDisk()
         return { rotated: manager.getAccountCount() > 0, quarantined: false }
@@ -742,6 +1198,7 @@ export function createPiAccountPool(options: PiAccountPoolOptions): PiAccountPoo
       return { rotated: manager.getAccountCount() > 1, quarantined: false }
     },
     stopBackgroundRefresh(): void {
+      stopped = true
       refreshQueue?.stop()
     },
   }
@@ -751,6 +1208,7 @@ export function formatPoolAccountSummary(
   accounts: readonly ManagedAccount[],
   accountsPath: string,
   strategy: string,
+  nowMs = Date.now(),
 ): string {
   if (accounts.length === 0) {
     return `No Antigravity Guard accounts found at \`${accountsPath}\`. Run \`/login antigravity-guard\` to add an account.`
@@ -772,12 +1230,12 @@ export function formatPoolAccountSummary(
     if (acc.verificationRequired) {
       status = "quarantined (403)"
       if (acc.verificationUrl) notes.push(acc.verificationUrl)
-    } else if (acc.coolingDownUntil && acc.coolingDownUntil > Date.now()) {
+    } else if (acc.coolingDownUntil && acc.coolingDownUntil > nowMs) {
       status = `cooldown (${acc.cooldownReason ?? "active"})`
     }
     const activeLimits = Object.entries(acc.rateLimitResetTimes)
-      .filter(([, reset]) => typeof reset === "number" && reset > Date.now())
-      .map(([key, reset]) => `${key}: ${Math.ceil(((reset ?? 0) - Date.now()) / 1000)}s`)
+      .filter(([, reset]) => typeof reset === "number" && reset > nowMs)
+      .map(([key, reset]) => `${key}: ${Math.ceil(((reset ?? 0) - nowMs) / 1000)}s`)
     if (activeLimits.length > 0) {
       notes.push(`rate-limited (${activeLimits.join(", ")})`)
     }
@@ -790,6 +1248,8 @@ export function formatPoolAccountSummary(
 export function formatPoolQuotaSummary(
   accounts: readonly ManagedAccount[],
   softThresholdPercent: number,
+  liveResults?: readonly AccountQuotaResult[] | null,
+  nowMs = Date.now(),
 ): string {
   if (accounts.length === 0) {
     return "No Antigravity Guard accounts configured. Run `/login antigravity-guard` first."
@@ -814,9 +1274,33 @@ export function formatPoolQuotaSummary(
     const pro = fmtGroup(acc.cachedQuota?.["gemini-pro"])
     const flash = fmtGroup(acc.cachedQuota?.["gemini-flash"])
     const updated = acc.cachedQuotaUpdatedAt
-      ? `${Math.max(0, Math.round((Date.now() - acc.cachedQuotaUpdatedAt) / 60_000))}m ago`
+      ? `${Math.max(0, Math.round((nowMs - acc.cachedQuotaUpdatedAt) / 60_000))}m ago`
       : "cached on next check"
     lines.push(`| ${acc.index + 1} | ${label} | ${claude} | ${pro} | ${flash} | ${updated} |`)
+  }
+
+  const cliLines: string[] = []
+  if (liveResults) {
+    for (const res of liveResults) {
+      const models = res.geminiCliQuota?.models
+      if (models && models.length > 0) {
+        const label = formatAccountLabel(res.email, res.index)
+        const summary = models
+          .map((m) => {
+            const used =
+              m.remainingFraction !== undefined
+                ? `${((1 - Math.max(0, Math.min(1, m.remainingFraction))) * 100).toFixed(0)}% used`
+                : "n/a"
+            return `\`${m.modelId}\` (${used})`
+          })
+          .join(", ")
+        cliLines.push(`- **${label}**: ${summary}`)
+      }
+    }
+  }
+
+  if (cliLines.length > 0) {
+    lines.push("", "#### Gemini CLI Quota", ...cliLines)
   }
 
   return lines.join("\n")

@@ -181,7 +181,7 @@ function parseResetAfterFromMessage(message: string | undefined): number | null 
     return null
   }
   const afterMatch = message.match(/reset after\s+([0-9hms.]+)/i)
-  const rawDuration = afterMatch?.[1]
+  const rawDuration = afterMatch?.[1]?.replace(/\.+$/, "")
   return rawDuration ? parseDurationToMs(rawDuration) : null
 }
 

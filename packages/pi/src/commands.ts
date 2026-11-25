@@ -15,6 +15,7 @@ export interface PiCommandRegistrationHost {
 export interface RegisterPiGuardCommandsOptions {
   pool: PiAccountPool
   getConfig: () => SharedGuardConfig
+  now?: () => number
 }
 
 function emitCommandReport(
@@ -77,6 +78,7 @@ export function registerPiGuardCommands(
           manager.getAccounts(),
           options.pool.getAccountsPath(),
           cfg.account_selection_strategy,
+          (options.now ?? Date.now)(),
         )
         emitCommandReport(pi, ctx, "antigravity-accounts", report)
         return
@@ -114,6 +116,7 @@ export function registerPiGuardCommands(
         const changed = manager.setAccountEnabled(index, enable)
         if (changed) {
           await manager.saveToDisk()
+          options.pool.syncAuthAfterAccountToggle(manager)
           ctx?.ui?.notify?.(
             `Account #${targetNum} ${enable ? "enabled" : "disabled"}.`,
             "info",
@@ -128,6 +131,7 @@ export function registerPiGuardCommands(
         manager.getAccounts(),
         options.pool.getAccountsPath(),
         cfg.account_selection_strategy,
+        (options.now ?? Date.now)(),
       )
       emitCommandReport(pi, ctx, "antigravity-accounts", report)
     },
@@ -135,17 +139,21 @@ export function registerPiGuardCommands(
 
   pi.registerCommand("antigravity-quota", {
     description:
-      "Display cached soft-quota usage across the shared Antigravity Guard account pool",
+      "Display live and cached soft-quota usage across the shared Antigravity Guard account pool",
     handler: async (args, ctx) => {
       if ((args ?? "").trim().length > 0) {
         emitWarning(pi, ctx, "antigravity-quota", QUOTA_USAGE)
         return
       }
-      const manager = await options.pool.loadOrRefresh(ctx?.cwd)
+      const { manager, results } = await options.pool.refreshQuotasLive({
+        cwd: ctx?.cwd,
+      })
       const cfg = options.getConfig()
       const report = formatPoolQuotaSummary(
         manager.getAccounts(),
         cfg.soft_quota_threshold_percent,
+        results,
+        (options.now ?? Date.now)(),
       )
       emitCommandReport(pi, ctx, "antigravity-quota", report)
     },

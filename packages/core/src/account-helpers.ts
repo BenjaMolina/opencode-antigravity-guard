@@ -51,11 +51,13 @@ export function formatRefreshParts(parts: RefreshParts): string {
 
 export function accessTokenExpired(
   auth: Pick<OAuthAuthDetails, "access" | "expires">,
+  nowMs?: number,
 ): boolean {
   if (!auth.access || typeof auth.expires !== "number") {
     return true
   }
-  return auth.expires <= Date.now() + ACCESS_TOKEN_EXPIRY_BUFFER_MS
+  const now = nowMs ?? Date.now()
+  return auth.expires <= now + ACCESS_TOKEN_EXPIRY_BUFFER_MS
 }
 
 export function formatAccountLabel(
@@ -437,13 +439,18 @@ export function getQuotaKey(
 export function isRateLimitedForQuotaKey(
   account: ManagedAccount,
   key: QuotaKey,
+  nowMs?: number,
 ): boolean {
   const resetTime = account.rateLimitResetTimes[key]
-  return resetTime !== undefined && Date.now() < resetTime
+  const now = nowMs ?? Date.now()
+  return resetTime !== undefined && now < resetTime
 }
 
-export function clearExpiredRateLimits(account: ManagedAccount): void {
-  const now = Date.now()
+export function clearExpiredRateLimits(
+  account: ManagedAccount,
+  nowMs?: number,
+): void {
+  const now = nowMs ?? Date.now()
   const keys = Object.keys(account.rateLimitResetTimes) as QuotaKey[]
   for (const key of keys) {
     const resetTime = account.rateLimitResetTimes[key]
@@ -458,31 +465,33 @@ export function isRateLimitedForHeaderStyle(
   family: ModelFamily,
   headerStyle: HeaderStyle,
   model?: string | null,
+  nowMs?: number,
 ): boolean {
-  clearExpiredRateLimits(account)
+  clearExpiredRateLimits(account, nowMs)
 
   if (family === "claude") {
-    return isRateLimitedForQuotaKey(account, "claude")
+    return isRateLimitedForQuotaKey(account, "claude", nowMs)
   }
 
   if (model) {
     const modelKey = getQuotaKey(family, headerStyle, model)
-    if (isRateLimitedForQuotaKey(account, modelKey)) {
+    if (isRateLimitedForQuotaKey(account, modelKey, nowMs)) {
       return true
     }
   }
 
   const baseKey = getQuotaKey(family, headerStyle)
-  return isRateLimitedForQuotaKey(account, baseKey)
+  return isRateLimitedForQuotaKey(account, baseKey, nowMs)
 }
 
 export function isRateLimitedForFamily(
   account: ManagedAccount,
   family: ModelFamily,
   model?: string | null,
+  nowMs?: number,
 ): boolean {
   if (family === "claude") {
-    return isRateLimitedForQuotaKey(account, "claude")
+    return isRateLimitedForQuotaKey(account, "claude", nowMs)
   }
 
   const antigravityIsLimited = isRateLimitedForHeaderStyle(
@@ -490,12 +499,14 @@ export function isRateLimitedForFamily(
     family,
     "antigravity",
     model,
+    nowMs,
   )
   const cliIsLimited = isRateLimitedForHeaderStyle(
     account,
     family,
     "gemini-cli",
     model,
+    nowMs,
   )
 
   return antigravityIsLimited && cliIsLimited
@@ -518,6 +529,7 @@ export function isOverSoftQuotaThreshold(
   cacheTtlMs: number,
   model?: string | null,
   onDebugLog?: (message: string) => void,
+  nowMs?: number,
 ): boolean {
   if (thresholdPercent >= 100) return false
   if (!account.cachedQuota) return false
@@ -532,7 +544,7 @@ export function isOverSoftQuotaThreshold(
 
   if (!isOverThreshold) return false
 
-  const now = Date.now()
+  const now = nowMs ?? Date.now()
   if (groupData.resetTime) {
     const resetTimestamp = Date.parse(groupData.resetTime)
     if (Number.isFinite(resetTimestamp) && resetTimestamp > now) {
@@ -573,6 +585,7 @@ export function needsActiveQuotaRefresh(
   refreshTtlMs: number = DEFAULT_SOFT_QUOTA_REFRESH_TTL_MS,
   nearThresholdMargin: number = DEFAULT_SOFT_QUOTA_NEAR_THRESHOLD_MARGIN,
   model?: string | null,
+  nowMs?: number,
 ): boolean {
   if (account.enabled === false) return false
   if (thresholdPercent >= 100) return false
@@ -581,7 +594,8 @@ export function needsActiveQuotaRefresh(
     return true
   }
 
-  const age = Date.now() - account.cachedQuotaUpdatedAt
+  const now = nowMs ?? Date.now()
+  const age = now - account.cachedQuotaUpdatedAt
   if (age > refreshTtlMs) {
     return true
   }

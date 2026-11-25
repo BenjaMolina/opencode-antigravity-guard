@@ -252,6 +252,32 @@ describe("Phase 3 core quota engine & endpoint fallback constants (T3.1 / S1, S4
       quota: { groups: {}, modelCount: 0, error: "Failed to fetch Antigravity quota" },
     })
 
+    // Coordinator must NOT overwrite existing valid cachedQuota when quota.error is present
+    const errManager = new AccountManager(undefined, {
+      version: 4,
+      accounts: [
+        {
+          email: "healthy@x.com",
+          refreshToken: "rt-ok",
+          projectId: "p-ok",
+          addedAt: 2,
+          lastUsed: 2,
+          cachedQuota: { claude: { remainingFraction: 0.4, modelCount: 1 } },
+          cachedQuotaUpdatedAt: 123_456,
+        },
+      ],
+      activeIndex: 0,
+    })
+    const errCoordinator = createPoolQuotaRefreshCoordinator()
+    const singleErrOk = await errCoordinator.refreshSingle(
+      errManager.getAccounts()[0]!,
+      errManager,
+      async () => partialResults.slice(1),
+    )
+    expect(singleErrOk).toBe(false)
+    expect(errManager.getAccounts()[0]?.cachedQuota?.claude?.remainingFraction).toBe(0.4)
+    expect(errManager.getAccounts()[0]?.cachedQuotaUpdatedAt).toBe(123_456)
+
     const abortCtrl = new AbortController()
     abortCtrl.abort(new Error("cancelled by caller"))
     await expect(

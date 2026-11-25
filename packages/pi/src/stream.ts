@@ -7,6 +7,7 @@ import {
   calculateCapacityBackoffMs,
   extractRateLimitTextInfo,
   formatAntigravityHubUserAgent,
+  formatWaitTime,
   parseRateLimitReason,
 } from "@benjamolina/antigravity-guard-core"
 
@@ -577,6 +578,71 @@ function streamError(
   const error = new StreamTransportError(kind, message, status, details, responseBody, responseHeaders)
   LOCAL_ERRORS.add(error)
   return error
+}
+
+export type PoolUnavailableErrorDescriptor =
+  | {
+      reason: "soft-quota"
+      accountCount: number
+      thresholdPercent: number
+      family: "claude" | "gemini"
+      waitMs: number | null
+    }
+  | {
+      reason: "rate-limited"
+      accountCount: number
+      family: "claude" | "gemini"
+      waitMs: number
+    }
+  | { reason: "no-enabled-accounts" }
+  | { reason: "no-accounts" }
+
+export function createPoolUnavailableError(
+  descriptor: PoolUnavailableErrorDescriptor,
+): StreamTransportError {
+  if (descriptor.reason === "soft-quota") {
+    const safeCount = Math.max(0, Math.trunc(descriptor.accountCount))
+    const safeThreshold = Math.max(0, Math.min(100, Math.trunc(descriptor.thresholdPercent)))
+    const safeFamily = descriptor.family === "claude" ? "claude" : "gemini"
+    const waitText =
+      typeof descriptor.waitMs === "number" &&
+      Number.isFinite(descriptor.waitMs) &&
+      descriptor.waitMs > 0
+        ? formatWaitTime(descriptor.waitMs)
+        : "unknown"
+    return streamError(
+      "quota",
+      `[Antigravity Error] Quota protection: All ${safeCount} account(s) are over ${safeThreshold}% usage for ${safeFamily}. Quota resets in ${waitText}. Add more accounts with /login antigravity-guard, wait for quota reset, or set soft_quota_threshold_percent: 100 in antigravity.json.`,
+      429,
+    )
+  }
+  if (descriptor.reason === "rate-limited") {
+    const safeCount = Math.max(0, Math.trunc(descriptor.accountCount))
+    const safeFamily = descriptor.family === "claude" ? "claude" : "gemini"
+    const waitText =
+      typeof descriptor.waitMs === "number" &&
+      Number.isFinite(descriptor.waitMs) &&
+      descriptor.waitMs > 0
+        ? formatWaitTime(descriptor.waitMs)
+        : "unknown"
+    return streamError(
+      "quota",
+      `All ${safeCount} Antigravity Guard account(s) are rate-limited for ${safeFamily}. Quota resets in ${waitText}.`,
+      429,
+    )
+  }
+  if (descriptor.reason === "no-enabled-accounts") {
+    return streamError(
+      "access",
+      "No enabled Antigravity Guard accounts in the shared pool. Run /antigravity-accounts or /login antigravity-guard.",
+      401,
+    )
+  }
+  return streamError(
+    "access",
+    "Antigravity credentials are invalid. Run /login antigravity-guard.",
+    401,
+  )
 }
 
 export { MAX_CAPACITY_RETRIES_PER_ENDPOINT }

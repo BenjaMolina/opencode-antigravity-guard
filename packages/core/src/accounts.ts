@@ -45,10 +45,6 @@ import {
   type ModelFamily,
 } from "./storage.ts"
 
-function nowMs(): number {
-  return Date.now()
-}
-
 function clampNonNegativeInt(value: unknown, fallback: number): number {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     return fallback
@@ -68,6 +64,7 @@ export interface AccountManagerDependencies {
   onDebugLog?: (message: string) => void
   healthTracker?: HealthScoreTracker
   tokenTracker?: TokenBucketTracker
+  now?: () => number
 }
 
 export class AccountManager {
@@ -131,7 +128,7 @@ export class AccountManager {
     }
 
     if (stored && stored.accounts.length > 0) {
-      const baseNow = nowMs()
+      const baseNow = this.nowMs()
       this.accounts = stored.accounts
         .map((acc, index): ManagedAccount | null => {
           if (!acc.refreshToken || typeof acc.refreshToken !== "string") {
@@ -205,7 +202,7 @@ export class AccountManager {
     if (authFallback) {
       const parts = parseRefreshParts(authFallback.refresh)
       if (parts.refreshToken) {
-        const now = nowMs()
+        const now = this.nowMs()
         this.accounts = [
           {
             index: 0,
@@ -225,6 +222,10 @@ export class AccountManager {
         this.currentAccountIndexByFamily.gemini = 0
       }
     }
+  }
+
+  private nowMs(): number {
+    return (this.deps.now ?? Date.now)()
   }
 
   private createFingerprint(): Fingerprint {
@@ -313,7 +314,7 @@ export class AccountManager {
   }
 
   shouldShowAccountToast(accountIndex: number, debounceMs = 30000): boolean {
-    const now = nowMs()
+    const now = this.nowMs()
     if (accountIndex !== this.lastToastAccountIndex) {
       return true
     }
@@ -322,7 +323,7 @@ export class AccountManager {
 
   markToastShown(accountIndex: number): void {
     this.lastToastAccountIndex = accountIndex
-    this.lastToastTime = nowMs()
+    this.lastToastTime = this.nowMs()
   }
 
   getCurrentOrNextForFamily(
@@ -356,17 +357,18 @@ export class AccountManager {
     if (strategy === "hybrid") {
       const healthTracker = this.deps.healthTracker ?? getHealthTracker()
       const tokenTracker = this.deps.tokenTracker ?? getTokenTracker()
+      const now = this.nowMs()
 
       const accountsWithMetrics: AccountWithMetrics[] = this.accounts
         .filter((acc) => acc.enabled !== false && !excludeIndices?.has(acc.index))
         .map((acc) => {
-          clearExpiredRateLimits(acc)
+          clearExpiredRateLimits(acc, now)
           return {
             index: acc.index,
             lastUsed: acc.lastUsed,
             healthScore: healthTracker.getScore(acc.index),
             isRateLimited:
-              isRateLimitedForFamily(acc, family, model) ||
+              isRateLimitedForFamily(acc, family, model, now) ||
               isOverSoftQuotaThreshold(
                 acc,
                 family,
@@ -374,6 +376,7 @@ export class AccountManager {
                 softQuotaCacheTtlMs,
                 model,
                 this.deps.onDebugLog,
+                now,
               ),
             isCoolingDown: this.isAccountCoolingDown(acc),
           }
@@ -388,7 +391,7 @@ export class AccountManager {
       if (selectedIndex !== null) {
         const selected = this.accounts[selectedIndex]
         if (selected) {
-          selected.lastUsed = nowMs()
+          selected.lastUsed = this.nowMs()
           this.markTouchedForQuota(selected, quotaKey)
           this.currentAccountIndexByFamily[family] = selected.index
           return selected
@@ -415,12 +418,14 @@ export class AccountManager {
 
     const current = this.getCurrentAccountForFamily(family)
     if (current && !excludeIndices?.has(current.index)) {
-      clearExpiredRateLimits(current)
+      const now = this.nowMs()
+      clearExpiredRateLimits(current, now)
       const isLimitedForRequestedStyle = isRateLimitedForHeaderStyle(
         current,
         family,
         headerStyle,
         model,
+        now,
       )
       const isOverThreshold = isOverSoftQuotaThreshold(
         current,
@@ -429,6 +434,7 @@ export class AccountManager {
         softQuotaCacheTtlMs,
         model,
         this.deps.onDebugLog,
+        now,
       )
       if (
         !isLimitedForRequestedStyle &&
@@ -463,12 +469,13 @@ export class AccountManager {
     softQuotaCacheTtlMs = 10 * 60 * 1000,
     excludeIndices?: Set<number>,
   ): ManagedAccount | null {
+    const now = this.nowMs()
     const available = this.accounts.filter((a) => {
-      clearExpiredRateLimits(a)
+      clearExpiredRateLimits(a, now)
       return (
         a.enabled !== false &&
         !excludeIndices?.has(a.index) &&
-        !isRateLimitedForHeaderStyle(a, family, headerStyle, model) &&
+        !isRateLimitedForHeaderStyle(a, family, headerStyle, model, now) &&
         !isOverSoftQuotaThreshold(
           a,
           family,
@@ -476,6 +483,7 @@ export class AccountManager {
           softQuotaCacheTtlMs,
           model,
           this.deps.onDebugLog,
+          now,
         ) &&
         !this.isAccountCoolingDown(a)
       )
@@ -502,13 +510,13 @@ export class AccountManager {
     model?: string | null,
   ): void {
     const key = getQuotaKey(family, headerStyle, model)
-    account.rateLimitResetTimes[key] = nowMs() + retryAfterMs
+    account.rateLimitResetTimes[key] = this.nowMs() + retryAfterMs
   }
 
   markAccountUsed(accountIndex: number): void {
     const account = this.accounts.find((a) => a.index === accountIndex)
     if (account) {
-      account.lastUsed = nowMs()
+      account.lastUsed = this.nowMs()
     }
   }
 
@@ -521,7 +529,7 @@ export class AccountManager {
     retryAfterMs?: number | null,
     failureTtlMs = 3_600_000,
   ): number {
-    const now = nowMs()
+    const now = this.nowMs()
 
     if (
       account.lastFailureTime !== undefined &&
@@ -571,7 +579,7 @@ export class AccountManager {
     cooldownMs: number,
     reason: CooldownReason,
   ): void {
-    account.coolingDownUntil = nowMs() + cooldownMs
+    account.coolingDownUntil = this.nowMs() + cooldownMs
     account.cooldownReason = reason
   }
 
@@ -579,7 +587,7 @@ export class AccountManager {
     if (account.coolingDownUntil === undefined) {
       return false
     }
-    if (nowMs() >= account.coolingDownUntil) {
+    if (this.nowMs() >= account.coolingDownUntil) {
       this.clearAccountCooldown(account)
       return false
     }
@@ -596,7 +604,7 @@ export class AccountManager {
   }
 
   markTouchedForQuota(account: ManagedAccount, quotaKey: string): void {
-    account.touchedForQuota[quotaKey] = nowMs()
+    account.touchedForQuota[quotaKey] = this.nowMs()
   }
 
   isFreshForQuota(account: ManagedAccount, quotaKey: string): boolean {
@@ -614,12 +622,13 @@ export class AccountManager {
     family: ModelFamily,
     model?: string | null,
   ): ManagedAccount[] {
+    const now = this.nowMs()
     return this.accounts.filter((acc) => {
-      clearExpiredRateLimits(acc)
+      clearExpiredRateLimits(acc, now)
       return (
         acc.enabled !== false &&
         this.isFreshForQuota(acc, quotaKey) &&
-        !isRateLimitedForFamily(acc, family, model) &&
+        !isRateLimitedForFamily(acc, family, model, now) &&
         !this.isAccountCoolingDown(acc)
       )
     })
@@ -631,7 +640,7 @@ export class AccountManager {
     headerStyle: HeaderStyle,
     model?: string | null,
   ): boolean {
-    return isRateLimitedForHeaderStyle(account, family, headerStyle, model)
+    return isRateLimitedForHeaderStyle(account, family, headerStyle, model, this.nowMs())
   }
 
   getAvailableHeaderStyle(
@@ -639,16 +648,17 @@ export class AccountManager {
     family: ModelFamily,
     model?: string | null,
   ): HeaderStyle | null {
-    clearExpiredRateLimits(account)
+    const now = this.nowMs()
+    clearExpiredRateLimits(account, now)
     if (family === "claude") {
-      return isRateLimitedForHeaderStyle(account, family, "antigravity")
+      return isRateLimitedForHeaderStyle(account, family, "antigravity", undefined, now)
         ? null
         : "antigravity"
     }
-    if (!isRateLimitedForHeaderStyle(account, family, "antigravity", model)) {
+    if (!isRateLimitedForHeaderStyle(account, family, "antigravity", model, now)) {
       return "antigravity"
     }
-    if (!isRateLimitedForHeaderStyle(account, family, "gemini-cli", model)) {
+    if (!isRateLimitedForHeaderStyle(account, family, "gemini-cli", model, now)) {
       return "gemini-cli"
     }
     return null
@@ -663,6 +673,7 @@ export class AccountManager {
       return false
     }
 
+    const now = this.nowMs()
     return this.accounts.some((acc) => {
       if (acc.index === currentAccountIndex) {
         return false
@@ -673,8 +684,8 @@ export class AccountManager {
       if (this.isAccountCoolingDown(acc)) {
         return false
       }
-      clearExpiredRateLimits(acc)
-      return !isRateLimitedForHeaderStyle(acc, family, "antigravity", model)
+      clearExpiredRateLimits(acc, now)
+      return !isRateLimitedForHeaderStyle(acc, family, "antigravity", model, now)
     })
   }
 
@@ -713,7 +724,7 @@ export class AccountManager {
     }
 
     account.verificationRequired = true
-    account.verificationRequiredAt = nowMs()
+    account.verificationRequiredAt = this.nowMs()
     account.verificationRequiredReason = reason?.trim() || undefined
 
     const normalizedVerifyUrl = verifyUrl?.trim()
@@ -768,7 +779,7 @@ export class AccountManager {
     expires?: number
     activate?: boolean
   }): ManagedAccount {
-    const now = nowMs()
+    const now = this.nowMs()
     const existing = this.accounts.find(
       (acc) =>
         acc.parts.refreshToken === input.refreshToken ||
@@ -907,13 +918,14 @@ export class AccountManager {
     headerStyle?: HeaderStyle,
     strict?: boolean,
   ): number {
+    const now = this.nowMs()
     const available = this.accounts.filter((a) => {
-      clearExpiredRateLimits(a)
+      clearExpiredRateLimits(a, now)
       return (
         a.enabled !== false &&
         (strict && headerStyle
-          ? !isRateLimitedForHeaderStyle(a, family, headerStyle, model)
-          : !isRateLimitedForFamily(a, family, model))
+          ? !isRateLimitedForHeaderStyle(a, family, headerStyle, model, now)
+          : !isRateLimitedForFamily(a, family, model, now))
       )
     })
     if (available.length > 0) {
@@ -924,11 +936,11 @@ export class AccountManager {
     for (const a of this.accounts) {
       if (family === "claude") {
         const t = a.rateLimitResetTimes.claude
-        if (t !== undefined) waitTimes.push(Math.max(0, t - nowMs()))
+        if (t !== undefined) waitTimes.push(Math.max(0, t - now))
       } else if (strict && headerStyle) {
         const key = getQuotaKey(family, headerStyle, model)
         const t = a.rateLimitResetTimes[key]
-        if (t !== undefined) waitTimes.push(Math.max(0, t - nowMs()))
+        if (t !== undefined) waitTimes.push(Math.max(0, t - now))
       } else {
         const antigravityKey = getQuotaKey(family, "antigravity", model)
         const cliKey = getQuotaKey(family, "gemini-cli", model)
@@ -937,8 +949,8 @@ export class AccountManager {
         const t2 = a.rateLimitResetTimes[cliKey]
 
         const accountWait = Math.min(
-          t1 !== undefined ? Math.max(0, t1 - nowMs()) : Infinity,
-          t2 !== undefined ? Math.max(0, t2 - nowMs()) : Infinity,
+          t1 !== undefined ? Math.max(0, t1 - now) : Infinity,
+          t2 !== undefined ? Math.max(0, t2 - now) : Infinity,
         )
         if (accountWait !== Infinity) waitTimes.push(accountWait)
       }
@@ -1063,7 +1075,7 @@ export class AccountManager {
     if (account.fingerprint) {
       const historyEntry: FingerprintVersion = {
         fingerprint: account.fingerprint,
-        timestamp: nowMs(),
+        timestamp: this.nowMs(),
         reason: "regenerated",
       }
 
@@ -1104,7 +1116,7 @@ export class AccountManager {
     if (account.fingerprint) {
       const historyEntry: FingerprintVersion = {
         fingerprint: account.fingerprint,
-        timestamp: nowMs(),
+        timestamp: this.nowMs(),
         reason: "restored",
       }
 
@@ -1118,7 +1130,7 @@ export class AccountManager {
       }
     }
 
-    account.fingerprint = { ...fingerprintToRestore, createdAt: nowMs() }
+    account.fingerprint = { ...fingerprintToRestore, createdAt: this.nowMs() }
     this.migrateFingerprintVersion(account.fingerprint)
 
     this.requestSaveToDisk()
@@ -1144,7 +1156,7 @@ export class AccountManager {
         : this.accounts.find((a) => a.parts.refreshToken === accountRef)
     if (account) {
       account.cachedQuota = quotaGroups
-      account.cachedQuotaUpdatedAt = nowMs()
+      account.cachedQuotaUpdatedAt = this.nowMs()
       this.requestSaveToDisk()
     }
   }
@@ -1158,10 +1170,10 @@ export class AccountManager {
     const enabled = this.getEnabledAccounts()
     if (enabled.length === 0) return false
 
-    const now = nowMs()
+    const now = this.nowMs()
     const blockedCount = enabled.filter((acc) => {
       const isRateLimited = family
-        ? isRateLimitedForFamily(acc, family, model)
+        ? isRateLimitedForFamily(acc, family, model, now)
         : Object.values(acc.rateLimitResetTimes).some(
             (t) => t !== undefined && t > now,
           )
@@ -1175,6 +1187,7 @@ export class AccountManager {
             cacheTtlMs,
             model,
             this.deps.onDebugLog,
+            now,
           )
         : false
       return isRateLimited || isCoolingDown || isOverSoftQuota
@@ -1197,6 +1210,7 @@ export class AccountManager {
       cacheTtlMs,
       model,
       this.deps.onDebugLog,
+      this.nowMs(),
     )
   }
 
@@ -1215,6 +1229,7 @@ export class AccountManager {
       refreshTtlMs,
       nearThresholdMargin,
       model,
+      this.nowMs(),
     )
   }
 
@@ -1232,10 +1247,11 @@ export class AccountManager {
 
   getOldestQuotaCacheAge(): number | null {
     let oldest: number | null = null
+    const now = this.nowMs()
     for (const acc of this.accounts) {
       if (acc.enabled === false) continue
       if (acc.cachedQuotaUpdatedAt == null) return null
-      const age = nowMs() - acc.cachedQuotaUpdatedAt
+      const age = now - acc.cachedQuotaUpdatedAt
       if (oldest === null || age > oldest) oldest = age
     }
     return oldest
@@ -1250,6 +1266,7 @@ export class AccountManager {
     if (thresholdPercent >= 100) return false
     const enabled = this.accounts.filter((a) => a.enabled !== false)
     if (enabled.length === 0) return false
+    const now = this.nowMs()
     return enabled.every((a) =>
       isOverSoftQuotaThreshold(
         a,
@@ -1258,6 +1275,7 @@ export class AccountManager {
         cacheTtlMs,
         model,
         this.deps.onDebugLog,
+        now,
       ),
     )
   }
@@ -1273,6 +1291,7 @@ export class AccountManager {
     const enabled = this.accounts.filter((a) => a.enabled !== false)
     if (enabled.length === 0) return null
 
+    const now = this.nowMs()
     const available = enabled.filter(
       (a) =>
         !isOverSoftQuotaThreshold(
@@ -1282,13 +1301,13 @@ export class AccountManager {
           cacheTtlMs,
           model,
           this.deps.onDebugLog,
+          now,
         ),
     )
     if (available.length > 0) return 0
 
     if (!model && family !== "claude") return null
     const quotaGroup = resolveQuotaGroup(family, model)
-    const now = nowMs()
     const waitTimes: number[] = []
 
     for (const acc of enabled) {

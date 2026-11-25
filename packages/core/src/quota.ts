@@ -106,6 +106,7 @@ export interface CheckAccountsQuotaDependencies {
   fetch?: typeof globalThis.fetch
   timeoutMs?: number
   signal?: AbortSignal
+  now?: () => number
   onQuotaFetchLog?: (
     stage: "start" | "complete" | "error",
     count?: number,
@@ -418,7 +419,7 @@ export async function checkAccountsQuotaWithDeps(
     let auth = buildAuthFromAccount(account)
 
     try {
-      if (accessTokenExpired(auth)) {
+      if (accessTokenExpired(auth, deps.now?.())) {
         const refreshed = await deps.refreshAuth(auth, account)
         if (!refreshed) {
           throw new Error("Token refresh failed")
@@ -552,7 +553,7 @@ export function createPoolQuotaRefreshCoordinator(
         }
         const results = await runCheck(accountsMetadata)
         for (const result of results) {
-          if (result.status === "ok" && result.quota) {
+          if (result.status === "ok" && result.quota && !result.quota.error) {
             const targetToken = resolveAccountRef(accountManager, result)
             if (targetToken) {
               accountManager.updateQuotaCache(targetToken, result.quota.groups)
@@ -577,7 +578,7 @@ export function createPoolQuotaRefreshCoordinator(
         }
         const results = await runCheck([meta])
         const res = results[0]
-        if (res && res.status === "ok" && res.quota) {
+        if (res && res.status === "ok" && res.quota && !res.quota.error) {
           const targetToken = resolveAccountRef(accountManager, res)
           if (targetToken) {
             accountManager.updateQuotaCache(targetToken, res.quota.groups)
