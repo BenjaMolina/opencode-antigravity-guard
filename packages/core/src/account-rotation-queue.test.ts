@@ -153,14 +153,20 @@ describe("Phase 2 core rotation, account helpers, and ProactiveRefreshQueue (S1,
       config: { enabled: true, bufferSeconds: 1_800, checkIntervalSeconds: 300 },
       refreshToken: async (auth) => {
         bgCalls.push(auth.refresh)
-        bgQueue.stop()
+        if (bgCalls.length === 2) {
+          bgQueue.stop()
+        }
         return { ...auth, access: "fresh", expires: now + 3_600_000 }
       },
     })
-    bgQueue.setAccountManager(makeInMemoryStore(makeAccounts()))
+    const bgAccounts = makeAccounts()
+    bgQueue.setAccountManager(makeInMemoryStore(bgAccounts))
     bgQueue.start()
     await new Promise((resolve) => setTimeout(resolve, 5_200))
     bgQueue.stop()
-    expect(bgCalls).toHaveLength(1)
+    expect(bgCalls).toHaveLength(2)
+    expect(bgAccounts[0]?.access).toBe("fresh")
+    expect(bgAccounts[1]?.access).toBe("expiring")
+    expect(bgAccounts[2]?.access).toBe("expiring")
   }, 10_000)
 })

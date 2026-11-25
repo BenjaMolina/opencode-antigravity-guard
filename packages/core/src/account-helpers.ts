@@ -85,13 +85,21 @@ function decodeEscapedText(input: string): string {
 }
 
 function normalizeGoogleVerificationUrl(rawUrl: string): string | undefined {
-  const normalized = decodeEscapedText(rawUrl).trim()
+  const normalized = decodeEscapedText(rawUrl)
+    .trim()
+    .replace(/[),.;!?]+$/, "")
   if (!normalized) {
     return undefined
   }
   try {
     const parsed = new URL(normalized)
-    if (parsed.hostname !== "accounts.google.com") {
+    if (
+      parsed.protocol !== "https:" ||
+      parsed.hostname !== "accounts.google.com" ||
+      parsed.username !== "" ||
+      parsed.password !== "" ||
+      parsed.port !== ""
+    ) {
       return undefined
     }
     return parsed.toString()
@@ -138,31 +146,44 @@ export function extractVerificationErrorDetails(
   const lowerBody = decodedBody.toLowerCase()
   let validationRequired = lowerBody.includes("validation_required")
   let message: string | undefined
-  const verificationUrls = new Set<string>()
+  const structuredUrls: string[] = []
+  const textUrls: string[] = []
 
   const collectUrlsFromText = (text: string): void => {
     for (const match of text.matchAll(
       /https:\/\/accounts\.google\.com\/[^\s"'<>]+/gi,
     )) {
       if (match[0]) {
-        verificationUrls.add(match[0])
+        textUrls.push(match[0])
       }
     }
   }
 
-  collectUrlsFromText(decodedBody)
+  const tryParseJson = (rawText: string, fallbackDecoded: string): unknown => {
+    try {
+      return JSON.parse(rawText)
+    } catch {
+      return JSON.parse(fallbackDecoded)
+    }
+  }
 
   const payloads: unknown[] = []
-  const trimmed = decodedBody.trim()
-  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+  const rawTrimmed = bodyText.trim()
+  const decodedTrimmed = decodedBody.trim()
+  if (
+    rawTrimmed.startsWith("{") ||
+    rawTrimmed.startsWith("[") ||
+    decodedTrimmed.startsWith("{") ||
+    decodedTrimmed.startsWith("[")
+  ) {
     try {
-      payloads.push(JSON.parse(trimmed))
+      payloads.push(tryParseJson(rawTrimmed, decodedTrimmed))
     } catch {
       // Ignore non-JSON body prefix
     }
   }
 
-  for (const rawLine of decodedBody.split("\n")) {
+  for (const rawLine of bodyText.split("\n")) {
     const line = rawLine.trim()
     if (!line.startsWith("data:")) {
       continue
@@ -171,10 +192,11 @@ export function extractVerificationErrorDetails(
     if (!payloadText || payloadText === "[DONE]") {
       continue
     }
+    const decodedPayloadText = decodeEscapedText(payloadText).trim()
     try {
-      payloads.push(JSON.parse(payloadText))
+      payloads.push(tryParseJson(payloadText, decodedPayloadText))
     } catch {
-      collectUrlsFromText(payloadText)
+      collectUrlsFromText(decodedPayloadText)
     }
   }
 
@@ -202,7 +224,7 @@ export function extractVerificationErrorDetails(
         lowerKey.includes("verification_url") ||
         lowerKey === "url"
       ) {
-        verificationUrls.add(normalizedValue)
+        structuredUrls.push(normalizedValue)
       }
       collectUrlsFromText(normalizedValue)
       return
@@ -232,6 +254,8 @@ export function extractVerificationErrorDetails(
     walk(payload)
   }
 
+  collectUrlsFromText(decodedBody)
+
   if (!validationRequired) {
     validationRequired =
       lowerBody.includes("verification required") ||
@@ -257,7 +281,7 @@ export function extractVerificationErrorDetails(
   return {
     validationRequired,
     message,
-    verifyUrl: selectBestVerificationUrl([...verificationUrls]),
+    verifyUrl: selectBestVerificationUrl([...structuredUrls, ...textUrls]),
   }
 }
 

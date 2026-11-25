@@ -1,4 +1,6 @@
 export const CORE_PACKAGE_NAME = "@benjamolina/antigravity-guard-core"
+export { AccountManager } from "./accounts.ts"
+export type { AccountManagerDependencies } from "./accounts.ts"
 export {
   DEFAULT_SOFT_QUOTA_NEAR_THRESHOLD_MARGIN,
   DEFAULT_SOFT_QUOTA_REFRESH_TTL_MS,

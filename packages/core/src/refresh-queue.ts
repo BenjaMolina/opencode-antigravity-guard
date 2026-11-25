@@ -160,6 +160,9 @@ export class ProactiveRefreshQueue<
           const refreshed = await this.refreshFn(auth, liveAccount)
 
           if (refreshed) {
+            if (startedWhileRunning && !this.state.isRunning) {
+              break
+            }
             const postRefreshManager = this.accountManager ?? currentManager
             const targetAccount = postRefreshManager
               .getAccounts()
@@ -174,15 +177,25 @@ export class ProactiveRefreshQueue<
               this.state.refreshCount++
               this.state.lastRefreshTime = Date.now()
 
+              let savedToDisk = false
               try {
                 await postRefreshManager.saveToDisk()
-              } catch {
-                // Non-fatal - token is refreshed in memory
+                savedToDisk = true
+              } catch (saveError) {
+                this.logger?.warn?.("Failed to persist refreshed account to disk", {
+                  accountIndex: targetAccount.index,
+                  error:
+                    saveError instanceof Error
+                      ? saveError.message
+                      : String(saveError),
+                })
               }
-              try {
-                await this.onAfterSave?.(postRefreshManager)
-              } catch {
-                // Non-fatal post-save hook
+              if (savedToDisk && (!startedWhileRunning || this.state.isRunning)) {
+                try {
+                  await this.onAfterSave?.(postRefreshManager)
+                } catch {
+                  // Non-fatal post-save hook
+                }
               }
             }
           }

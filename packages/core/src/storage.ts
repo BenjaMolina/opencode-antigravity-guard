@@ -261,11 +261,13 @@ export async function acquireDefaultDirLock(path: string): Promise<() => Promise
   while (true) {
     try {
       await fs.mkdir(lockPath)
+      let stampedOwner = false
       try {
         await fs.writeFile(ownerFilePath, ownerToken, {
           encoding: "utf-8",
           mode: 0o600,
         })
+        stampedOwner = true
       } catch {
         // Best-effort owner stamp inside newly created lock directory
       }
@@ -279,7 +281,10 @@ export async function acquireDefaultDirLock(path: string): Promise<() => Promise
         clearInterval(heartbeat)
         try {
           const currentOwner = await fs.readFile(ownerFilePath, "utf-8").catch(() => null)
-          if (currentOwner === null || currentOwner === ownerToken) {
+          if (
+            currentOwner === ownerToken ||
+            (!stampedOwner && currentOwner === null)
+          ) {
             await fs.rm(lockPath, { recursive: true, force: true })
           }
         } catch {
