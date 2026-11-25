@@ -11,6 +11,20 @@ export const ANTIGRAVITY_ENDPOINTS = Object.freeze({
 
 export type AntigravityEndpoints = typeof ANTIGRAVITY_ENDPOINTS
 
+export const ANTIGRAVITY_ENDPOINT_FALLBACKS = Object.freeze([
+  ANTIGRAVITY_ENDPOINTS.daily,
+  ANTIGRAVITY_ENDPOINTS.autopush,
+  ANTIGRAVITY_ENDPOINTS.production,
+] as const)
+
+export const ANTIGRAVITY_LOAD_ENDPOINTS = Object.freeze([
+  ANTIGRAVITY_ENDPOINTS.production,
+  ANTIGRAVITY_ENDPOINTS.daily,
+  ANTIGRAVITY_ENDPOINTS.autopush,
+] as const)
+
+export const ANTIGRAVITY_DEFAULT_PROJECT_ID = "rising-fact-p41fc"
+
 export const ANTIGRAVITY_OAUTH_CLIENT: OAuthClientConfig = Object.freeze({
   clientId: "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com",
   clientSecret: "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",

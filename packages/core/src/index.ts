@@ -49,9 +49,12 @@ export type {
   SharedSignatureCacheConfig,
 } from "./config.ts"
 export {
+  ANTIGRAVITY_DEFAULT_PROJECT_ID,
   ANTIGRAVITY_ENDPOINTS,
+  ANTIGRAVITY_ENDPOINT_FALLBACKS,
   ANTIGRAVITY_HUB_MANIFEST_URL,
   ANTIGRAVITY_HUB_PLATFORM,
+  ANTIGRAVITY_LOAD_ENDPOINTS,
   ANTIGRAVITY_MIN_VERSION,
   ANTIGRAVITY_OAUTH_CLIENT,
   ANTIGRAVITY_VERSION_FALLBACK,
@@ -156,6 +159,35 @@ export type {
   RateLimitStateV3,
   StorageLogger,
 } from "./storage.ts"
+export {
+  DEFAULT_POOL_QUOTA_REFRESH_COOLDOWN_MS,
+  DEFAULT_QUOTA_FETCH_TIMEOUT_MS,
+  aggregateGeminiCliQuota,
+  aggregateQuota,
+  checkAccountsQuotaWithDeps,
+  classifyQuotaGroup,
+  createPoolQuotaRefreshCoordinator,
+  fetchAvailableModels,
+  fetchGeminiCliQuota,
+  normalizeRemainingFraction,
+  parseQuotaResetTime,
+} from "./quota.ts"
+export type {
+  AccountQuotaResult,
+  AccountQuotaStatus,
+  CheckAccountsQuotaDependencies,
+  FetchAvailableModelEntry,
+  FetchAvailableModelsOptions,
+  FetchAvailableModelsResponse,
+  FetchGeminiCliQuotaOptions,
+  GeminiCliQuotaBucket,
+  GeminiCliQuotaModel,
+  GeminiCliQuotaSummary,
+  PoolQuotaRefreshCoordinator,
+  PoolQuotaRefreshCoordinatorOptions,
+  QuotaSummary,
+  RetrieveUserQuotaResponse,
+} from "./quota.ts"
 export {
   createAntigravityVersionState,
   fetchAntigravityHubVersion,
