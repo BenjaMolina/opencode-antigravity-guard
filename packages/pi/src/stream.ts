@@ -420,7 +420,7 @@ function createSignatureCachingSemanticSink(
   signatureCache: SessionSignatureCache,
   onSemantic: (semantic: StreamSemantic) => void | Promise<void>,
 ): (semantic: StreamSemantic) => Promise<void> {
-  let activeThinking: { text: string; signature?: string } | undefined
+  let activeThinking: { text: string; signature?: string; closedByText?: boolean } | undefined
 
   const flushThinking = (fallbackSignature?: string) => {
     if (!activeThinking) return
@@ -433,7 +433,7 @@ function createSignatureCachingSemanticSink(
 
   return async (semantic: StreamSemantic) => {
     if (semantic.type === "thinking") {
-      if (activeThinking && activeThinking.signature && !semantic.signature) {
+      if (activeThinking && (activeThinking.closedByText || (activeThinking.signature && !semantic.signature))) {
         flushThinking()
       }
       if (!activeThinking) {
@@ -445,10 +445,12 @@ function createSignatureCachingSemanticSink(
         }
       }
     } else if (semantic.type === "toolCall") {
-      flushThinking(semantic.signature)
+      flushThinking(activeThinking?.closedByText ? undefined : semantic.signature)
     } else if (semantic.type === "text") {
       if (activeThinking?.signature || semantic.signature) {
         flushThinking(semantic.signature)
+      } else if (activeThinking) {
+        activeThinking.closedByText = true
       }
     } else if (semantic.type === "finish") {
       flushThinking()

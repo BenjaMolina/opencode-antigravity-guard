@@ -12,7 +12,7 @@ import {
   resolveGenerationSelection,
   toPiModelDescriptor,
 } from "./catalog.ts"
-import { ContextSerializationError, serializeContext, serializeTextContext } from "./context.ts"
+import { ContextSerializationError, resolvePiSignatureSessionKey, serializeContext, serializeTextContext } from "./context.ts"
 import { ANTIGRAVITY_MODEL_ENUM } from "./envelope.ts"
 import { registerAntigravityProvider } from "./provider.ts"
 import { ResponseSemantics } from "./response.ts"
@@ -320,6 +320,72 @@ describe("Phase 5 (T5.2) Pi multimodal PDF, -sonar/-tiered catalog variants, and
         text: "Deep reasoning",
         thoughtSignature: delayedSig,
       })
+    } finally {
+      runtime.shutdown()
+    }
+  })
+
+  it("isolates interleaved thinking blocks across unsigned text chunks for signed thoughts and toolCalls (R3-2)", async () => {
+    const homeDir = makeTempHome()
+    const secondSig = Buffer.from("interleaved-second-thought-signature-0123456789abcdef").toString("base64")
+    const toolSig = Buffer.from("interleaved-toolcall-thought-signature-0123456789ab").toString("base64")
+    const cand = (parts: unknown[], finishReason?: string) =>
+      ({ response: { candidates: [{ content: { parts }, ...(finishReason ? { finishReason } : {}) }] } })
+    const sse = (chunks: unknown[]) =>
+      new Response(chunks.map((c) => `data: ${JSON.stringify(c)}\n\n`).join(""), { status: 200, headers: { "Content-Type": "text/event-stream" } })
+    const fetchMock = vi.fn<typeof globalThis.fetch>()
+      .mockResolvedValueOnce(sse([
+        cand([{ thought: true, text: "First unsigned thought" }]),
+        cand([{ text: "Bridge text" }]),
+        cand([{ thought: true, text: "Second signed thought", thoughtSignature: secondSig }]),
+        cand([{ text: "Final answer" }], "STOP"),
+      ]))
+      .mockResolvedValueOnce(sse([cand([{ text: "OK" }], "STOP")]))
+      .mockResolvedValueOnce(sse([
+        cand([{ thought: true, text: "Early unsigned thought" }]),
+        cand([{ text: "Preface text" }]),
+        cand([{ thought: true, text: "Tool reasoning" }]),
+        cand([{ functionCall: { name: "lookup", args: { q: "pi" } }, thoughtSignature: toolSig }], "STOP"),
+      ]))
+      .mockResolvedValueOnce(sse([
+        cand([{ thought: true, text: "Solo pre-text thought" }]),
+        cand([{ text: "Intervening text" }]),
+        cand([{ functionCall: { name: "lookup", args: { q: "v2" } }, thoughtSignature: toolSig }], "STOP"),
+      ]))
+
+    const registerProvider = vi.fn()
+    const runtime = registerAntigravityProvider({ registerProvider }, { homeDir, cwd: homeDir, env: { PI_OFFLINE: "1" }, fetch: fetchMock })
+    try {
+      const [, cfg] = registerProvider.mock.calls[0] ?? []
+      const carbonModel = { ...toPiModelDescriptor(getCatalogEntry("antigravity-gemini-4-carbon")!), api: "antigravity-guard-sse", provider: "antigravity-guard" }
+      const opts = { apiKey: '{"token":"t","projectId":"p"}', fetch: fetchMock, reasoning: "high" as const }
+      const user1 = { role: "user" as const, content: "Test R3-2", timestamp: 1700099100 }
+      const turn1 = await cfg.streamSimple(carbonModel, { messages: [user1] }, opts).result()
+      const strippedTurn1 = {
+        ...turn1,
+        content: turn1.content.map((part: Record<string, unknown>) => (part.type === "thinking" ? { type: "thinking", thinking: part.thinking } : part)),
+      }
+      await cfg.streamSimple(carbonModel, { messages: [user1, strippedTurn1 as never, { role: "user", content: "Next", timestamp: 1700099101 }] }, opts).result()
+      const sentBody = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))
+      expect(sentBody.request.contents[1]?.parts).toEqual([
+        { thought: true, text: "First unsigned thought" },
+        { text: "Bridge text" },
+        { thought: true, text: "Second signed thought", thoughtSignature: secondSig },
+        { text: "Final answer" },
+      ])
+
+      const tools = [{ name: "lookup", description: "Lookup", parameters: { type: "object", properties: { q: { type: "string" } }, required: ["q"] } }]
+      const ctx3 = { tools, messages: [{ role: "user" as const, content: "Run lookup", timestamp: 1700099200 }] }
+      await cfg.streamSimple(carbonModel, ctx3, opts).result()
+      const key3 = resolvePiSignatureSessionKey({ context: ctx3, wireModel: "gemini-4-carbon-high", projectId: "p" })
+      expect(runtime.getSignatureCache().getCachedSignature(key3, "Tool reasoning")).toBe(toolSig)
+      expect(runtime.getSignatureCache().getCachedSignature(key3, "Early unsigned thought")).toBeUndefined()
+      expect(runtime.getSignatureCache().getCachedSignature(key3, "Early unsigned thoughtTool reasoning")).toBeUndefined()
+
+      const ctx4 = { tools, messages: [{ role: "user" as const, content: "Solo pre-text", timestamp: 1700099300 }] }
+      await cfg.streamSimple(carbonModel, ctx4, opts).result()
+      const key4 = resolvePiSignatureSessionKey({ context: ctx4, wireModel: "gemini-4-carbon-high", projectId: "p" })
+      expect(runtime.getSignatureCache().getCachedSignature(key4, "Solo pre-text thought")).toBeUndefined()
     } finally {
       runtime.shutdown()
     }
