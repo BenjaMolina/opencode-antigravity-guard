@@ -46,6 +46,7 @@ export type {
   SharedGuardConfig,
   SharedGuardPathSource,
   SharedGuardPaths,
+  SharedModelDiscoveryConfig,
   SharedSignatureCacheConfig,
 } from "./config.ts"
 export {
@@ -62,6 +63,11 @@ export {
   EMPTY_SCHEMA_PLACEHOLDER_NAME,
   GEMINI_CLI_HEADERS,
   MIN_THOUGHT_SIGNATURE_LENGTH,
+  SEARCH_MODEL,
+  SEARCH_SYSTEM_INSTRUCTION,
+  SEARCH_THINKING_BUDGET_DEEP,
+  SEARCH_THINKING_BUDGET_FAST,
+  SEARCH_TIMEOUT_MS,
   SKIP_THOUGHT_SIGNATURE,
   compareAntigravityVersions,
   isSupportedAntigravityVersion,
@@ -253,3 +259,24 @@ export type {
   SignatureCacheStats,
   ThinkingCacheData,
 } from "./signature-cache.ts"
+export {
+  executeAntigravitySearch,
+  formatAntigravitySearchResult,
+  formatGroundingFooter,
+  parseAntigravitySearchResponse,
+  parseCandidateGrounding,
+} from "./search.ts"
+export type {
+  AntigravitySearchResponse,
+  CandidateGroundingSummary,
+  ExecuteAntigravitySearchOptions,
+  GroundingChunk,
+  GroundingMetadata,
+  GroundingSupport,
+  SearchArgs,
+  SearchCandidate,
+  SearchResponse,
+  SearchResult,
+  UrlContextMetadata,
+  UrlMetadata,
+} from "./search.ts"

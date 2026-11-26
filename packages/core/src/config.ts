@@ -12,6 +12,12 @@ export interface SharedSignatureCacheConfig {
   write_interval_seconds: number
 }
 
+export interface SharedModelDiscoveryConfig {
+  enabled: boolean
+  gemini_api: boolean
+  antigravity: boolean
+}
+
 export interface SharedGuardConfig {
   account_selection_strategy: AccountSelectionStrategy
   pid_offset_enabled: boolean
@@ -29,6 +35,7 @@ export interface SharedGuardConfig {
   soft_quota_cache_ttl_minutes: "auto" | number
   keep_thinking: boolean
   proactive_token_refresh: boolean
+  model_discovery: SharedModelDiscoveryConfig
   signature_cache: SharedSignatureCacheConfig
 }
 
@@ -49,6 +56,11 @@ export const DEFAULT_SHARED_GUARD_CONFIG: SharedGuardConfig = Object.freeze({
   soft_quota_cache_ttl_minutes: "auto",
   keep_thinking: false,
   proactive_token_refresh: true,
+  model_discovery: Object.freeze({
+    enabled: false,
+    gemini_api: true,
+    antigravity: true,
+  }),
   signature_cache: Object.freeze({
     enabled: true,
     memory_ttl_seconds: 3_600,
@@ -165,11 +177,14 @@ export function loadSharedGuardConfig(
 function cloneDefaultSharedGuardConfig(): SharedGuardConfig {
   return {
     ...DEFAULT_SHARED_GUARD_CONFIG,
+    model_discovery: { ...DEFAULT_SHARED_GUARD_CONFIG.model_discovery },
     signature_cache: { ...DEFAULT_SHARED_GUARD_CONFIG.signature_cache },
   }
 }
 
-interface PartialSharedGuardConfig extends Omit<Partial<SharedGuardConfig>, "signature_cache"> {
+interface PartialSharedGuardConfig
+  extends Omit<Partial<SharedGuardConfig>, "signature_cache" | "model_discovery"> {
+  model_discovery?: Partial<SharedModelDiscoveryConfig>
   signature_cache?: Partial<SharedSignatureCacheConfig>
 }
 
@@ -180,6 +195,12 @@ function mergeSharedGuardConfig(
   return {
     ...base,
     ...override,
+    model_discovery: override.model_discovery
+      ? {
+          ...base.model_discovery,
+          ...override.model_discovery,
+        }
+      : base.model_discovery,
     signature_cache: override.signature_cache
       ? {
           ...base.signature_cache,
@@ -256,6 +277,14 @@ function sanitizePartialSharedGuardConfig(raw: Record<string, unknown>): Partial
 
   if (typeof raw.keep_thinking === "boolean") out.keep_thinking = raw.keep_thinking
   if (typeof raw.proactive_token_refresh === "boolean") out.proactive_token_refresh = raw.proactive_token_refresh
+
+  if (isRecord(raw.model_discovery)) {
+    const md: Partial<SharedModelDiscoveryConfig> = {}
+    if (typeof raw.model_discovery.enabled === "boolean") md.enabled = raw.model_discovery.enabled
+    if (typeof raw.model_discovery.gemini_api === "boolean") md.gemini_api = raw.model_discovery.gemini_api
+    if (typeof raw.model_discovery.antigravity === "boolean") md.antigravity = raw.model_discovery.antigravity
+    if (Object.keys(md).length > 0) out.model_discovery = md
+  }
 
   if (isRecord(raw.signature_cache)) {
     const sig: Partial<SharedSignatureCacheConfig> = {}
