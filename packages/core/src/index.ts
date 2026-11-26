@@ -261,6 +261,7 @@ export type {
 } from "./signature-cache.ts"
 export {
   executeAntigravitySearch,
+  executeAntigravitySearchDetailed,
   formatAntigravitySearchResult,
   formatGroundingFooter,
   parseAntigravitySearchResponse,
@@ -270,6 +271,7 @@ export type {
   AntigravitySearchResponse,
   CandidateGroundingSummary,
   ExecuteAntigravitySearchOptions,
+  ExecuteAntigravitySearchOutcome,
   GroundingChunk,
   GroundingMetadata,
   GroundingSupport,

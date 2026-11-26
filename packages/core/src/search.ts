@@ -266,15 +266,31 @@ export function parseAntigravitySearchResponse(data: AntigravitySearchResponse):
 }
 
 function isRetryableSearchEndpointStatus(status: number): boolean {
-  return status === 404 || status === 408 || status === 429 || status >= 500
+  return status === 404 || status === 408 || status >= 500
 }
 
-export async function executeAntigravitySearch(
+export type ExecuteAntigravitySearchOutcome =
+  | {
+      ok: true
+      formatted: string
+      result: SearchResult
+    }
+  | {
+      ok: false
+      formatted: string
+      status?: number
+      statusText?: string
+      errorBody?: string
+      headers?: Record<string, string>
+      errorMessage?: string
+    }
+
+export async function executeAntigravitySearchDetailed(
   args: SearchArgs,
   accessToken: string,
   projectId: string,
   options?: ExecuteAntigravitySearchOptions,
-): Promise<string> {
+): Promise<ExecuteAntigravitySearchOutcome> {
   const { query, urls, thinking = true } = args
 
   let prompt = query
@@ -335,7 +351,14 @@ export async function executeAntigravitySearch(
     thinking,
   })
 
-  let lastHttpFailure: { status: number; statusText: string; errorText: string } | undefined
+  let lastHttpFailure:
+    | {
+        status: number
+        statusText: string
+        errorText: string
+        headers: Record<string, string>
+      }
+    | undefined
 
   for (let index = 0; index < candidateEndpoints.length; index++) {
     const endpoint = candidateEndpoints[index]!
@@ -356,16 +379,33 @@ export async function executeAntigravitySearch(
 
       if (!response.ok) {
         const errorText = await response.text()
+        const responseHeaders: Record<string, string> = {}
+        if (response.headers && typeof response.headers.forEach === "function") {
+          response.headers.forEach((val, key) => {
+            responseHeaders[key.toLowerCase()] = val
+          })
+        }
         options?.onDebug?.("Search API error", { status: response.status, error: errorText })
         lastHttpFailure = {
           status: response.status,
           statusText: response.statusText,
           errorText,
+          headers: responseHeaders,
         }
-        if (!isLastEndpoint && isRetryableSearchEndpointStatus(response.status)) {
+        const isTransient429 =
+          response.status === 429 &&
+          /MODEL_CAPACITY_EXHAUSTED|SERVER_ERROR/i.test(errorText)
+        if (!isLastEndpoint && (isRetryableSearchEndpointStatus(response.status) || isTransient429)) {
           continue
         }
-        return `## Search Error\n\nFailed to execute search: ${response.status} ${response.statusText}\n\n${errorText}\n\nPlease try again with a different query.`
+        return {
+          ok: false,
+          status: response.status,
+          statusText: response.statusText,
+          errorBody: errorText,
+          headers: responseHeaders,
+          formatted: `## Search Error\n\nFailed to execute search: ${response.status} ${response.statusText}\n\n${errorText}\n\nPlease try again with a different query.`,
+        }
       }
 
       const data = (await response.json()) as AntigravitySearchResponse
@@ -374,24 +414,57 @@ export async function executeAntigravitySearch(
       const result = parseAntigravitySearchResponse(data)
       const formatted = formatAntigravitySearchResult(result)
       options?.onDebug?.("Search response formatted", { resultLength: formatted.length })
-      return formatted
+      return {
+        ok: true,
+        formatted,
+        result,
+      }
     } catch (error) {
       if (options?.abortSignal?.aborted) {
         const message = error instanceof Error ? error.message : String(error)
         options?.onDebug?.("Search execution error", { error: message })
-        return `## Search Error\n\nFailed to execute search: ${message}. Please try again with a different query.`
+        return {
+          ok: false,
+          errorMessage: message,
+          formatted: `## Search Error\n\nFailed to execute search: ${message}. Please try again with a different query.`,
+        }
       }
       if (!isLastEndpoint) {
         continue
       }
       const message = error instanceof Error ? error.message : String(error)
       options?.onDebug?.("Search execution error", { error: message })
-      return `## Search Error\n\nFailed to execute search: ${message}. Please try again with a different query.`
+      return {
+        ok: false,
+        errorMessage: message,
+        formatted: `## Search Error\n\nFailed to execute search: ${message}. Please try again with a different query.`,
+      }
     }
   }
 
   if (lastHttpFailure) {
-    return `## Search Error\n\nFailed to execute search: ${lastHttpFailure.status} ${lastHttpFailure.statusText}\n\n${lastHttpFailure.errorText}\n\nPlease try again with a different query.`
+    return {
+      ok: false,
+      status: lastHttpFailure.status,
+      statusText: lastHttpFailure.statusText,
+      errorBody: lastHttpFailure.errorText,
+      headers: lastHttpFailure.headers,
+      formatted: `## Search Error\n\nFailed to execute search: ${lastHttpFailure.status} ${lastHttpFailure.statusText}\n\n${lastHttpFailure.errorText}\n\nPlease try again with a different query.`,
+    }
   }
-  return "## Search Error\n\nFailed to execute search: Unknown error. Please try again with a different query."
+  return {
+    ok: false,
+    errorMessage: "Unknown error",
+    formatted: "## Search Error\n\nFailed to execute search: Unknown error. Please try again with a different query.",
+  }
+}
+
+export async function executeAntigravitySearch(
+  args: SearchArgs,
+  accessToken: string,
+  projectId: string,
+  options?: ExecuteAntigravitySearchOptions,
+): Promise<string> {
+  const outcome = await executeAntigravitySearchDetailed(args, accessToken, projectId, options)
+  return outcome.formatted
 }

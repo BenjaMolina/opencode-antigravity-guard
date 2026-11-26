@@ -6,6 +6,7 @@ import {
   SEARCH_SYSTEM_INSTRUCTION,
   SEARCH_TIMEOUT_MS,
   executeAntigravitySearch,
+  executeAntigravitySearchDetailed,
   formatAntigravitySearchResult,
   formatGroundingFooter,
   loadSharedGuardConfig,
@@ -187,5 +188,29 @@ describe("Phase 5 core search grounding and model_discovery config", () => {
     expect(badRequestFetch).toHaveBeenCalledTimes(1)
     expect(bad).toContain("## Search Error")
     expect(bad).toContain("400 Bad Request")
+
+    const quotaExhaustedFetch = vi.fn().mockResolvedValueOnce(
+      new Response('{"error":{"status":"RESOURCE_EXHAUSTED"}}', {
+        status: 429,
+        statusText: "Too Many Requests",
+        headers: { "Retry-After": "90" },
+      }),
+    )
+    const detailed = await executeAntigravitySearchDetailed(
+      { query: "quota 429" },
+      "tok-1",
+      "proj-1",
+      {
+        endpoints: ["https://daily.example", "https://autopush.example"],
+        fetch: quotaExhaustedFetch as unknown as typeof globalThis.fetch,
+      },
+    )
+    expect(quotaExhaustedFetch).toHaveBeenCalledTimes(1)
+    expect(detailed.ok).toBe(false)
+    if (!detailed.ok) {
+      expect(detailed.status).toBe(429)
+      expect(detailed.headers?.["retry-after"]).toBe("90")
+      expect(detailed.errorBody).toContain("RESOURCE_EXHAUSTED")
+    }
   })
 })
