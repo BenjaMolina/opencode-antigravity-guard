@@ -1,8 +1,16 @@
 import type { Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai"
+import {
+  MIN_THOUGHT_SIGNATURE_LENGTH,
+  SKIP_THOUGHT_SIGNATURE,
+  buildSignatureSessionKey,
+  signatureCacheProjectKey,
+  stripThinkingTierSuffixForCacheKey,
+  type SessionSignatureCache,
+} from "@benjamolina/antigravity-guard-core"
 
 import { CLAUDE_CUSTOM_PARAMETERS_PROFILE, getCatalogEntry, resolveGenerationSelection, type GenerationSelection, type ToolCapability } from "./catalog.ts"
 import { normalizeCustomToolSchema } from "./tool-schema.ts"
-import { buildAntigravityEnvelope } from "./envelope.ts"
+import { buildAntigravityEnvelope, resolveSessionTrajectory } from "./envelope.ts"
 import { hasToolContext, prepareToolContext, replayToolHistory, type ToolReplayDiagnostics } from "./tool-context.ts"
 
 const MAX_TEXT_BYTES = 8 * 1024 * 1024
@@ -55,12 +63,67 @@ export interface GenerationRequest {
   requestId: string
 }
 
+export type SignatureRestoreSource = Pick<SessionSignatureCache, "getCachedSignature">
+
 export interface SerializeTextContextInput {
   context: Context
   model: Model<string>
   options?: SimpleStreamOptions
   project: string
   requestId: string
+  signatureCache?: SignatureRestoreSource
+  allowSentinelFallback?: boolean
+}
+
+interface SignatureRestoreState {
+  readonly family: "gemini" | "claude" | "gpt-oss"
+  readonly allowSentinelFallback: boolean
+  readonly getSignature: (thinkingText: string) => string | undefined
+}
+
+export function resolvePiSignatureSessionKey(options: {
+  context: unknown
+  wireModel: string
+  projectId: string
+}): string {
+  const rawMessagesField = isRecord(options.context) ? field(options.context, "messages") : undefined
+  const rawMessages = Array.isArray(rawMessagesField) ? rawMessagesField : []
+  const conversationMessages = rawMessages.filter(
+    (msg) => !(isRecord(msg) && field(msg, "role") === "system"),
+  )
+  const trajectoryId = resolveSessionTrajectory(conversationMessages).trajectoryId
+  const modelForCacheKey = stripThinkingTierSuffixForCacheKey(options.wireModel)
+  return buildSignatureSessionKey(
+    "pi",
+    modelForCacheKey,
+    trajectoryId,
+    signatureCacheProjectKey(modelForCacheKey, options.projectId),
+  )
+}
+
+function buildSignatureRestoreState(options: {
+  signatureCache: SignatureRestoreSource | undefined
+  allowSentinelFallback: boolean | undefined
+  messages: readonly unknown[]
+  wireModel: string
+  projectId: string
+  family: "gemini" | "claude" | "gpt-oss"
+}): SignatureRestoreState | undefined {
+  if (!options.signatureCache) return undefined
+  const trajectoryId = resolveSessionTrajectory(options.messages).trajectoryId
+  const modelForCacheKey = stripThinkingTierSuffixForCacheKey(options.wireModel)
+  const sessionKey = buildSignatureSessionKey(
+    "pi",
+    modelForCacheKey,
+    trajectoryId,
+    signatureCacheProjectKey(modelForCacheKey, options.projectId),
+  )
+  return {
+    family: options.family,
+    allowSentinelFallback: options.allowSentinelFallback !== false,
+    getSignature: (thinkingText: string) =>
+      options.signatureCache!.getCachedSignature(sessionKey, thinkingText),
+  }
 }
 
 export class ContextSerializationError extends Error {}
@@ -103,6 +166,7 @@ export function serializeContext(input: SerializeTextContextInput, injectedSelec
   const { toolChoice: _choice, ...textOptions } = isRecord(options) ? options : {}
   const text = serializeTextContext({
     ...input,
+    signatureCache: undefined,
     context: {
       ...textContext,
       ...(normalized.systemPrompt !== undefined ? { systemPrompt: normalized.systemPrompt } : {}),
@@ -110,18 +174,37 @@ export function serializeContext(input: SerializeTextContextInput, injectedSelec
     } as Context,
     options: textOptions as SimpleStreamOptions,
   })
+  const restore = buildSignatureRestoreState({
+    signatureCache: input.signatureCache,
+    allowSentinelFallback: input.allowSentinelFallback,
+    messages: normalized.messages,
+    wireModel: selection.route.wireModel,
+    projectId: input.project,
+    family: entry.response.family,
+  })
   const sameModel = (message: Record<string, unknown>) => field(message, "role") === "assistant" && entry.replay.kind === "same-public-model" && isSameProviderAndModel(message, entry.publicId)
   const requireSigned = geminiRequiresSignedToolReplay(selection.route.wireModel)
   const includeToolCallId = entry.response.family === "claude" || entry.response.family === "gpt-oss"
   const toolReplayPolicy = (requireSigned || includeToolCallId) ? {
     requireSignedToolCalls: requireSigned,
     isSameModel: sameModel,
-    toolCallSignature: (part: Record<string, unknown>, message: Record<string, unknown>) => sameModel(message) ? validThoughtSignature(field(part, "thoughtSignature")) : undefined,
+    toolCallSignature: (part: Record<string, unknown>, message: Record<string, unknown>, callIndex: number) => {
+      if (!sameModel(message)) return undefined
+      const rawSignature = field(part, "thoughtSignature")
+      if (rawSignature !== undefined) {
+        return validThoughtSignature(rawSignature, restore !== undefined)
+      }
+      if (!restore || callIndex > 0 || !requireSigned) return undefined
+      const turnSignature = resolveTurnThinkingSignature(message, restore)
+      if (turnSignature) return turnSignature
+      return restore.allowSentinelFallback ? SKIP_THOUGHT_SIGNATURE : undefined
+    },
     includeToolCallId,
+    firstCallSignatureOnly: restore !== undefined && requireSigned,
   } : undefined
   const contents = replayToolHistory(
     normalized.messages,
-    (part, message) => messagePart(part, field(message, "role") === "assistant", sameModel(message)),
+    (part, message) => messagePart(part, field(message, "role") === "assistant", sameModel(message), restore),
     onDiagnostics,
     toolReplayPolicy,
     prepared?.declarations.length ?? 0,
@@ -177,6 +260,14 @@ export function serializeTextContext(input: SerializeTextContextInput): Generati
     if (tools !== undefined && isDenseArray(tools).length) fail("Tools are not supported by this text-only provider.")
     validateOptions(options, entry.descriptor.maxTokens)
     const systemPrompt = rawSystemPrompt === undefined ? undefined : sanitizeAntigravitySystemPrompt(rawSystemPrompt)
+    const restore = buildSignatureRestoreState({
+      signatureCache: field(input, "signatureCache") as SignatureRestoreSource | undefined,
+      allowSentinelFallback: field(input, "allowSentinelFallback") as boolean | undefined,
+      messages: normalized.messages,
+      wireModel: route.wireModel,
+      projectId: project,
+      family: entry.response.family,
+    })
     let textBytes = byteLength(systemPrompt ?? "")
     const contents: Content[] = []
     for (const message of normalized.messages) {
@@ -185,7 +276,7 @@ export function serializeTextContext(input: SerializeTextContextInput): Generati
       if (role === "toolResult") fail("Tool history is not supported by this text-only provider.")
       if (role !== "user" && role !== "assistant") fail("Unsupported context role for this text-only provider.")
       const assistant = role === "assistant"
-      const parts = messageParts(field(message, "content", true), assistant, assistant && entry.replay.kind === "same-public-model" && isSameProviderAndModel(message, entry.publicId))
+      const parts = messageParts(field(message, "content", true), assistant, assistant && entry.replay.kind === "same-public-model" && isSameProviderAndModel(message, entry.publicId), restore)
       textBytes += parts.reduce((total, part) => total + (part.text ? byteLength(part.text) : (part.inlineData ? byteLength(part.inlineData.data) : 0)), 0)
       if (textBytes > MAX_TEXT_BYTES) fail("Text context is too large.")
       contents.push({ role: role === "assistant" ? "model" : "user", parts })
@@ -316,26 +407,48 @@ function isToolBearingNormalizedContext(context: NormalizedContextRecord): boole
   return false
 }
 
-function messageParts(content: unknown, assistant: boolean, sameProviderAndModel: boolean): Part[] {
+function messageParts(content: unknown, assistant: boolean, sameProviderAndModel: boolean, restore?: SignatureRestoreState): Part[] {
   if (typeof content === "string") return content ? [{ text: content }] : fail("A text conversation is required.")
   const parts = isDenseArray(content)
   if (!parts.length) fail("A text conversation is required.")
-  return parts.map((part) => messagePart(isRecord(part) ? part : fail("Only text context is supported by this provider."), assistant, sameProviderAndModel))
+  return parts.map((part) => messagePart(isRecord(part) ? part : fail("Only text context is supported by this provider."), assistant, sameProviderAndModel, restore))
 }
 
-function messagePart(part: Record<string, unknown>, assistant: boolean, sameProviderAndModel: boolean): Part {
+function messagePart(part: Record<string, unknown>, assistant: boolean, sameProviderAndModel: boolean, restore?: SignatureRestoreState): Part {
   const type = field(part, "type", true)
   if (type === "text") {
     const text = field(part, "text", true)
     if (typeof text !== "string") fail("Only text context is supported by this provider.")
-    const thoughtSignature = sameProviderAndModel ? validThoughtSignature(field(part, "textSignature")) : undefined
+    const thoughtSignature = sameProviderAndModel ? validThoughtSignature(field(part, "textSignature"), restore !== undefined) : undefined
     if (!text && !thoughtSignature) fail("Only text context is supported by this provider.")
     return { text, ...(thoughtSignature ? { thoughtSignature } : {}) }
   }
   if (type === "thinking" && assistant && sameProviderAndModel) {
     const text = field(part, "thinking", true)
     if (typeof text !== "string") fail("Only text context is supported by this provider.")
-    const thoughtSignature = validThoughtSignature(field(part, "thinkingSignature"))
+    const rawThinkingSig = field(part, "thinkingSignature")
+    const explicitSig = validThoughtSignature(rawThinkingSig, restore !== undefined)
+    let thoughtSignature: string | undefined
+    if (restore && restore.family === "claude" && text.length > 0) {
+      const cachedSig = restoreCachedSignature(restore.getSignature(text))
+      if (explicitSig === SKIP_THOUGHT_SIGNATURE) {
+        thoughtSignature = SKIP_THOUGHT_SIGNATURE
+      } else if (rawThinkingSig !== undefined && !explicitSig) {
+        thoughtSignature = undefined
+      } else if (explicitSig && cachedSig && explicitSig === cachedSig) {
+        thoughtSignature = explicitSig
+      } else if (!explicitSig && cachedSig) {
+        thoughtSignature = cachedSig
+      } else if (restore.allowSentinelFallback) {
+        thoughtSignature = SKIP_THOUGHT_SIGNATURE
+      }
+    } else {
+      const cachedSig =
+        rawThinkingSig === undefined && text.length > 0 && restore
+          ? restoreCachedSignature(restore.getSignature(text))
+          : undefined
+      thoughtSignature = explicitSig ?? cachedSig
+    }
     if (!text && !thoughtSignature) fail("Only text context is supported by this provider.")
     return { thought: true, text, ...(thoughtSignature ? { thoughtSignature } : {}) }
   }
@@ -384,9 +497,35 @@ function geminiRequiresSignedToolReplay(wireModel: string): boolean {
   return true
 }
 
-function validThoughtSignature(value: unknown): string | undefined {
+function validThoughtSignature(value: unknown, allowSentinel = false): string | undefined {
+  if (allowSentinel && value === SKIP_THOUGHT_SIGNATURE) return SKIP_THOUGHT_SIGNATURE
   if (typeof value !== "string" || !value || value.length % 4 !== 0) return undefined
   return /^[A-Za-z0-9+/]+={0,2}$/.test(value) ? value : undefined
+}
+
+function restoreCachedSignature(value: string | undefined): string | undefined {
+  if (typeof value !== "string" || !value) return undefined
+  if (value === SKIP_THOUGHT_SIGNATURE) return undefined
+  return validThoughtSignature(value, false) ?? (value.length >= MIN_THOUGHT_SIGNATURE_LENGTH ? value : undefined)
+}
+
+function resolveTurnThinkingSignature(
+  message: Record<string, unknown>,
+  restore: SignatureRestoreState,
+): string | undefined {
+  const content = field(message, "content")
+  if (!Array.isArray(content)) return undefined
+  for (const item of content) {
+    if (!isRecord(item) || field(item, "type") !== "thinking") continue
+    const explicit = validThoughtSignature(field(item, "thinkingSignature"), false)
+    if (explicit) return explicit
+    const thinkingText = field(item, "thinking")
+    if (typeof thinkingText === "string" && thinkingText.length > 0) {
+      const cached = restoreCachedSignature(restore.getSignature(thinkingText))
+      if (cached) return cached
+    }
+  }
+  return undefined
 }
 
 function validateOptions(options: unknown, maxAllowedTokens: number): void {

@@ -62,8 +62,12 @@ export function clearCachedAuth(refresh?: string): void {
 const sessionSignatureCache = createSessionSignatureCache();
 
 export function initDiskSignatureCache(config: SignatureCacheConfig | undefined): SignatureCache | null {
+  if (typeof config?.memory_ttl_seconds === "number" && config.memory_ttl_seconds > 0) {
+    sessionSignatureCache.setMemoryTtlMs(config.memory_ttl_seconds * 1_000);
+  }
+  sessionSignatureCache.setDiskCache(null, { shutdownPrevious: true });
   const diskCache = createSignatureCache(config);
-  sessionSignatureCache.setDiskCache(diskCache, { shutdownPrevious: true });
+  sessionSignatureCache.setDiskCache(diskCache);
   return diskCache;
 }
 

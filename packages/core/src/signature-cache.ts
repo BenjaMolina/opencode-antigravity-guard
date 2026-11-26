@@ -431,6 +431,7 @@ export interface SessionSignatureCache {
   cacheSignature(sessionId: string, text: string, signature: string): void
   getCachedSignature(sessionId: string, text: string): string | undefined
   clear(sessionId?: string): void
+  setMemoryTtlMs(memoryTtlMs: number): void
   setDiskCache(diskCache: SignatureCache | null, options?: { shutdownPrevious?: boolean }): void
   getDiskCache(): SignatureCache | null
   shutdown(): void
@@ -440,7 +441,7 @@ export function createSessionSignatureCache(
   options: SessionSignatureCacheOptions = {},
 ): SessionSignatureCache {
   const memoryCache = new Map<string, Map<string, SessionSignatureEntry>>()
-  const memoryTtlMs = options.memoryTtlMs ?? DEFAULT_SESSION_SIGNATURE_TTL_MS
+  let memoryTtlMs = options.memoryTtlMs ?? DEFAULT_SESSION_SIGNATURE_TTL_MS
   const maxEntriesPerSession = options.maxEntriesPerSession ?? DEFAULT_MAX_ENTRIES_PER_SESSION
   let diskCache: SignatureCache | null = options.diskCache ?? null
 
@@ -523,6 +524,12 @@ export function createSessionSignatureCache(
       }
     },
 
+    setMemoryTtlMs(nextMemoryTtlMs: number): void {
+      if (Number.isFinite(nextMemoryTtlMs) && nextMemoryTtlMs > 0) {
+        memoryTtlMs = nextMemoryTtlMs
+      }
+    },
+
     setDiskCache(
       nextDiskCache: SignatureCache | null,
       setOptions?: { shutdownPrevious?: boolean },
@@ -554,6 +561,9 @@ export function isGemini3Or4SignatureModel(model?: string): boolean {
 export function stripThinkingTierSuffixForCacheKey(model: string): string {
   if (/^gpt-oss/i.test(model)) {
     return model
+  }
+  if (/^gemini-pro-agent$/i.test(model)) {
+    return "gemini-3.1-pro"
   }
   return model.replace(/-(minimal|low|medium|high|xhigh)$/i, "")
 }

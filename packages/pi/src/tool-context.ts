@@ -86,8 +86,9 @@ export function sanitizeToolCallId(id: string, fallbackName?: string): string {
 export interface ToolReplayPolicy {
   readonly requireSignedToolCalls: boolean
   readonly isSameModel: (message: Record<string, unknown>) => boolean
-  readonly toolCallSignature: (part: Record<string, unknown>, message: Record<string, unknown>) => string | undefined
+  readonly toolCallSignature: (part: Record<string, unknown>, message: Record<string, unknown>, callIndex: number) => string | undefined
   readonly includeToolCallId?: boolean
+  readonly firstCallSignatureOnly?: boolean
 }
 
 export function replayToolHistory(messages: unknown[], serializePart: (part: Record<string, unknown>, message: Record<string, unknown>) => WirePart, onDiagnostics?: (diagnostics: ToolReplayDiagnostics) => void, policy?: ToolReplayPolicy, declaredToolCount = 0): WireContent[] {
@@ -183,7 +184,7 @@ export function replayToolHistory(messages: unknown[], serializePart: (part: Rec
     }
     if (value(current, "stopReason") !== "toolUse") history("PI_TOOL_CALL_INVALID")
     const group: PendingCall[] = []
-    const parts: Array<WirePart | { call: PendingCall, signature: string | undefined, signaturePresent: boolean }> = content.flatMap((item) => {
+    const parts: Array<WirePart | { call: PendingCall, signature: string | undefined, signaturePresent: boolean, callIndex: number }> = content.flatMap((item) => {
       const part = record(item)
       if (value(part, "type") !== "toolCall") {
         if (isEmptyUnsignedText(part)) return []
@@ -196,11 +197,12 @@ export function replayToolHistory(messages: unknown[], serializePart: (part: Rec
       const args = canonicalJson(value(part, "arguments"), name, "$.arguments")
       if (typeof args !== "object" || Array.isArray(args) || args === null) history("PI_TOOL_CALL_INVALID")
       calls.add(id)
+      const callIndex = group.length
       const call = { id, name, args }
       group.push(call)
-      return [{ call, signature: policy?.toolCallSignature(part, current), signaturePresent: value(part, "thoughtSignature") !== undefined }]
+      return [{ call, signature: policy?.toolCallSignature(part, current, callIndex), signaturePresent: value(part, "thoughtSignature") !== undefined, callIndex }]
     })
-    const toolParts = parts.filter((part): part is { call: PendingCall, signature: string | undefined, signaturePresent: boolean } => "call" in part)
+    const toolParts = parts.filter((part): part is { call: PendingCall, signature: string | undefined, signaturePresent: boolean, callIndex: number } => "call" in part)
     const callsAreSigned = policy?.requireSignedToolCalls === true && policy.isSameModel(current) && Boolean(toolParts[0]?.signature) && toolParts.every((part) => !part.signaturePresent || Boolean(part.signature))
     const observations = policy?.requireSignedToolCalls === true && !callsAreSigned
     if (observations) replayMode = "unsigned-observation"
@@ -208,7 +210,8 @@ export function replayToolHistory(messages: unknown[], serializePart: (part: Rec
     appendTurn("model", parts.flatMap((part) => {
       if (!("call" in part)) return [part]
       if (observations) return []
-      return [{ functionCall: { ...(policy?.includeToolCallId ? { id: sanitizeToolCallId(part.call.id, part.call.name) } : {}), name: part.call.name, args: part.call.args }, ...(part.signature ? { thoughtSignature: part.signature } : {}) }]
+      const attachSignature = Boolean(part.signature) && (!policy?.firstCallSignatureOnly || part.callIndex === 0)
+      return [{ functionCall: { ...(policy?.includeToolCallId ? { id: sanitizeToolCallId(part.call.id, part.call.name) } : {}), name: part.call.name, args: part.call.args }, ...(attachSignature ? { thoughtSignature: part.signature } : {}) }]
     }))
     pending = { calls: group, results: new Map(), observations }
   }
