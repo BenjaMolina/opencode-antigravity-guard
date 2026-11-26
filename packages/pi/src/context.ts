@@ -77,6 +77,7 @@ export interface SerializeTextContextInput {
 
 interface SignatureRestoreState {
   readonly family: "gemini" | "claude" | "gpt-oss"
+  readonly hasCache: boolean
   readonly allowSentinelFallback: boolean
   readonly getSignature: (thinkingText: string) => string | undefined
 }
@@ -109,7 +110,19 @@ function buildSignatureRestoreState(options: {
   projectId: string
   family: "gemini" | "claude" | "gpt-oss"
 }): SignatureRestoreState | undefined {
-  if (!options.signatureCache) return undefined
+  const hasCache = Boolean(options.signatureCache)
+  const allowSentinelFallback = hasCache
+    ? options.allowSentinelFallback !== false
+    : options.allowSentinelFallback === true
+  if (!hasCache && !allowSentinelFallback) return undefined
+  if (!hasCache) {
+    return {
+      family: options.family,
+      hasCache: false,
+      allowSentinelFallback,
+      getSignature: () => undefined,
+    }
+  }
   const trajectoryId = resolveSessionTrajectory(options.messages).trajectoryId
   const modelForCacheKey = stripThinkingTierSuffixForCacheKey(options.wireModel)
   const sessionKey = buildSignatureSessionKey(
@@ -120,7 +133,8 @@ function buildSignatureRestoreState(options: {
   )
   return {
     family: options.family,
-    allowSentinelFallback: options.allowSentinelFallback !== false,
+    hasCache: true,
+    allowSentinelFallback,
     getSignature: (thinkingText: string) =>
       options.signatureCache!.getCachedSignature(sessionKey, thinkingText),
   }
@@ -167,6 +181,7 @@ export function serializeContext(input: SerializeTextContextInput, injectedSelec
   const text = serializeTextContext({
     ...input,
     signatureCache: undefined,
+    allowSentinelFallback: undefined,
     context: {
       ...textContext,
       ...(normalized.systemPrompt !== undefined ? { systemPrompt: normalized.systemPrompt } : {}),
@@ -188,19 +203,18 @@ export function serializeContext(input: SerializeTextContextInput, injectedSelec
   const toolReplayPolicy = (requireSigned || includeToolCallId) ? {
     requireSignedToolCalls: requireSigned,
     isSameModel: sameModel,
-    toolCallSignature: (part: Record<string, unknown>, message: Record<string, unknown>, callIndex: number) => {
+    toolCallSignature: (part: Record<string, unknown>, message: Record<string, unknown>, callIndex: number, contentIndex: number) => {
       if (!sameModel(message)) return undefined
       const rawSignature = field(part, "thoughtSignature")
       if (rawSignature !== undefined) {
-        return validThoughtSignature(rawSignature, restore !== undefined)
+        return validThoughtSignature(rawSignature, restore?.allowSentinelFallback === true)
       }
       if (!restore || callIndex > 0 || !requireSigned) return undefined
-      const turnSignature = resolveTurnThinkingSignature(message, restore)
+      const turnSignature = resolveTurnThinkingSignature(message, restore, contentIndex)
       if (turnSignature) return turnSignature
       return restore.allowSentinelFallback ? SKIP_THOUGHT_SIGNATURE : undefined
     },
     includeToolCallId,
-    firstCallSignatureOnly: restore !== undefined && requireSigned,
   } : undefined
   const contents = replayToolHistory(
     normalized.messages,
@@ -419,7 +433,7 @@ function messagePart(part: Record<string, unknown>, assistant: boolean, sameProv
   if (type === "text") {
     const text = field(part, "text", true)
     if (typeof text !== "string") fail("Only text context is supported by this provider.")
-    const thoughtSignature = sameProviderAndModel ? validThoughtSignature(field(part, "textSignature"), restore !== undefined) : undefined
+    const thoughtSignature = sameProviderAndModel ? validThoughtSignature(field(part, "textSignature"), restore?.allowSentinelFallback === true) : undefined
     if (!text && !thoughtSignature) fail("Only text context is supported by this provider.")
     return { text, ...(thoughtSignature ? { thoughtSignature } : {}) }
   }
@@ -427,14 +441,16 @@ function messagePart(part: Record<string, unknown>, assistant: boolean, sameProv
     const text = field(part, "thinking", true)
     if (typeof text !== "string") fail("Only text context is supported by this provider.")
     const rawThinkingSig = field(part, "thinkingSignature")
-    const explicitSig = validThoughtSignature(rawThinkingSig, restore !== undefined)
+    const explicitSig = validThoughtSignature(rawThinkingSig, restore?.allowSentinelFallback === true)
     let thoughtSignature: string | undefined
     if (restore && restore.family === "claude" && text.length > 0) {
-      const cachedSig = restoreCachedSignature(restore.getSignature(text))
+      const cachedSig = restore.hasCache ? restoreCachedSignature(restore.getSignature(text)) : undefined
       if (explicitSig === SKIP_THOUGHT_SIGNATURE) {
         thoughtSignature = SKIP_THOUGHT_SIGNATURE
       } else if (rawThinkingSig !== undefined && !explicitSig) {
         thoughtSignature = undefined
+      } else if (explicitSig && !restore.hasCache) {
+        thoughtSignature = explicitSig
       } else if (explicitSig && cachedSig && explicitSig === cachedSig) {
         thoughtSignature = explicitSig
       } else if (!explicitSig && cachedSig) {
@@ -444,7 +460,7 @@ function messagePart(part: Record<string, unknown>, assistant: boolean, sameProv
       }
     } else {
       const cachedSig =
-        rawThinkingSig === undefined && text.length > 0 && restore
+        rawThinkingSig === undefined && text.length > 0 && restore?.hasCache
           ? restoreCachedSignature(restore.getSignature(text))
           : undefined
       thoughtSignature = explicitSig ?? cachedSig
@@ -512,18 +528,23 @@ function restoreCachedSignature(value: string | undefined): string | undefined {
 function resolveTurnThinkingSignature(
   message: Record<string, unknown>,
   restore: SignatureRestoreState,
+  beforeContentIndex: number,
 ): string | undefined {
   const content = field(message, "content")
   if (!Array.isArray(content)) return undefined
-  for (const item of content) {
+  const upperBound = Math.min(beforeContentIndex, content.length)
+  for (let index = upperBound - 1; index >= 0; index--) {
+    const item = content[index]
     if (!isRecord(item) || field(item, "type") !== "thinking") continue
-    const explicit = validThoughtSignature(field(item, "thinkingSignature"), false)
-    if (explicit) return explicit
-    const thinkingText = field(item, "thinking")
-    if (typeof thinkingText === "string" && thinkingText.length > 0) {
-      const cached = restoreCachedSignature(restore.getSignature(thinkingText))
-      if (cached) return cached
+    const rawThinkingSig = field(item, "thinkingSignature")
+    if (rawThinkingSig !== undefined) {
+      return validThoughtSignature(rawThinkingSig, false)
     }
+    const thinkingText = field(item, "thinking")
+    if (typeof thinkingText === "string" && thinkingText.length > 0 && restore.hasCache) {
+      return restoreCachedSignature(restore.getSignature(thinkingText))
+    }
+    return undefined
   }
   return undefined
 }

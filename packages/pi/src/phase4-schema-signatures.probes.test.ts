@@ -1117,4 +1117,82 @@ describe("Phase 4 probes: permissive tool schemas, SignatureCache, and sentinel 
     runtime2.shutdown()
     expect(createHash("sha256").update(readFileSync(cachePath)).digest("hex")).toBe(hashBefore)
   })
+
+  it("restores multi-thought Gemini tool signatures from the immediately preceding thought, preserves secondary pre-signed calls, and honors standalone allowSentinelFallback (R3-1, R3-2, R3-3, R4-1)", () => {
+    const sig1 = Buffer.from("multi-thought-early-sig-1-bytes-0123456789abcdef").toString("base64")
+    const sig2 = Buffer.from("multi-thought-preceding-sig-2-bytes-0123456789ab").toString("base64")
+    const flashSelection = resolveGenerationSelection(getCatalogEntry("antigravity-gemini-3.8-flash")!, "high")
+    const claudeSelection = resolveGenerationSelection(getCatalogEntry("antigravity-claude-sonnet-4.6")!, "high")
+    const tools = [{ name: "read_file", description: "Read", parameters: { type: "object", properties: { path: { type: "string" } }, required: ["path"] } }]
+    const flashModel = { id: "antigravity-gemini-3.8-flash" } as Model<string>
+    const userMsg = { role: "user" as const, content: "Go", timestamp: 1 }
+    const resMsg = (id: string, text: string, ts: number) => ({ role: "toolResult" as const, toolCallId: id, toolName: "read_file", content: [{ type: "text", text }], isError: false, timestamp: ts })
+    const assistantTurn = (content: unknown[]) => ({ role: "assistant" as const, provider: "antigravity-guard", model: "antigravity-gemini-3.8-flash", stopReason: "toolUse" as const, timestamp: 10, content })
+    const serializeFlash = (messages: unknown[], extra: Record<string, unknown>) =>
+      serializeContext({ context: { tools, messages } as unknown as Context, model: flashModel, options: { reasoning: "high" }, project: "proj", requestId: "agent-fix", ...extra }, flashSelection)
+
+    const mockCache = { getCachedSignature: (_s: string, text: string) => (text === "First thought" ? sig1 : text === "Second thought" ? sig2 : undefined) }
+    const multiThought = serializeFlash([
+      userMsg,
+      assistantTurn([
+        { type: "thinking", thinking: "First thought", thinkingSignature: sig1 },
+        { type: "thinking", thinking: "Second thought" },
+        { type: "toolCall", id: "c1", name: "read_file", arguments: { path: "a.ts" } },
+        { type: "thinking", thinking: "Step 2 thought", thinkingSignature: sig1 },
+        { type: "toolCall", id: "c2", name: "read_file", arguments: { path: "b.ts" }, thoughtSignature: sig1 },
+      ]),
+      resMsg("c1", "A", 11),
+      resMsg("c2", "B", 12),
+    ], { signatureCache: mockCache })
+    expect(multiThought.request.contents[1]?.parts).toEqual([
+      { thought: true, text: "First thought", thoughtSignature: sig1 },
+      { thought: true, text: "Second thought", thoughtSignature: sig2 },
+      { functionCall: { name: "read_file", args: { path: "a.ts" } }, thoughtSignature: sig2 },
+      { thought: true, text: "Step 2 thought", thoughtSignature: sig1 },
+      { functionCall: { name: "read_file", args: { path: "b.ts" } }, thoughtSignature: sig1 },
+    ])
+
+    const coldNoSentinel = serializeFlash([
+      userMsg,
+      assistantTurn([
+        { type: "thinking", thinking: "First thought", thinkingSignature: sig1 },
+        { type: "thinking", thinking: "Second thought" },
+        { type: "toolCall", id: "c1", name: "read_file", arguments: { path: "a.ts" } },
+      ]),
+      resMsg("c1", "A", 11),
+    ], { signatureCache: { getCachedSignature: () => undefined }, allowSentinelFallback: false })
+    expect(coldNoSentinel.request.contents[1]?.parts).toEqual([
+      { thought: true, text: "First thought", thoughtSignature: sig1 },
+      { thought: true, text: "Second thought" },
+    ])
+    expect(coldNoSentinel.request.contents[2]?.parts).toEqual([{ text: '[Observation from `read_file` ({"path":"a.ts"}):\nA]' }])
+
+    const standaloneSentinel = serializeFlash(
+      [userMsg, assistantTurn([{ type: "toolCall", id: "c1", name: "read_file", arguments: { path: "a.ts" } }]), resMsg("c1", "A", 11)],
+      { allowSentinelFallback: true },
+    )
+    expect((standaloneSentinel.request.contents[1]?.parts[0] as { thoughtSignature?: string })?.thoughtSignature).toBe(SKIP_THOUGHT_SIGNATURE)
+
+    const standaloneClaude = serializeContext({
+      context: {
+        messages: [
+          userMsg,
+          { role: "assistant", provider: "antigravity-guard", model: "antigravity-claude-sonnet-4.6", stopReason: "stop", timestamp: 2, content: [{ type: "thinking", thinking: "Unsigned Claude thought" }, { type: "text", text: "Hello" }] },
+          { role: "user", content: "Next", timestamp: 3 },
+        ],
+      } as unknown as Context,
+      model: { id: "antigravity-claude-sonnet-4.6" } as Model<string>,
+      options: { reasoning: "high" },
+      project: "proj",
+      requestId: "agent-claude-standalone",
+      allowSentinelFallback: true,
+    }, claudeSelection)
+    expect((standaloneClaude.request.contents[1]?.parts[0] as { thoughtSignature?: string })?.thoughtSignature).toBe(SKIP_THOUGHT_SIGNATURE)
+
+    const rejectedSentinel = serializeFlash(
+      [userMsg, assistantTurn([{ type: "toolCall", id: "c1", name: "read_file", arguments: { path: "a.ts" }, thoughtSignature: SKIP_THOUGHT_SIGNATURE }]), resMsg("c1", "A", 11)],
+      { signatureCache: { getCachedSignature: () => undefined }, allowSentinelFallback: false },
+    )
+    expect(rejectedSentinel.request.contents).toEqual([{ role: "user", parts: [{ text: "Go" }, { text: '[Observation from `read_file` ({"path":"a.ts"}):\nA]' }] }])
+  })
 })
