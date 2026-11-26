@@ -8,9 +8,13 @@ import {
   abortableSleep,
   createAntigravityVersionState,
   createSessionFingerprintStore,
+  createSessionSignatureCache,
+  createSignatureCache,
   fetchAntigravityHubVersion,
   loadSharedGuardConfig,
+  resolveSharedGuardPaths,
   type ResolveSharedGuardPathsOptions,
+  type SessionSignatureCache,
   type SharedGuardConfig,
 } from "@benjamolina/antigravity-guard-core"
 
@@ -45,6 +49,7 @@ export interface PiGuardRuntime {
   getUserAgent(): string
   getConfig(): SharedGuardConfig
   getAccountPool(): PiAccountPool
+  getSignatureCache(): SessionSignatureCache
   refreshSession(cwd?: string): Promise<void>
   shutdown(): void
 }
@@ -62,6 +67,28 @@ export function createPiGuardRuntime(options: PiGuardRuntimeOptions = {}): PiGua
         ...DEFAULT_SHARED_GUARD_CONFIG,
         signature_cache: { ...DEFAULT_SHARED_GUARD_CONFIG.signature_cache },
       }
+  const signatureCache = createSessionSignatureCache({
+    memoryTtlMs: config.signature_cache.memory_ttl_seconds * 1_000,
+    now: options.now,
+  })
+
+  const syncDiskSignatureCache = (cwd?: string): void => {
+    signatureCache.setMemoryTtlMs(config.signature_cache.memory_ttl_seconds * 1_000)
+    signatureCache.setDiskCache(null, { shutdownPrevious: true })
+    const paths = resolveSharedGuardPaths({
+      ...options,
+      cwd: cwd ?? options.cwd,
+    })
+    const diskCache = createSignatureCache(config.signature_cache, {
+      cacheFilePath: paths.signatureCachePath,
+      now: options.now,
+    })
+    signatureCache.setDiskCache(diskCache)
+  }
+
+  if (hasExplicitConfigScope) {
+    syncDiskSignatureCache(options.cwd)
+  }
 
   const accountPool = createPiAccountPool({
     ...options,
@@ -82,11 +109,15 @@ export function createPiGuardRuntime(options: PiGuardRuntimeOptions = {}): PiGua
     getAccountPool(): PiAccountPool {
       return accountPool
     },
+    getSignatureCache(): SessionSignatureCache {
+      return signatureCache
+    },
     async refreshSession(cwd?: string): Promise<void> {
       config = loadSharedGuardConfig({
         ...options,
         cwd: cwd ?? options.cwd,
       })
+      syncDiskSignatureCache(cwd)
 
       const env = options.env ?? process.env
       if (!/^(1|true|yes)$/i.test(env.PI_OFFLINE ?? "")) {
@@ -102,6 +133,7 @@ export function createPiGuardRuntime(options: PiGuardRuntimeOptions = {}): PiGua
     },
     shutdown(): void {
       accountPool.stopBackgroundRefresh()
+      signatureCache.shutdown()
     },
   }
 }
@@ -289,6 +321,7 @@ function streamText(
               requestId: `agent-${crypto.randomUUID()}`,
               requestJitterMaxMs: guardConfig.request_jitter_max_ms,
               signal,
+              signatureCache: runtime.getSignatureCache(),
               sleep: runtimeOptions?.sleep,
               timeoutMs: options?.timeoutMs,
               userAgent: selected.userAgent,
@@ -331,6 +364,7 @@ function streamText(
         requestId: `agent-${crypto.randomUUID()}`,
         requestJitterMaxMs: guardConfig.request_jitter_max_ms,
         signal,
+        signatureCache: runtime.getSignatureCache(),
         sleep: runtimeOptions?.sleep,
         timeoutMs: options?.timeoutMs,
         userAgent: runtime.getUserAgent(),

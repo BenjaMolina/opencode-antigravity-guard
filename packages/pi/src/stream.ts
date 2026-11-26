@@ -8,11 +8,18 @@ import {
   extractRateLimitTextInfo,
   formatAntigravityHubUserAgent,
   formatWaitTime,
+  isGemini3Or4SignatureModel,
   parseRateLimitReason,
+  type SessionSignatureCache,
 } from "@benjamolina/antigravity-guard-core"
 
 import { getCatalogEntry, resolveGenerationSelection, type GenerationSelection } from "./catalog.ts"
-import { ContextSerializationError, serializeContext, type GenerationRequest } from "./context.ts"
+import {
+  ContextSerializationError,
+  resolvePiSignatureSessionKey,
+  serializeContext,
+  type GenerationRequest,
+} from "./context.ts"
 import { ToolPreflightError } from "./tool-contract.ts"
 import { hasToolContext, type ToolReplayDiagnostics, type ToolReplayMode } from "./tool-context.ts"
 import type { ResponseSemantic, ToolResponsePolicy } from "./response.ts"
@@ -68,6 +75,7 @@ export class StreamTransportError extends Error {
 
 export interface StreamTransportInput {
   accessToken: string
+  allowSentinelFallback?: boolean
   context: Context
   endpoints?: readonly string[]
   fetch: typeof globalThis.fetch
@@ -84,6 +92,7 @@ export interface StreamTransportInput {
   requestJitterMaxMs?: number
   selection?: GenerationSelection
   signal?: AbortSignal
+  signatureCache?: SessionSignatureCache
   sleep?: (ms: number, signal: AbortSignal) => Promise<void>
   timeoutMs?: number
   userAgent?: string
@@ -253,7 +262,15 @@ export async function executeStreamTransport(input: StreamTransportInput): Promi
     const entry = getCatalogEntry(input.model.id)!
     selection = input.selection ?? resolveGenerationSelection(entry, input.generationOptions?.reasoning)
     const original = serializeContext(
-      { context: input.context, model: input.model, options: input.generationOptions, project: input.projectId, requestId: input.requestId },
+      {
+        context: input.context,
+        model: input.model,
+        options: input.generationOptions,
+        project: input.projectId,
+        requestId: input.requestId,
+        signatureCache: input.signatureCache,
+        allowSentinelFallback: input.allowSentinelFallback,
+      },
       selection,
       (diagnostics) => { replayDiagnostics = diagnostics },
     )
@@ -349,10 +366,26 @@ export async function executeStreamTransport(input: StreamTransportInput): Promi
           throw streamError("response", "Antigravity did not return an SSE response.")
         }
 
+        const signatureSessionKey =
+          input.signatureCache && shouldCacheModelSignatures(selection.route.wireModel)
+            ? resolvePiSignatureSessionKey({
+                context: input.context,
+                wireModel: selection.route.wireModel,
+                projectId: input.projectId,
+              })
+            : undefined
+        const wrappedOnSemantic = signatureSessionKey && input.signatureCache
+          ? createSignatureCachingSemanticSink(
+              signatureSessionKey,
+              input.signatureCache,
+              input.onSemantic,
+            )
+          : input.onSemantic
+
         await consume(
           response.body,
           signal,
-          input.onSemantic,
+          wrappedOnSemantic,
           inactivityTimeout(input),
           responsePolicy(original, selection),
         )
@@ -374,6 +407,48 @@ export async function executeStreamTransport(input: StreamTransportInput): Promi
     }
     if (error instanceof SseFrameError || error instanceof ResponseSemanticError) throw streamError("response", "Antigravity returned an invalid stream.")
     throw streamError("transport", "Antigravity generation request failed.")
+  }
+}
+
+function shouldCacheModelSignatures(wireModel: string): boolean {
+  const lower = wireModel.toLowerCase()
+  return lower.includes("claude") || isGemini3Or4SignatureModel(wireModel)
+}
+
+function createSignatureCachingSemanticSink(
+  sessionKey: string,
+  signatureCache: SessionSignatureCache,
+  onSemantic: (semantic: StreamSemantic) => void | Promise<void>,
+): (semantic: StreamSemantic) => Promise<void> {
+  let activeThinking: { text: string; signature?: string } | undefined
+
+  const flushThinking = (fallbackSignature?: string) => {
+    if (!activeThinking) return
+    const sig = activeThinking.signature ?? fallbackSignature
+    if (activeThinking.text && sig) {
+      signatureCache.cacheSignature(sessionKey, activeThinking.text, sig)
+    }
+    activeThinking = undefined
+  }
+
+  return async (semantic: StreamSemantic) => {
+    if (semantic.type === "thinking") {
+      if (!activeThinking) {
+        activeThinking = { text: semantic.thinking, signature: semantic.signature }
+      } else {
+        activeThinking.text += semantic.thinking
+        if (semantic.signature) {
+          activeThinking.signature = semantic.signature
+        }
+      }
+    } else if (semantic.type === "toolCall") {
+      flushThinking(semantic.signature)
+    } else if (semantic.type === "text") {
+      flushThinking(semantic.signature)
+    } else if (semantic.type === "finish") {
+      flushThinking()
+    }
+    await onSemantic(semantic)
   }
 }
 

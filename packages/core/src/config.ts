@@ -64,6 +64,7 @@ export interface SharedGuardPaths {
   configDir: string
   userConfigPath: string
   accountsPath: string
+  signatureCachePath: string
   logsDir: string
   projectConfigPaths: readonly string[]
 }
@@ -128,6 +129,7 @@ function buildGuardPaths(
     configDir,
     userConfigPath: join(configDir, "antigravity.json"),
     accountsPath: join(configDir, "antigravity-accounts.json"),
+    signatureCachePath: join(configDir, "antigravity-signature-cache.json"),
     logsDir: join(configDir, "antigravity-logs"),
     projectConfigPaths: [
       join(cwd, ".opencode", "antigravity.json"),

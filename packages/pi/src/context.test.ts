@@ -205,7 +205,7 @@ describe("Pi text context serialization", () => {
       expect(request.request.tools?.[0]?.functionDeclarations[0]).toEqual({
         name: "read_file",
         description: "Read one file",
-        parameters: { type: "object", properties: { path: { type: "string" } }, required: ["path"] },
+        parameters: { type: "object", description: "No extra properties allowed", properties: { path: { type: "string" } }, required: ["path"] },
       })
     })
 

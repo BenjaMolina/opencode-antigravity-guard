@@ -58,7 +58,11 @@ export {
   ANTIGRAVITY_MIN_VERSION,
   ANTIGRAVITY_OAUTH_CLIENT,
   ANTIGRAVITY_VERSION_FALLBACK,
+  EMPTY_SCHEMA_PLACEHOLDER_DESCRIPTION,
+  EMPTY_SCHEMA_PLACEHOLDER_NAME,
   GEMINI_CLI_HEADERS,
+  MIN_THOUGHT_SIGNATURE_LENGTH,
+  SKIP_THOUGHT_SIGNATURE,
   compareAntigravityVersions,
   isSupportedAntigravityVersion,
   parseAntigravityHubManifestVersion,
@@ -229,3 +233,23 @@ export type {
   AntigravityVersionState,
   FetchAntigravityHubVersionOptions,
 } from "./version.ts"
+export {
+  cleanJSONSchemaForAntigravity,
+  toGeminiSchema,
+} from "./schema.ts"
+export {
+  SignatureCache,
+  buildSignatureSessionKey,
+  createSessionSignatureCache,
+  createSignatureCache,
+  isGemini3Or4SignatureModel,
+  signatureCacheProjectKey,
+  stripThinkingTierSuffixForCacheKey,
+} from "./signature-cache.ts"
+export type {
+  SessionSignatureCache,
+  SessionSignatureCacheOptions,
+  SignatureCacheOptions,
+  SignatureCacheStats,
+  ThinkingCacheData,
+} from "./signature-cache.ts"

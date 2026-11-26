@@ -1,3 +1,6 @@
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -7,6 +10,7 @@ import {
   cacheSignature,
   getCachedSignature,
   clearSignatureCache,
+  initDiskSignatureCache,
 } from "./cache";
 import type { OAuthAuthDetails } from "./types";
 
@@ -290,6 +294,47 @@ describe("Signature Cache", () => {
       // Some old entries should have been evicted (oldest 25%)
       // Entry at index 0 (timestamp 0) should be evicted
       expect(getCachedSignature("session", "text-0")).toBeUndefined();
+    });
+  });
+
+  describe("initDiskSignatureCache", () => {
+    it("flushes dirty entries from previous disk cache before swapping to disabled", () => {
+      const ocConfigDir = mkdtempSync(join(tmpdir(), "oc-sig-swap-"));
+      const prevEnv = process.env.OPENCODE_CONFIG_DIR;
+      process.env.OPENCODE_CONFIG_DIR = ocConfigDir;
+      try {
+        clearSignatureCache();
+        const dc1 = initDiskSignatureCache({
+          enabled: true,
+          memory_ttl_seconds: 3600,
+          disk_ttl_seconds: 7200,
+          write_interval_seconds: 600,
+        });
+        expect(dc1).not.toBeNull();
+        cacheSignature("oc-sess", "oc thinking text", "c2lnMTIzNDU2Nzg=");
+        expect(
+          initDiskSignatureCache({
+            enabled: false,
+            memory_ttl_seconds: 3600,
+            disk_ttl_seconds: 7200,
+            write_interval_seconds: 600,
+          }),
+        ).toBeNull();
+        const ocJson = JSON.parse(
+          readFileSync(join(ocConfigDir, "antigravity-signature-cache.json"), "utf8"),
+        ) as { entries: Record<string, unknown> };
+        expect(Object.keys(ocJson.entries).length).toBe(1);
+      } finally {
+        initDiskSignatureCache({
+          enabled: false,
+          memory_ttl_seconds: 3600,
+          disk_ttl_seconds: 7200,
+          write_interval_seconds: 600,
+        });
+        if (prevEnv === undefined) delete process.env.OPENCODE_CONFIG_DIR;
+        else process.env.OPENCODE_CONFIG_DIR = prevEnv;
+        rmSync(ocConfigDir, { recursive: true, force: true });
+      }
     });
   });
 });

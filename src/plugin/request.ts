@@ -1,5 +1,12 @@
 import crypto from "node:crypto";
 import {
+  MIN_THOUGHT_SIGNATURE_LENGTH,
+  buildSignatureSessionKey,
+  isGemini3Or4SignatureModel,
+  signatureCacheProjectKey,
+  stripThinkingTierSuffixForCacheKey,
+} from "@benjamolina/antigravity-guard-core";
+import {
   ANTIGRAVITY_ENDPOINT,
   GEMINI_CLI_ENDPOINT,
   GEMINI_CLI_HEADERS,
@@ -77,41 +84,10 @@ const PLUGIN_SESSION_ID = `-${crypto.randomUUID()}`;
 
 const sessionDisplayedThinkingHashes = new Set<string>();
 
-const MIN_SIGNATURE_LENGTH = 50;
-
-function buildSignatureSessionKey(
-  sessionId: string,
-  model?: string,
-  conversationKey?: string,
-  projectKey?: string,
-): string {
-  const modelKey = typeof model === "string" && model.trim() ? model.toLowerCase() : "unknown";
-  const projectPart = typeof projectKey === "string" && projectKey.trim()
-    ? projectKey.trim()
-    : "default";
-  const conversationPart = typeof conversationKey === "string" && conversationKey.trim()
-    ? conversationKey.trim()
-    : "default";
-  return `${sessionId}:${modelKey}:${projectPart}:${conversationPart}`;
-}
-
-
-
-
-
-
+const MIN_SIGNATURE_LENGTH = MIN_THOUGHT_SIGNATURE_LENGTH;
 
 function isGemini3Or4Model(model?: string): boolean {
-  if (typeof model !== "string") return false;
-  const lower = model.toLowerCase();
-  return lower.includes("gemini-3") || lower.includes("gemini-4");
-}
-
-function stripThinkingTierSuffixForCacheKey(model: string): string {
-  if (/^gpt-oss/i.test(model)) {
-    return model;
-  }
-  return model.replace(/-(minimal|low|medium|high|xhigh)$/i, "");
+  return isGemini3Or4SignatureModel(model) && model?.toLowerCase() !== "gemini-pro-agent";
 }
 
 function shouldCacheThinkingSignatures(model?: string): boolean {
@@ -119,28 +95,7 @@ function shouldCacheThinkingSignatures(model?: string): boolean {
   const lower = model.toLowerCase();
   // Claude, Gemini 3, and Gemini 4 models require thought signature caching
   // for multi-turn conversations with function calling
-  return lower.includes("claude") || isGemini3Or4Model(model);
-}
-
-/**
- * Returns the project component to use in the thinking-signature cache key.
- *
- * Gemini 3 and Gemini 4 thought signatures are content-derived (not project/account-scoped)
- * and the API only strictly validates function calls in the current turn, so we
- * keep Gemini 3/4's signature cache key project-independent. This preserves
- * reasoning continuity across quota-driven account/project switches: otherwise
- * the key changes on a switch, the cache misses, the validation-bypass sentinel
- * is sent instead of the real signature, and the model loses its chain-of-thought
- * and re-plans the same step forever. Claude keeps project partitioning.
- */
-function signatureCacheProjectKey(
-  model: string | undefined,
-  projectKey: string | undefined,
-): string | undefined {
-  if (isGemini3Or4Model(model)) {
-    return undefined;
-  }
-  return projectKey;
+  return lower.includes("claude") || isGemini3Or4SignatureModel(model);
 }
 
 function hashConversationSeed(seed: string): string {

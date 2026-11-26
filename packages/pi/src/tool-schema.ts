@@ -1,4 +1,13 @@
+import {
+  EMPTY_SCHEMA_PLACEHOLDER_DESCRIPTION,
+  EMPTY_SCHEMA_PLACEHOLDER_NAME,
+  cleanJSONSchemaForAntigravity,
+  toGeminiSchema,
+} from "@benjamolina/antigravity-guard-core"
+
 import { denseArray, fail, freeze, ownData, plainObject, type JsonObject, type JsonValue } from "./tool-contract.ts"
+
+export { cleanJSONSchemaForAntigravity, toGeminiSchema }
 
 const MAX_SCHEMA_DEPTH = 32
 const MAX_SCHEMA_NODES = 2048
@@ -195,33 +204,25 @@ function define(target: Record<string, JsonValue>, key: string, value: JsonValue
   Object.defineProperty(target, key, { value, enumerable: true, configurable: false, writable: false })
 }
 
-const CUSTOM_TOOL_SCHEMA_ALLOW = new Set([
-  "type",
-  "description",
-  "properties",
-  "required",
-  "items",
-  "enum",
-])
-
 export function normalizeCustomToolSchema(schema: unknown): JsonObject {
   if (!schema || typeof schema !== "object" || Array.isArray(schema)) return {}
-  const out: Record<string, unknown> = {}
-  for (const [key, value] of Object.entries(schema as Record<string, unknown>)) {
-    if (!CUSTOM_TOOL_SCHEMA_ALLOW.has(key)) continue
-    if (key === "properties" && value && typeof value === "object" && !Array.isArray(value)) {
-      const props: Record<string, unknown> = {}
-      for (const [propName, propSchema] of Object.entries(value as Record<string, unknown>)) {
-        props[propName] = normalizeCustomToolSchema(propSchema)
-      }
-      out.properties = props
-      continue
+  const cleaned = cleanJSONSchemaForAntigravity(schema) as Record<string, unknown> | undefined
+  if (!cleaned || typeof cleaned !== "object" || Array.isArray(cleaned)) return {}
+  const hasProperties =
+    cleaned.properties !== null &&
+    typeof cleaned.properties === "object" &&
+    !Array.isArray(cleaned.properties) &&
+    Object.keys(cleaned.properties as Record<string, unknown>).length > 0
+  if (cleaned.type === "object" && !hasProperties) {
+    cleaned.properties = {
+      [EMPTY_SCHEMA_PLACEHOLDER_NAME]: {
+        type: "boolean",
+        description: EMPTY_SCHEMA_PLACEHOLDER_DESCRIPTION,
+      },
     }
-    if (key === "items") {
-      out.items = normalizeCustomToolSchema(value)
-      continue
-    }
-    out[key] = value
+    cleaned.required = Array.isArray(cleaned.required)
+      ? Array.from(new Set([...(cleaned.required as string[]), EMPTY_SCHEMA_PLACEHOLDER_NAME]))
+      : [EMPTY_SCHEMA_PLACEHOLDER_NAME]
   }
-  return out as JsonObject
+  return cleaned as JsonObject
 }
