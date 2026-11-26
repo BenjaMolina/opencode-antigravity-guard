@@ -62,6 +62,22 @@ const CATALOG = freeze(defineCatalog([{
   replay: { kind: "same-public-model" },
   response: { kind: "gemini-envelope", family: "gemini" },
 }, {
+  publicId: "antigravity-gemini-3.8-flash-tiered",
+  descriptor: {
+    name: "Gemini 3.8 Flash Tiered (Antigravity)",
+    thinkingLevelMap: { minimal: null, low: "low", medium: "medium", high: "high" },
+    contextWindow: 1_048_576,
+    maxTokens: 65_536,
+  },
+  routes: {
+    off: { wireModel: "gemini-3.8-flash-tiered", thinking: { kind: "budget", budget: 0, includeThoughts: false }, tools: enabled({ record: "pi-json-tool-loop", revision: "gemini-3.8-flash-tiered-off-v1", publicModelId: "antigravity-gemini-3.8-flash-tiered", reasoning: "off", wireModel: "gemini-3.8-flash-tiered" }, GEMINI_PARAMETERS_JSON_SCHEMA_PROFILE) },
+    low: { wireModel: "gemini-3.8-flash-tiered", thinking: { kind: "budget", budget: 1000, includeThoughts: true }, tools: enabled({ record: "pi-json-tool-loop", revision: "gemini-3.8-flash-tiered-low-v1", publicModelId: "antigravity-gemini-3.8-flash-tiered", reasoning: "low", wireModel: "gemini-3.8-flash-tiered" }, GEMINI_PARAMETERS_JSON_SCHEMA_PROFILE) },
+    medium: { wireModel: "gemini-3.8-flash-tiered", thinking: { kind: "budget", budget: 4000, includeThoughts: true }, tools: enabled({ record: "pi-json-tool-loop", revision: "gemini-3.8-flash-tiered-medium-v1", publicModelId: "antigravity-gemini-3.8-flash-tiered", reasoning: "medium", wireModel: "gemini-3.8-flash-tiered" }, GEMINI_PARAMETERS_JSON_SCHEMA_PROFILE) },
+    high: { wireModel: "gemini-3.8-flash-tiered", thinking: { kind: "budget", budget: -1, includeThoughts: true }, tools: enabled({ record: "pi-json-tool-loop", revision: "gemini-3.8-flash-tiered-high-v1", publicModelId: "antigravity-gemini-3.8-flash-tiered", reasoning: "high", wireModel: "gemini-3.8-flash-tiered" }, GEMINI_PARAMETERS_JSON_SCHEMA_PROFILE) },
+  },
+  replay: { kind: "same-public-model" },
+  response: { kind: "gemini-envelope", family: "gemini" },
+}, {
   publicId: "antigravity-gemini-3.7-flash",
   descriptor: {
     name: "Gemini 3.7 Flash (Antigravity, text only)",
@@ -78,6 +94,22 @@ const CATALOG = freeze(defineCatalog([{
   replay: { kind: "same-public-model" },
   response: { kind: "gemini-envelope", family: "gemini" },
 }, {
+  publicId: "antigravity-gemini-3.7-flash-tiered",
+  descriptor: {
+    name: "Gemini 3.7 Flash Tiered (Antigravity)",
+    thinkingLevelMap: { minimal: null, low: "low", medium: "medium", high: "high" },
+    contextWindow: 1_048_576,
+    maxTokens: 65_536,
+  },
+  routes: {
+    off: { wireModel: "gemini-3.7-flash-tiered", thinking: { kind: "budget", budget: 0, includeThoughts: false }, tools: enabled({ record: "pi-json-tool-loop", revision: "gemini-3.7-flash-tiered-off-v1", publicModelId: "antigravity-gemini-3.7-flash-tiered", reasoning: "off", wireModel: "gemini-3.7-flash-tiered" }, GEMINI_PARAMETERS_JSON_SCHEMA_PROFILE) },
+    low: { wireModel: "gemini-3.7-flash-tiered", thinking: { kind: "budget", budget: 1000, includeThoughts: true }, tools: enabled({ record: "pi-json-tool-loop", revision: "gemini-3.7-flash-tiered-low-v1", publicModelId: "antigravity-gemini-3.7-flash-tiered", reasoning: "low", wireModel: "gemini-3.7-flash-tiered" }, GEMINI_PARAMETERS_JSON_SCHEMA_PROFILE) },
+    medium: { wireModel: "gemini-3.7-flash-tiered", thinking: { kind: "budget", budget: 4000, includeThoughts: true }, tools: enabled({ record: "pi-json-tool-loop", revision: "gemini-3.7-flash-tiered-medium-v1", publicModelId: "antigravity-gemini-3.7-flash-tiered", reasoning: "medium", wireModel: "gemini-3.7-flash-tiered" }, GEMINI_PARAMETERS_JSON_SCHEMA_PROFILE) },
+    high: { wireModel: "gemini-3.7-flash-tiered", thinking: { kind: "budget", budget: -1, includeThoughts: true }, tools: enabled({ record: "pi-json-tool-loop", revision: "gemini-3.7-flash-tiered-high-v1", publicModelId: "antigravity-gemini-3.7-flash-tiered", reasoning: "high", wireModel: "gemini-3.7-flash-tiered" }, GEMINI_PARAMETERS_JSON_SCHEMA_PROFILE) },
+  },
+  replay: { kind: "same-public-model" },
+  response: { kind: "gemini-envelope", family: "gemini" },
+}, {
   publicId: "antigravity-gemini-3.6-flash",
   descriptor: {
     name: "Gemini 3.6 Flash (Antigravity, text only)",
@@ -90,6 +122,22 @@ const CATALOG = freeze(defineCatalog([{
     low: { wireModel: "gemini-3.6-flash-low", thinking: { kind: "budget", budget: 1000, includeThoughts: true }, tools: enabled({ record: "pi-json-tool-loop", revision: "gemini-3.6-flash-low-v1", publicModelId: "antigravity-gemini-3.6-flash", reasoning: "low", wireModel: "gemini-3.6-flash-low" }, GEMINI_PARAMETERS_JSON_SCHEMA_PROFILE) },
     medium: { wireModel: "gemini-3.6-flash-medium", thinking: { kind: "budget", budget: 4000, includeThoughts: true }, tools: enabled({ record: "pi-json-tool-loop", revision: "gemini-3.6-flash-medium-v1", publicModelId: "antigravity-gemini-3.6-flash", reasoning: "medium", wireModel: "gemini-3.6-flash-medium" }, GEMINI_PARAMETERS_JSON_SCHEMA_PROFILE) },
     high: { wireModel: "gemini-3.6-flash-high", thinking: { kind: "budget", budget: -1, includeThoughts: true }, tools: enabled({ record: "pi-json-tool-loop", revision: "gemini-3.6-flash-high-v1", publicModelId: "antigravity-gemini-3.6-flash", reasoning: "high", wireModel: "gemini-3.6-flash-high" }, GEMINI_PARAMETERS_JSON_SCHEMA_PROFILE) },
+  },
+  replay: { kind: "same-public-model" },
+  response: { kind: "gemini-envelope", family: "gemini" },
+}, {
+  publicId: "antigravity-gemini-3.6-flash-tiered",
+  descriptor: {
+    name: "Gemini 3.6 Flash Tiered (Antigravity)",
+    thinkingLevelMap: { minimal: null, low: "low", medium: "medium", high: "high" },
+    contextWindow: 1_048_576,
+    maxTokens: 65_536,
+  },
+  routes: {
+    off: { wireModel: "gemini-3.6-flash-tiered", thinking: { kind: "omit" }, tools: enabled({ record: "pi-json-tool-loop", revision: "gemini-3.6-flash-tiered-off-v1", publicModelId: "antigravity-gemini-3.6-flash-tiered", reasoning: "off", wireModel: "gemini-3.6-flash-tiered" }, GEMINI_PARAMETERS_JSON_SCHEMA_PROFILE) },
+    low: { wireModel: "gemini-3.6-flash-tiered", thinking: { kind: "budget", budget: 1000, includeThoughts: true }, tools: enabled({ record: "pi-json-tool-loop", revision: "gemini-3.6-flash-tiered-low-v1", publicModelId: "antigravity-gemini-3.6-flash-tiered", reasoning: "low", wireModel: "gemini-3.6-flash-tiered" }, GEMINI_PARAMETERS_JSON_SCHEMA_PROFILE) },
+    medium: { wireModel: "gemini-3.6-flash-tiered", thinking: { kind: "budget", budget: 4000, includeThoughts: true }, tools: enabled({ record: "pi-json-tool-loop", revision: "gemini-3.6-flash-tiered-medium-v1", publicModelId: "antigravity-gemini-3.6-flash-tiered", reasoning: "medium", wireModel: "gemini-3.6-flash-tiered" }, GEMINI_PARAMETERS_JSON_SCHEMA_PROFILE) },
+    high: { wireModel: "gemini-3.6-flash-tiered", thinking: { kind: "budget", budget: -1, includeThoughts: true }, tools: enabled({ record: "pi-json-tool-loop", revision: "gemini-3.6-flash-tiered-high-v1", publicModelId: "antigravity-gemini-3.6-flash-tiered", reasoning: "high", wireModel: "gemini-3.6-flash-tiered" }, GEMINI_PARAMETERS_JSON_SCHEMA_PROFILE) },
   },
   replay: { kind: "same-public-model" },
   response: { kind: "gemini-envelope", family: "gemini" },
@@ -217,6 +265,35 @@ const CATALOG = freeze(defineCatalog([{
   replay: { kind: "same-public-model" },
   response: { kind: "gemini-envelope", family: "gemini" },
 }, {
+  publicId: "antigravity-gemini-4-hydrogen-tiered",
+  descriptor: {
+    name: "Gemini 4 Hydrogen Tiered (Antigravity)",
+    thinkingLevelMap: { minimal: null, low: null, medium: null, high: "high", xhigh: "xhigh" },
+    contextWindow: 1_048_576,
+    maxTokens: 262_144,
+  },
+  routes: {
+    off: { wireModel: "gemini-4-hydrogen-tiered-high", thinking: { kind: "budget", budget: 0, includeThoughts: false }, tools: enabled({ record: "pi-json-tool-loop", revision: "gemini-4-hydrogen-tiered-off-v1", publicModelId: "antigravity-gemini-4-hydrogen-tiered", reasoning: "off", wireModel: "gemini-4-hydrogen-tiered-high" }, GEMINI_PARAMETERS_JSON_SCHEMA_PROFILE) },
+    high: { wireModel: "gemini-4-hydrogen-tiered-high", thinking: { kind: "budget", budget: -1, includeThoughts: true }, tools: enabled({ record: "pi-json-tool-loop", revision: "gemini-4-hydrogen-tiered-high-v1", publicModelId: "antigravity-gemini-4-hydrogen-tiered", reasoning: "high", wireModel: "gemini-4-hydrogen-tiered-high" }, GEMINI_PARAMETERS_JSON_SCHEMA_PROFILE) },
+    xhigh: { wireModel: "gemini-4-hydrogen-tiered-xhigh", thinking: { kind: "budget", budget: -1, includeThoughts: true }, tools: enabled({ record: "pi-json-tool-loop", revision: "gemini-4-hydrogen-tiered-xhigh-v1", publicModelId: "antigravity-gemini-4-hydrogen-tiered", reasoning: "xhigh", wireModel: "gemini-4-hydrogen-tiered-xhigh" }, GEMINI_PARAMETERS_JSON_SCHEMA_PROFILE) },
+  },
+  replay: { kind: "same-public-model" },
+  response: { kind: "gemini-envelope", family: "gemini" },
+}, {
+  publicId: "antigravity-gemini-4-hydrogen-sonar",
+  descriptor: {
+    name: "Gemini 4 Hydrogen Sonar (Antigravity)",
+    thinkingLevelMap: { minimal: null, low: null, medium: null, high: "high" },
+    contextWindow: 1_048_576,
+    maxTokens: 262_144,
+  },
+  routes: {
+    off: { wireModel: "gemini-4-hydrogen-sonar", thinking: { kind: "budget", budget: 0, includeThoughts: false }, tools: enabled({ record: "pi-json-tool-loop", revision: "gemini-4-hydrogen-sonar-off-v1", publicModelId: "antigravity-gemini-4-hydrogen-sonar", reasoning: "off", wireModel: "gemini-4-hydrogen-sonar" }, GEMINI_PARAMETERS_JSON_SCHEMA_PROFILE) },
+    high: { wireModel: "gemini-4-hydrogen-sonar", thinking: { kind: "budget", budget: -1, includeThoughts: true }, tools: enabled({ record: "pi-json-tool-loop", revision: "gemini-4-hydrogen-sonar-high-v1", publicModelId: "antigravity-gemini-4-hydrogen-sonar", reasoning: "high", wireModel: "gemini-4-hydrogen-sonar" }, GEMINI_PARAMETERS_JSON_SCHEMA_PROFILE) },
+  },
+  replay: { kind: "same-public-model" },
+  response: { kind: "gemini-envelope", family: "gemini" },
+}, {
   publicId: "antigravity-gemini-3.5-flash-lite",
   descriptor: {
     name: "Gemini 3.5 Flash Lite (Antigravity, text only)",
@@ -237,6 +314,230 @@ export type AntigravityPublicModelId = Catalog[number]["publicId"]
 export type AntigravityWireModelId = Catalog[number]["routes"][keyof Catalog[number]["routes"]]["wireModel"]
 
 const lookup = new Map<string, CatalogEntry>(CATALOG.map((entry) => [entry.publicId, entry]))
+const dynamicLookup = new Map<string, CatalogEntry>()
+
+export interface DiscoveredAntigravityModel {
+  displayName?: string
+  modelName?: string
+}
+
+function titleFromModelId(modelId: string): string {
+  return modelId
+    .split("-")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ")
+}
+
+function defaultLimitsForDiscoveredModel(modelId: string): { contextWindow: number; maxTokens: number } {
+  const lower = modelId.toLowerCase()
+  if (lower.includes("claude")) {
+    return { contextWindow: 250_000, maxTokens: 64_000 }
+  }
+  if (lower.includes("gpt-oss")) {
+    return { contextWindow: 131_072, maxTokens: 32_768 }
+  }
+  if (
+    lower.includes("gemini-4-carbon") ||
+    lower.includes("gemini-4-neon") ||
+    lower.includes("gemini-4-hydrogen")
+  ) {
+    return { contextWindow: 1_048_576, maxTokens: 262_144 }
+  }
+  if (lower.includes("gemini-3.5-flash-lite") || lower.includes("gemini-3.1-pro")) {
+    return { contextWindow: 1_048_576, maxTokens: 65_535 }
+  }
+  return { contextWindow: 1_048_576, maxTokens: 65_536 }
+}
+
+function inferDiscoveredFamily(wireModel: string): "gemini" | "claude" | "gpt-oss" {
+  const lower = wireModel.toLowerCase()
+  if (lower.includes("claude")) return "claude"
+  if (lower.includes("gpt-oss")) return "gpt-oss"
+  return "gemini"
+}
+
+export function registerDiscoveredCatalogEntries(
+  models: Readonly<Record<string, DiscoveredAntigravityModel>>,
+): readonly CatalogEntry[] {
+  const discoveredEntries: CatalogEntry[] = []
+  for (const [sourceId, rawEntry] of Object.entries(models)) {
+    const rawId = (rawEntry?.modelName || sourceId).trim()
+    if (!rawId) continue
+    const wireBase = rawId.replace(/^models\//, "").replace(/^antigravity-/, "")
+    if (!wireBase) continue
+    const publicId = `antigravity-${wireBase}`
+    if (publicId === "antigravity-gemini-3.5-flash") continue
+    const staticEntry = lookup.get(publicId)
+    if (staticEntry) {
+      discoveredEntries.push(staticEntry)
+      continue
+    }
+
+    const family = inferDiscoveredFamily(wireBase)
+    const schemaProfile =
+      family === "gemini" ? GEMINI_PARAMETERS_JSON_SCHEMA_PROFILE : CLAUDE_CUSTOM_PARAMETERS_PROFILE
+    const limits = defaultLimitsForDiscoveredModel(publicId)
+    const labelBase = rawEntry?.displayName?.trim() || titleFromModelId(wireBase)
+    const name = labelBase.endsWith("(Antigravity)") ? labelBase : `${labelBase} (Antigravity)`
+    const revisionPrefix = wireBase
+
+    const entry: CatalogEntry = freeze({
+      publicId,
+      descriptor: {
+        name,
+        thinkingLevelMap:
+          family === "claude"
+            ? { minimal: null, low: null, medium: null, high: "high" }
+            : family === "gpt-oss"
+              ? { minimal: null, low: null, medium: "medium", high: null }
+              : { minimal: null, low: "low", medium: "medium", high: "high" },
+        contextWindow: limits.contextWindow,
+        maxTokens: limits.maxTokens,
+      },
+      routes:
+        family === "claude"
+          ? {
+              off: {
+                wireModel: wireBase,
+                thinking: { kind: "budget", budget: 0, includeThoughts: false },
+                tools: enabled(
+                  {
+                    record: "pi-json-tool-loop",
+                    revision: `${revisionPrefix}-off-v1`,
+                    publicModelId: publicId,
+                    reasoning: "off",
+                    wireModel: wireBase,
+                  },
+                  schemaProfile,
+                ),
+              },
+              high: {
+                wireModel: wireBase,
+                thinking: { kind: "budget", budget: 1024, includeThoughts: true },
+                tools: enabled(
+                  {
+                    record: "pi-json-tool-loop",
+                    revision: `${revisionPrefix}-high-v1`,
+                    publicModelId: publicId,
+                    reasoning: "high",
+                    wireModel: wireBase,
+                  },
+                  schemaProfile,
+                ),
+              },
+            }
+          : family === "gpt-oss"
+            ? {
+                off: {
+                  wireModel: wireBase,
+                  thinking: { kind: "omit" },
+                  tools: enabled(
+                    {
+                      record: "pi-json-tool-loop",
+                      revision: `${revisionPrefix}-off-v1`,
+                      publicModelId: publicId,
+                      reasoning: "off",
+                      wireModel: wireBase,
+                    },
+                    schemaProfile,
+                  ),
+                },
+                medium: {
+                  wireModel: wireBase,
+                  thinking: { kind: "budget", budget: 8192, includeThoughts: true },
+                  tools: enabled(
+                    {
+                      record: "pi-json-tool-loop",
+                      revision: `${revisionPrefix}-medium-v1`,
+                      publicModelId: publicId,
+                      reasoning: "medium",
+                      wireModel: wireBase,
+                    },
+                    schemaProfile,
+                  ),
+                },
+              }
+            : {
+                off: {
+                  wireModel: wireBase,
+                  thinking: { kind: "budget", budget: 0, includeThoughts: false },
+                  tools: enabled(
+                    {
+                      record: "pi-json-tool-loop",
+                      revision: `${revisionPrefix}-off-v1`,
+                      publicModelId: publicId,
+                      reasoning: "off",
+                      wireModel: wireBase,
+                    },
+                    schemaProfile,
+                  ),
+                },
+                low: {
+                  wireModel: wireBase,
+                  thinking: { kind: "budget", budget: 1000, includeThoughts: true },
+                  tools: enabled(
+                    {
+                      record: "pi-json-tool-loop",
+                      revision: `${revisionPrefix}-low-v1`,
+                      publicModelId: publicId,
+                      reasoning: "low",
+                      wireModel: wireBase,
+                    },
+                    schemaProfile,
+                  ),
+                },
+                medium: {
+                  wireModel: wireBase,
+                  thinking: { kind: "budget", budget: 4000, includeThoughts: true },
+                  tools: enabled(
+                    {
+                      record: "pi-json-tool-loop",
+                      revision: `${revisionPrefix}-medium-v1`,
+                      publicModelId: publicId,
+                      reasoning: "medium",
+                      wireModel: wireBase,
+                    },
+                    schemaProfile,
+                  ),
+                },
+                high: {
+                  wireModel: wireBase,
+                  thinking: { kind: "budget", budget: -1, includeThoughts: true },
+                  tools: enabled(
+                    {
+                      record: "pi-json-tool-loop",
+                      revision: `${revisionPrefix}-high-v1`,
+                      publicModelId: publicId,
+                      reasoning: "high",
+                      wireModel: wireBase,
+                    },
+                    schemaProfile,
+                  ),
+                },
+              },
+      replay: { kind: "same-public-model" },
+      response: { kind: "gemini-envelope", family },
+    })
+    dynamicLookup.set(publicId, entry)
+    discoveredEntries.push(entry)
+  }
+
+  const merged = new Map<string, CatalogEntry>()
+  for (const entry of CATALOG) {
+    merged.set(entry.publicId, entry)
+  }
+  for (const entry of discoveredEntries) {
+    if (!merged.has(entry.publicId)) {
+      merged.set(entry.publicId, entry)
+    }
+  }
+  return [...merged.values()]
+}
+
+export function clearDynamicCatalogEntries(): void {
+  dynamicLookup.clear()
+}
 
 function disabled(reason: Extract<ToolCapability, { readonly state: "disabled" }>["reason"]): ToolCapability {
   return { state: "disabled", contractRevision: 1, reason }
@@ -291,7 +592,8 @@ export function listCatalogEntries(): readonly CatalogEntry[] {
 }
 
 export function getCatalogEntry(publicId: unknown): CatalogEntry | undefined {
-  return typeof publicId === "string" ? lookup.get(publicId) : undefined
+  if (typeof publicId !== "string") return undefined
+  return lookup.get(publicId) ?? dynamicLookup.get(publicId)
 }
 
 export function resolveGenerationRoute(entry: CatalogEntry, reasoning: unknown): GenerationRoute {

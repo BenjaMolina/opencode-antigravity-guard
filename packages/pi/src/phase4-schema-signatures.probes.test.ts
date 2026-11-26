@@ -1038,6 +1038,21 @@ describe("Phase 4 probes: permissive tool schemas, SignatureCache, and sentinel 
       // consume
     }
     expect(JSON.parse(String(fetch.mock.calls[2]?.[1]?.body)).request.contents[1]?.parts[1]?.thoughtSignature).toBe(SKIP_THOUGHT_SIGNATURE)
+
+    // R3-5: Also verify refreshSession(cwd) dynamically updates memory_ttl_seconds from disk
+    writeFileSync(
+      join(piDir, "antigravity.json"),
+      JSON.stringify({ signature_cache: { enabled: false, memory_ttl_seconds: 120 } }),
+      "utf8",
+    )
+    await runtime.refreshSession(homeDir)
+    expect(runtime.getConfig().signature_cache.memory_ttl_seconds).toBe(120)
+    runtime.getSignatureCache().cacheSignature("pi:gemini-4-argon:default:reload", "Reloaded thought", sig)
+    currentNow += 90_000
+    expect(runtime.getSignatureCache().getCachedSignature("pi:gemini-4-argon:default:reload", "Reloaded thought")).toBe(sig)
+    currentNow += 35_000
+    expect(runtime.getSignatureCache().getCachedSignature("pi:gemini-4-argon:default:reload", "Reloaded thought")).toBeUndefined()
+
     runtime.shutdown()
   })
 

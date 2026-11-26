@@ -10,6 +10,11 @@ import {
   ANTIGRAVITY_VERSION_FALLBACK as CORE_ANTIGRAVITY_VERSION_FALLBACK,
   EMPTY_SCHEMA_PLACEHOLDER_DESCRIPTION as CORE_EMPTY_SCHEMA_PLACEHOLDER_DESCRIPTION,
   EMPTY_SCHEMA_PLACEHOLDER_NAME as CORE_EMPTY_SCHEMA_PLACEHOLDER_NAME,
+  SEARCH_MODEL as CORE_SEARCH_MODEL,
+  SEARCH_SYSTEM_INSTRUCTION as CORE_SEARCH_SYSTEM_INSTRUCTION,
+  SEARCH_THINKING_BUDGET_DEEP as CORE_SEARCH_THINKING_BUDGET_DEEP,
+  SEARCH_THINKING_BUDGET_FAST as CORE_SEARCH_THINKING_BUDGET_FAST,
+  SEARCH_TIMEOUT_MS as CORE_SEARCH_TIMEOUT_MS,
   SKIP_THOUGHT_SIGNATURE as CORE_SKIP_THOUGHT_SIGNATURE,
   buildAntigravityHeaders,
   createAntigravityVersionState,
@@ -221,39 +226,27 @@ export const SKIP_THOUGHT_SIGNATURE = CORE_SKIP_THOUGHT_SIGNATURE;
  * Model used for Google Search grounding requests.
  * Uses gemini-2.5-flash for fast, cost-effective search operations. (3-flash is always at capacity and doesn't support souce citation).
  */
-export const SEARCH_MODEL = "gemini-2.5-flash";
+export const SEARCH_MODEL = CORE_SEARCH_MODEL;
 
 /**
  * Thinking budget for deep search (more thorough analysis).
  */
-export const SEARCH_THINKING_BUDGET_DEEP = 16384;
+export const SEARCH_THINKING_BUDGET_DEEP = CORE_SEARCH_THINKING_BUDGET_DEEP;
 
 /**
  * Thinking budget for fast search (quick results).
  */
-export const SEARCH_THINKING_BUDGET_FAST = 4096;
+export const SEARCH_THINKING_BUDGET_FAST = CORE_SEARCH_THINKING_BUDGET_FAST;
 
 /**
  * Timeout for search requests in milliseconds (60 seconds).
  */
-export const SEARCH_TIMEOUT_MS = 60000;
+export const SEARCH_TIMEOUT_MS = CORE_SEARCH_TIMEOUT_MS;
 
 /**
  * System instruction for the Google Search tool.
  */
-export const SEARCH_SYSTEM_INSTRUCTION = `You are an expert web search assistant with access to Google Search and URL analysis tools.
-
-Your capabilities:
-- Use google_search to find real-time information from the web
-- Use url_context to fetch and analyze content from specific URLs when provided
-
-Guidelines:
-- Always provide accurate, well-sourced information
-- Cite your sources when presenting facts
-- If analyzing URLs, extract the most relevant information
-- Be concise but comprehensive in your responses
-- If information is uncertain or conflicting, acknowledge it
-- Focus on answering the user's question directly`;
+export const SEARCH_SYSTEM_INSTRUCTION = CORE_SEARCH_SYSTEM_INSTRUCTION;
 
 export const ANTIGRAVITY_SYSTEM_INSTRUCTION = `You are Antigravity, a powerful agentic AI coding assistant designed by the Google DeepMind team working on Advanced Agentic Coding.
 You are pair programming with a USER to solve their coding task. The task may require creating a new codebase, modifying or debugging an existing codebase, or simply answering a question.

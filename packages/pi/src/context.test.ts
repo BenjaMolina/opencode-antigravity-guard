@@ -285,7 +285,7 @@ describe("Pi text context serialization", () => {
 
         it("rejects tools, tool history, and images for every registered model before request serialization", () => {
           const catalog = listCatalogEntries()
-          expect(catalog).toHaveLength(12)
+          expect(catalog).toHaveLength(17)
           const unsupportedContexts = [
             { tools: [{}], messages: [{ role: "user", content: "x", timestamp: 0 }] },
             { messages: [{ role: "toolResult", content: [], timestamp: 0 }] },

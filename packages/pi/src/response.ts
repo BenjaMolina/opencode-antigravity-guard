@@ -1,3 +1,9 @@
+import {
+  formatGroundingFooter,
+  parseCandidateGrounding,
+  type GroundingMetadata,
+  type UrlContextMetadata,
+} from "@benjamolina/antigravity-guard-core"
 import { canonicalJson } from "./tool-contract.ts"
 import type { JsonObject } from "./tool-contract.ts"
 
@@ -52,6 +58,12 @@ export class ResponseSemantics {
   private readonly ids = new Set<string>()
   private pendingFinish: FinishSemantic["reason"] | undefined
   private usage = { prompt: 0, cacheRead: 0, output: 0, reasoning: 0 }
+  private groundingSources: Array<{ title: string; url: string }> = []
+  private groundingSourceUrls = new Set<string>()
+  private groundingQueries: string[] = []
+  private groundingQuerySet = new Set<string>()
+  private groundingUrls: Array<{ url: string; status: string }> = []
+  private groundingUrlSet = new Set<string>()
 
   constructor(readonly policy: ToolResponsePolicy = { kind: "reject" }) {}
 
@@ -100,6 +112,48 @@ export class ResponseSemantics {
   hasId(id: string): boolean { return this.ids.has(id) }
   addId(id: string): void { this.ids.add(id) }
   callIndex(): number { return this.calls }
+
+  recordGrounding(groundingMetadata: unknown, urlContextMetadata: unknown): void {
+    if (groundingMetadata !== undefined && (typeof groundingMetadata !== "object" || groundingMetadata === null || Array.isArray(groundingMetadata))) {
+      throw new ResponseSemanticError("Antigravity returned invalid grounding metadata.")
+    }
+    if (urlContextMetadata !== undefined && (typeof urlContextMetadata !== "object" || urlContextMetadata === null || Array.isArray(urlContextMetadata))) {
+      throw new ResponseSemanticError("Antigravity returned invalid URL context metadata.")
+    }
+    const parsed = parseCandidateGrounding({
+      groundingMetadata: groundingMetadata as GroundingMetadata | undefined,
+      urlContextMetadata: urlContextMetadata as UrlContextMetadata | undefined,
+    })
+    for (const src of parsed.sources) {
+      if (!this.groundingSourceUrls.has(src.url)) {
+        this.groundingSourceUrls.add(src.url)
+        this.groundingSources.push(src)
+      }
+    }
+    for (const q of parsed.searchQueries) {
+      if (!this.groundingQuerySet.has(q)) {
+        this.groundingQuerySet.add(q)
+        this.groundingQueries.push(q)
+      }
+    }
+    for (const u of parsed.urlsRetrieved) {
+      const key = `${u.status}:${u.url}`
+      if (!this.groundingUrlSet.has(key)) {
+        this.groundingUrlSet.add(key)
+        this.groundingUrls.push(u)
+      }
+    }
+  }
+
+  consumeGroundingFooter(): string | undefined {
+    const footer = formatGroundingFooter({
+      sources: this.groundingSources,
+      searchQueries: this.groundingQueries,
+      urlsRetrieved: this.groundingUrls,
+    })
+    if (!footer) return undefined
+    return `\n\n${footer}`
+  }
 }
 
 function candidate(value: unknown, events: ResponseSemantic[], semantics: ResponseSemantics): void {
@@ -137,11 +191,22 @@ function candidate(value: unknown, events: ResponseSemantic[], semantics: Respon
       }
     }
   }
+  const groundingMetadata = field(item, "groundingMetadata")
+  const urlContextMetadata = field(item, "urlContextMetadata")
+  if (groundingMetadata !== undefined || urlContextMetadata !== undefined) {
+    semantics.recordGrounding(groundingMetadata, urlContextMetadata)
+  }
   const finishReason = field(item, "finishReason")
   if (finishReason !== undefined) {
     const hasCalls = semantics.callIndex() + callCount > 0
     const reason = hasCalls ? "toolUse" : finishReason === "STOP" ? "stop" : finishReason === "MAX_TOKENS" ? "length" : undefined
     if (!reason) throw new ResponseSemanticError("Antigravity returned an unsupported finish reason.")
+    if (!hasCalls) {
+      const footer = semantics.consumeGroundingFooter()
+      if (footer) {
+        local.push({ type: "text", text: footer })
+      }
+    }
     semantics.setFinish(reason)
   }
   for (const id of ids) semantics.addId(id)

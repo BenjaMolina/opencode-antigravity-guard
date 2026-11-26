@@ -98,3 +98,21 @@ export const EMPTY_SCHEMA_PLACEHOLDER_NAME = "_placeholder"
 export const EMPTY_SCHEMA_PLACEHOLDER_DESCRIPTION = "Placeholder. Always pass true."
 export const SKIP_THOUGHT_SIGNATURE = "skip_thought_signature_validator"
 export const MIN_THOUGHT_SIGNATURE_LENGTH = 50
+
+export const SEARCH_MODEL = "gemini-2.5-flash"
+export const SEARCH_THINKING_BUDGET_DEEP = 16_384
+export const SEARCH_THINKING_BUDGET_FAST = 4_096
+export const SEARCH_TIMEOUT_MS = 60_000
+export const SEARCH_SYSTEM_INSTRUCTION = `You are an expert web search assistant with access to Google Search and URL analysis tools.
+
+Your capabilities:
+- Use google_search to find real-time information from the web
+- Use url_context to fetch and analyze content from specific URLs when provided
+
+Guidelines:
+- Always provide accurate, well-sourced information
+- Cite your sources when presenting facts
+- If analyzing URLs, extract the most relevant information
+- Be concise but comprehensive in your responses
+- If information is uncertain or conflicting, acknowledge it
+- Focus on answering the user's question directly`
