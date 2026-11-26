@@ -799,3 +799,50 @@ it("propagates safe local diagnostics and emits one generic error before finish"
   expect(finishedEvents.map((event: { type: string }) => event.type)).toEqual(["start", "text_start", "text_delta", "text_end", "done"])
   expect(await finished.result()).toMatchObject({ stopReason: "stop", content: [{ type: "text", text: "done" }] })
 })
+
+it("attaches bounded upstream responseBody on HTTP errors and aborts cleanly during requestJitterMaxMs", async () => {
+  const errFetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(
+    new Response('{"error":{"message":"validation_required"}}', { status: 403 }),
+  )
+  await expect(
+    executeStreamTransport({
+      accessToken: "access-token",
+      projectId: "stored-project",
+      context: context(),
+      fetch: errFetch,
+      model: model(),
+      now: () => 1_000,
+      onSemantic: vi.fn(),
+      platform: "win32",
+      requestId: "req-err-body",
+    }),
+  ).rejects.toMatchObject({
+    kind: "access",
+    status: 403,
+    responseBody: '{"error":{"message":"validation_required"}}',
+  })
+
+  const controller = new AbortController()
+  const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0.9)
+  try {
+    const abortFetch = vi.fn<typeof globalThis.fetch>()
+    const pending = executeStreamTransport({
+      accessToken: "access-token",
+      projectId: "stored-project",
+      context: context(),
+      fetch: abortFetch,
+      signal: controller.signal,
+      model: model(),
+      now: () => 1_000,
+      onSemantic: vi.fn(),
+      platform: "win32",
+      requestId: "req-jitter-abort",
+      requestJitterMaxMs: 5_000,
+    })
+    controller.abort()
+    await expect(pending).rejects.toMatchObject({ kind: "aborted" })
+    expect(abortFetch).not.toHaveBeenCalled()
+  } finally {
+    randomSpy.mockRestore()
+  }
+})

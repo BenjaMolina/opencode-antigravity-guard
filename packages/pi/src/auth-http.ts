@@ -15,11 +15,13 @@ type AuthErrorKind = "aborted" | "authentication" | "response" | "transport"
 export class AuthHttpError extends Error {
   readonly kind: AuthErrorKind
   readonly status?: number
+  readonly code?: string
 
-  constructor(kind: AuthErrorKind, message: string, status?: number) {
+  constructor(kind: AuthErrorKind, message: string, status?: number, code?: string) {
     super(message)
     this.kind = kind
     this.status = status
+    this.code = code
   }
 }
 
@@ -162,7 +164,7 @@ function credentialsFrom(
 
 function responseError(status: number, value: unknown): AuthHttpError {
   if (isRecord(value) && (value.error === "invalid_grant" || (isRecord(value.error) && value.error.error === "invalid_grant"))) {
-    return new AuthHttpError("authentication", "Authentication expired. Run /login antigravity-guard.", status)
+    return new AuthHttpError("authentication", "Authentication expired. Run /login antigravity-guard.", status, "invalid_grant")
   }
   return new AuthHttpError(
     "authentication",

@@ -11,10 +11,12 @@ import {
   type SharedGuardConfig,
 } from "@benjamolina/antigravity-guard-core"
 
+import { createPiAccountPool, type PiAccountPool } from "./accounts.ts"
 import { listCatalogEntries, toPiModelDescriptor } from "./catalog.ts"
+import { registerPiGuardCommands } from "./commands.ts"
 import { createPiOAuthLifecycle } from "./oauth.ts"
 import { resolveLoginProject } from "./project.ts"
-import { createPiLifecycleStream, executeStreamTransport } from "./stream.ts"
+import { StreamTransportError, createPiLifecycleStream, executeStreamTransport } from "./stream.ts"
 
 const PROVIDER = "antigravity-guard"
 const API = "antigravity-guard-sse"
@@ -22,13 +24,16 @@ const INVALID_CREDENTIALS = "Antigravity credentials are invalid. Run /login ant
 
 export interface PiGuardRuntimeOptions extends ResolveSharedGuardPathsOptions {
   fetch?: typeof globalThis.fetch
+  now?: () => number
 }
 
 export interface PiGuardRuntime {
   getVersion(): string
   getUserAgent(): string
   getConfig(): SharedGuardConfig
+  getAccountPool(): PiAccountPool
   refreshSession(cwd?: string): Promise<void>
+  shutdown(): void
 }
 
 export function createPiGuardRuntime(options: PiGuardRuntimeOptions = {}): PiGuardRuntime {
@@ -45,6 +50,12 @@ export function createPiGuardRuntime(options: PiGuardRuntimeOptions = {}): PiGua
         signature_cache: { ...DEFAULT_SHARED_GUARD_CONFIG.signature_cache },
       }
 
+  const accountPool = createPiAccountPool({
+    ...options,
+    getVersion: () => versionState.getVersion(),
+    getConfig: () => config,
+  })
+
   return {
     getVersion(): string {
       return versionState.getVersion()
@@ -55,6 +66,9 @@ export function createPiGuardRuntime(options: PiGuardRuntimeOptions = {}): PiGua
     getConfig(): SharedGuardConfig {
       return config
     },
+    getAccountPool(): PiAccountPool {
+      return accountPool
+    },
     async refreshSession(cwd?: string): Promise<void> {
       config = loadSharedGuardConfig({
         ...options,
@@ -62,23 +76,28 @@ export function createPiGuardRuntime(options: PiGuardRuntimeOptions = {}): PiGua
       })
 
       const env = options.env ?? process.env
-      if (/^(1|true|yes)$/i.test(env.PI_OFFLINE ?? "")) {
-        return
+      if (!/^(1|true|yes)$/i.test(env.PI_OFFLINE ?? "")) {
+        const liveVersion = await fetchAntigravityHubVersion({
+          fetch: options.fetch ?? globalThis.fetch,
+        })
+        if (liveVersion && versionState.setVersion(liveVersion)) {
+          fingerprintStore.syncVersion(versionState.getVersion())
+        }
       }
 
-      const liveVersion = await fetchAntigravityHubVersion({
-        fetch: options.fetch ?? globalThis.fetch,
-      })
-      if (liveVersion && versionState.setVersion(liveVersion)) {
-        fingerprintStore.syncVersion(versionState.getVersion())
-      }
+      await accountPool.loadOrRefresh(cwd ?? options.cwd)
+    },
+    shutdown(): void {
+      accountPool.stopBackgroundRefresh()
     },
   }
 }
 
-type ProviderRegistrationHost = Pick<ExtensionAPI, "registerProvider"> & {
+export type ProviderRegistrationHost = Pick<ExtensionAPI, "registerProvider"> & {
+  registerCommand?: ExtensionAPI["registerCommand"]
+  sendMessage?: ExtensionAPI["sendMessage"]
   on?: (
-    event: "session_start",
+    event: "session_start" | "session_shutdown",
     handler: (event: unknown, ctx?: { cwd?: string }) => Promise<void> | void,
   ) => void
 }
@@ -88,9 +107,11 @@ export function registerAntigravityProvider(
   options?: PiGuardRuntimeOptions,
 ): PiGuardRuntime {
   const runtime = createPiGuardRuntime(options)
+  const hasExplicitScope =
+    options?.cwd !== undefined || options?.homeDir !== undefined || options?.env !== undefined
   const oauth = createPiOAuthLifecycle({
     fetch: options?.fetch ?? globalThis.fetch,
-    now: Date.now,
+    now: options?.now ?? Date.now,
     project: (projectOptions) =>
       resolveLoginProject({
         ...projectOptions,
@@ -101,6 +122,14 @@ export function registerAntigravityProvider(
   pi.on?.("session_start", async (_event, ctx) => {
     await runtime.refreshSession(ctx?.cwd)
   })
+  pi.on?.("session_shutdown", () => {
+    runtime.shutdown()
+  })
+
+  registerPiGuardCommands(pi, {
+    pool: runtime.getAccountPool(),
+    getConfig: () => runtime.getConfig(),
+  })
 
   pi.registerProvider(PROVIDER, {
     name: "Antigravity Guard",
@@ -110,29 +139,57 @@ export function registerAntigravityProvider(
     oauth: {
       name: "Antigravity Guard",
       isSubscription: true,
-      login: oauth.login,
+      async login(callbacks) {
+        const credentials = await oauth.login(callbacks)
+        // Persist newly logged-in accounts into the shared pool only when a session or explicit scope is active,
+        // keeping un-scoped unit tests hermetic with zero real host filesystem writes.
+        if (hasExplicitScope || runtime.getAccountPool().getManager() !== null) {
+          const extras = credentials as { projectId?: string; email?: string }
+          await runtime.getAccountPool().recordLoginAccount({
+            refreshToken: credentials.refresh,
+            access: credentials.access,
+            expires: credentials.expires,
+            projectId: extras.projectId,
+            email: extras.email,
+          })
+        }
+        return credentials
+      },
       refreshToken: oauth.refreshToken,
       getApiKey: oauth.getApiKey,
     },
     streamSimple(model, context, streamOptions) {
-      return streamText(model, context, streamOptions, runtime)
+      return streamText(model, context, streamOptions, runtime, options)
     },
   })
 
   return runtime
 }
 
-export function parseProviderApiKey(value: string): { token: string, projectId: string } {
+export function parseProviderApiKey(value: string): { token: string; projectId: string } {
   let parsed: unknown
   try {
-    parsed = JSON.parse(value) as unknown
+    parsed = JSON.parse(value)
   } catch {
     throw new Error(INVALID_CREDENTIALS)
   }
-  if (!isRecord(parsed) || Object.keys(parsed).length !== 2 || !nonempty(parsed.token) || !nonempty(parsed.projectId)) {
+  if (!isCredentialPayload(parsed)) {
     throw new Error(INVALID_CREDENTIALS)
   }
   return { token: parsed.token, projectId: parsed.projectId }
+}
+
+function normalizeProviderHeaders(
+  headers: SimpleStreamOptions["headers"],
+): Record<string, string> | undefined {
+  if (!headers) return undefined
+  const out: Record<string, string> = {}
+  for (const [key, value] of Object.entries(headers)) {
+    if (typeof value === "string") {
+      out[key] = value
+    }
+  }
+  return out
 }
 
 function streamText(
@@ -140,23 +197,92 @@ function streamText(
   context: Context,
   options: SimpleStreamOptions | undefined,
   runtime: PiGuardRuntime,
+  runtimeOptions?: PiGuardRuntimeOptions,
 ) {
   return createPiLifecycleStream({
     model,
-    now: Date.now,
+    now: runtimeOptions?.now ?? Date.now,
     signal: options?.signal,
-    runTransport: ({ onSemantic, signal }) => {
-      const credentials = parseProviderApiKey(options?.apiKey ?? "")
+    runTransport: async ({ onSemantic, signal }) => {
+      const fetchFn =
+        ((options as { fetch?: typeof globalThis.fetch })?.fetch ??
+          runtimeOptions?.fetch ??
+          globalThis.fetch)
       const guardConfig = runtime.getConfig()
+      const pool = runtime.getAccountPool()
+      const activeManager = pool.getManager()
+
+      if (activeManager && activeManager.getTotalAccountCount() > 0) {
+        const excludedRefreshTokens = new Set<string>()
+        let lastError: unknown
+        while (true) {
+          const selected = await pool.acquireCredentials({
+            modelId: model.id,
+            fetch: fetchFn,
+            signal,
+            excludeRefreshTokens: excludedRefreshTokens,
+          })
+          if (!selected) {
+            if (lastError) throw lastError
+            throw new Error("No available Antigravity Guard accounts in the shared pool.")
+          }
+          excludedRefreshTokens.add(selected.account.parts.refreshToken)
+
+          let emittedOutput = false
+          try {
+            await executeStreamTransport({
+              accessToken: selected.accessToken,
+              projectId: selected.projectId,
+              context,
+              fetch: fetchFn,
+              generationOptions: options,
+              headers: normalizeProviderHeaders(options?.headers),
+              model,
+              now: runtimeOptions?.now ?? Date.now,
+              onSemantic: async (semantic) => {
+                if (semantic.type !== "toolDiagnostics") {
+                  emittedOutput = true
+                }
+                await onSemantic(semantic)
+              },
+              platform: process.platform,
+              requestId: `agent-${crypto.randomUUID()}`,
+              requestJitterMaxMs: guardConfig.request_jitter_max_ms,
+              signal,
+              timeoutMs: options?.timeoutMs,
+              userAgent: selected.userAgent,
+            })
+            await pool.recordSuccess(selected.account)
+            return
+          } catch (error) {
+            lastError = error
+            if (emittedOutput || signal.aborted || !(error instanceof StreamTransportError)) {
+              throw error
+            }
+            const outcome = await pool.recordHttpFailure({
+              account: selected.account,
+              modelId: model.id,
+              status: error.status,
+              body: error.responseBody,
+              message: error.message,
+            })
+            if (!outcome.rotated) {
+              throw error
+            }
+          }
+        }
+      }
+
+      const credentials = parseProviderApiKey(options?.apiKey ?? "")
       return executeStreamTransport({
         accessToken: credentials.token,
         projectId: credentials.projectId,
         context,
-        fetch: options?.fetch ?? globalThis.fetch,
+        fetch: fetchFn,
         generationOptions: options,
-        headers: safeHeaders(options?.headers),
+        headers: normalizeProviderHeaders(options?.headers),
         model,
-        now: Date.now,
+        now: runtimeOptions?.now ?? Date.now,
         onSemantic,
         platform: process.platform,
         requestId: `agent-${crypto.randomUUID()}`,
@@ -169,15 +295,14 @@ function streamText(
   })
 }
 
-function safeHeaders(headers: SimpleStreamOptions["headers"]): Record<string, string> | undefined {
-  if (!headers) return undefined
-  return Object.fromEntries(Object.entries(headers).filter((entry): entry is [string, string] => entry[1] !== null))
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null
-}
-
-function nonempty(value: unknown): value is string {
-  return typeof value === "string" && value.trim().length > 0
+function isCredentialPayload(value: unknown): value is { token: string; projectId: string } {
+  if (!value || typeof value !== "object") return false
+  const candidate = value as Record<string, unknown>
+  return (
+    Object.keys(candidate).length === 2 &&
+    typeof candidate.token === "string" &&
+    candidate.token.trim().length > 0 &&
+    typeof candidate.projectId === "string" &&
+    candidate.projectId.trim().length > 0
+  )
 }

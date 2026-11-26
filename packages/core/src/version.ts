@@ -16,8 +16,9 @@ export interface AntigravityVersionState {
 export function createAntigravityVersionState(
   initialVersion = ANTIGRAVITY_VERSION_FALLBACK,
 ): AntigravityVersionState {
-  let current = isSupportedAntigravityVersion(initialVersion)
-    ? initialVersion.trim()
+  const trimmedInitial = initialVersion.trim()
+  let current = isSupportedAntigravityVersion(trimmedInitial)
+    ? trimmedInitial
     : ANTIGRAVITY_VERSION_FALLBACK
 
   return {

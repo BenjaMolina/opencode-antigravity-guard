@@ -45,7 +45,15 @@ type ToolDiagnosticSemantic = { type: "toolDiagnostics", details: ToolStreamDiag
 type StreamSemantic = ResponseSemantic | ToolDiagnosticSemantic
 
 export class StreamTransportError extends Error {
-  constructor(readonly kind: StreamErrorKind, message: string, readonly status?: number, readonly details?: ToolStreamDiagnostics) { super(message) }
+  constructor(
+    readonly kind: StreamErrorKind,
+    message: string,
+    readonly status?: number,
+    readonly details?: ToolStreamDiagnostics,
+    readonly responseBody?: string,
+  ) {
+    super(message)
+  }
 }
 
 export interface StreamTransportInput {
@@ -342,9 +350,20 @@ function requestHeaders(input: StreamTransportInput): Record<string, string> {
 
 async function applyRequestJitter(maxMs: number | undefined, signal: AbortSignal): Promise<void> {
   if (!maxMs || maxMs <= 0) return
+  if (signal.aborted) throw streamError("aborted", "Generation was cancelled.")
   const delayMs = Math.floor(Math.random() * maxMs)
   if (delayMs <= 0) return
-  await abortable(new Promise<void>((resolve) => { setTimeout(resolve, delayMs) }), signal)
+  await new Promise<void>((resolve, reject) => {
+    const onAbort = () => {
+      clearTimeout(timer)
+      reject(streamError("aborted", "Generation was cancelled."))
+    }
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort)
+      resolve()
+    }, delayMs)
+    signal.addEventListener("abort", onAbort, { once: true })
+  })
 }
 
 async function consume(body: ReadableStream<Uint8Array>, signal: AbortSignal, onSemantic: StreamTransportInput["onSemantic"], inactivityMs: number, policy: ToolResponsePolicy): Promise<void> {
@@ -373,11 +392,11 @@ async function deliver(callback: StreamTransportInput["onSemantic"], semantic: S
 
 async function httpError(response: Response, signal: AbortSignal): Promise<StreamTransportError> {
   const body = await boundedBody(response.body, signal)
-  if (response.status === 401) return streamError("access", "Authentication expired. Run /login antigravity-guard.", 401)
-  if (response.status === 403) return streamError("access", "Antigravity access was denied. Check your entitlement.", 403)
-  if (response.status === 404) return streamError("model", "The requested Antigravity model is unavailable.", 404)
-  if (response.status === 429 || body.includes("RESOURCE_EXHAUSTED")) return streamError("quota", "Antigravity quota or rate limit was reached.", response.status)
-  return streamError("response", "Antigravity generation request was rejected.", response.status)
+  if (response.status === 401) return streamError("access", "Authentication expired. Run /login antigravity-guard.", 401, undefined, body)
+  if (response.status === 403) return streamError("access", "Antigravity access was denied. Check your entitlement.", 403, undefined, body)
+  if (response.status === 404) return streamError("model", "The requested Antigravity model is unavailable.", 404, undefined, body)
+  if (response.status === 429 || body.includes("RESOURCE_EXHAUSTED")) return streamError("quota", "Antigravity quota or rate limit was reached.", response.status, undefined, body)
+  return streamError("response", "Antigravity generation request was rejected.", response.status, undefined, body)
 }
 
 async function boundedBody(body: ReadableStream<Uint8Array> | null, signal: AbortSignal): Promise<string> {
@@ -431,8 +450,14 @@ function isStreamErrorKind(value: unknown): value is StreamErrorKind {
   return value === "aborted" || value === "access" || value === "capability" || value === "model" || value === "quota" || value === "preflight" || value === "response" || value === "transport" || value === "callback"
 }
 
-function streamError(kind: StreamErrorKind, message: string, status?: number, details?: ToolStreamDiagnostics): StreamTransportError {
-  const error = new StreamTransportError(kind, message, status, details)
+function streamError(
+  kind: StreamErrorKind,
+  message: string,
+  status?: number,
+  details?: ToolStreamDiagnostics,
+  responseBody?: string,
+): StreamTransportError {
+  const error = new StreamTransportError(kind, message, status, details, responseBody)
   LOCAL_ERRORS.add(error)
   return error
 }

@@ -81,20 +81,44 @@ describe("Pi extension factory", () => {
       )
 
       const registerProvider = vi.fn()
+      let quotaReport = ""
+      const commands = new Map<string, { handler: (args: string, ctx?: { cwd?: string }) => Promise<void> }>()
       let startHandler: ((event: unknown, ctx?: { cwd?: string }) => Promise<void> | void) | undefined
-      const on = vi.fn((_event: string, handler: (event: unknown, ctx?: { cwd?: string }) => Promise<void> | void) => {
-        startHandler = handler
+      const on = vi.fn((event: string, handler: (event: unknown, ctx?: { cwd?: string }) => Promise<void> | void) => {
+        if (event === "session_start") startHandler = handler
       })
       const hubFetch = vi.fn<typeof globalThis.fetch>()
 
-      extension({ registerProvider, on } as never, {
-        fetch: hubFetch,
-        homeDir: scratch,
-        env: { PI_OFFLINE: "1" },
-      })
+      extension(
+        {
+          registerProvider,
+          on,
+          registerCommand: (name: string, spec: { handler: (args: string, ctx?: { cwd?: string }) => Promise<void> }) => {
+            commands.set(name, spec)
+          },
+          sendMessage: (msg: { content: string }) => {
+            quotaReport = msg.content
+          },
+        } as never,
+        {
+          fetch: hubFetch,
+          homeDir: scratch,
+          cwd: scratch,
+          env: { PI_OFFLINE: "1" },
+        },
+      )
 
       await startHandler?.({}, { cwd: scratch })
       expect(hubFetch).not.toHaveBeenCalled()
+      await commands.get("antigravity-quota")?.handler("", { cwd: scratch })
+      // Empty pool message until an account is added, then reflects loaded 88% soft threshold
+      writeFileSync(
+        join(piAgentDir, "antigravity-accounts.json"),
+        JSON.stringify({ version: 4, accounts: [{ email: "a@b.c", refreshToken: "r1", addedAt: 1, lastUsed: 1 }], activeIndex: 0 }),
+        "utf8",
+      )
+      await commands.get("antigravity-quota")?.handler("", { cwd: scratch })
+      expect(quotaReport).toContain("soft threshold: 88%")
     } finally {
       rmSync(scratch, { recursive: true, force: true })
     }
