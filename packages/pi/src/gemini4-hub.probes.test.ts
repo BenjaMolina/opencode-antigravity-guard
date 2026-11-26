@@ -6,7 +6,7 @@ import { ANTIGRAVITY_MODEL_ENUM } from "./envelope.ts"
 
 describe("S4 Pi Gemini 4 catalog, xhigh boundaries, envelope placeholders, and prompt sanitization probes", () => {
   it("supports xhigh + 262144 maxTokens on Neon/Hydrogen and rejects xhigh on Argon/Carbon/3.8-flash/3.5-flash-lite", () => {
-    expect(listCatalogEntries()).toHaveLength(12)
+    expect(listCatalogEntries()).toHaveLength(17)
     expect(resolveGenerationRoute(getCatalogEntry("antigravity-gemini-4-neon")!, "xhigh").wireModel).toBe(
       "gemini-4-neon-xhigh",
     )

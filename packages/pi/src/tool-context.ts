@@ -88,6 +88,7 @@ export interface ToolReplayPolicy {
   readonly isSameModel: (message: Record<string, unknown>) => boolean
   readonly toolCallSignature: (part: Record<string, unknown>, message: Record<string, unknown>, callIndex: number, contentIndex: number) => string | undefined
   readonly includeToolCallId?: boolean
+  readonly allowMultimodal?: boolean
 }
 
 export function replayToolHistory(messages: unknown[], serializePart: (part: Record<string, unknown>, message: Record<string, unknown>) => WirePart, onDiagnostics?: (diagnostics: ToolReplayDiagnostics) => void, policy?: ToolReplayPolicy, declaredToolCount = 0): WireContent[] {
@@ -136,30 +137,56 @@ export function replayToolHistory(messages: unknown[], serializePart: (part: Rec
       if (value(current, "toolName") !== call.name) history("PI_TOOL_RESULT_NAME_MISMATCH")
       if (value(current, "addedToolNames") !== undefined && dense(value(current, "addedToolNames")).length) history("PI_TOOL_CALL_INVALID")
       const textParts: string[] = []
-      const imageParts: WirePart[] = []
+      const mediaParts: Array<{ inlineData: { mimeType: string, data: string } }> = []
       for (const item of dense(value(current, "content"))) {
         const part = record(item)
-        if (value(part, "type") === "text" && typeof value(part, "text") === "string") {
+        const partType = value(part, "type")
+        if (partType === "text" && typeof value(part, "text") === "string") {
           textParts.push(value(part, "text") as string)
-        } else if (value(part, "type") === "image") {
-          const rawData = value(part, "data") ?? (isRecord(value(part, "source")) ? value(record(value(part, "source")), "data") : undefined)
-          if (typeof rawData === "string" && rawData) {
-            const rawMime = value(part, "mimeType") ?? (isRecord(value(part, "source")) ? value(record(value(part, "source")), "media_type") : undefined)
-            const mimeType = typeof rawMime === "string" && rawMime ? rawMime : "image/jpeg"
-            const cleanedData = rawData.replace(/^data:[^;]+;base64,/s, "").trim()
-            imageParts.push({ inlineData: { mimeType, data: cleanedData } })
+        } else if (partType === "image" || partType === "document" || partType === "file") {
+          if (policy?.allowMultimodal === false) {
+            history("PI_TOOL_RESULT_MEDIA_UNSUPPORTED")
           }
+          const source = isRecord(value(part, "source")) ? record(value(part, "source")) : undefined
+          const rawData = value(part, "data") ?? (source ? value(source, "data") : undefined)
+          if (typeof rawData !== "string" || !rawData) {
+            history("PI_TOOL_RESULT_MEDIA_UNSUPPORTED")
+          }
+          const dataUriMatch = /^data:([^;,]+);base64,/is.exec(rawData)
+          const rawMime = value(part, "mimeType") ?? (source ? value(source, "media_type") ?? value(source, "mimeType") : undefined) ?? dataUriMatch?.[1]
+          const defaultMime = partType === "image" ? "image/jpeg" : "application/pdf"
+          const mimeType = typeof rawMime === "string" && rawMime.trim() ? rawMime.trim() : defaultMime
+          const lowerMime = mimeType.toLowerCase()
+          const isPdf = lowerMime === "application/pdf"
+          const isImage = lowerMime.startsWith("image/")
+          if (!isPdf && !isImage) {
+            history("PI_TOOL_RESULT_MEDIA_UNSUPPORTED")
+          }
+          if ((partType === "document" || partType === "file") && !isPdf) {
+            history("PI_TOOL_RESULT_MEDIA_UNSUPPORTED")
+          }
+          const cleanedData = rawData.replace(/^data:[^;]+;base64,/is, "").replace(/\s+/g, "")
+          if (!cleanedData || cleanedData.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(cleanedData)) {
+            history("PI_TOOL_RESULT_MEDIA_UNSUPPORTED")
+          }
+          mediaParts.push({ inlineData: { mimeType, data: cleanedData } })
         } else {
           history("PI_TOOL_RESULT_MEDIA_UNSUPPORTED")
         }
       }
       const text = textParts.join("\n\n")
-      const outputText = text || (imageParts.length > 0 ? "[Image content]" : "")
+      const fallbackMediaLabel =
+        mediaParts.length > 0
+          ? mediaParts.every((p) => p.inlineData.mimeType.toLowerCase() === "application/pdf")
+            ? "[PDF content]"
+            : "[Image content]"
+          : ""
+      const outputText = text || fallbackMediaLabel
       const response = value(current, "isError") === true ? { error: outputText } : { output: outputText }
       pending.results.set(id, pending.observations ? observation(call, outputText) : { functionResponse: { ...(policy?.includeToolCallId ? { id: sanitizeToolCallId(call.id, call.name) } : {}), name: call.name, response } })
-      if (imageParts.length > 0) {
+      if (mediaParts.length > 0) {
         if (!pending.extraParts) pending.extraParts = []
-        pending.extraParts.push(...imageParts)
+        pending.extraParts.push(...mediaParts)
       }
       results.add(id)
       continue

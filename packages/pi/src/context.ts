@@ -46,7 +46,10 @@ export interface GenerationRequest {
   request: {
     contents: Content[]
     systemInstruction?: { role?: "user", parts: Part[] }
-    tools?: { functionDeclarations: readonly GeminiFunctionDeclaration[] }[]
+    tools?: Array<{
+      functionDeclarations: readonly GeminiFunctionDeclaration[]
+      googleSearch?: Record<string, never>
+    }>
     toolConfig?: { functionCallingConfig: { mode: "AUTO" | "NONE" } }
     generationConfig: {
       temperature: number
@@ -200,7 +203,8 @@ export function serializeContext(input: SerializeTextContextInput, injectedSelec
   const sameModel = (message: Record<string, unknown>) => field(message, "role") === "assistant" && entry.replay.kind === "same-public-model" && isSameProviderAndModel(message, entry.publicId)
   const requireSigned = geminiRequiresSignedToolReplay(selection.route.wireModel)
   const includeToolCallId = entry.response.family === "claude" || entry.response.family === "gpt-oss"
-  const toolReplayPolicy = (requireSigned || includeToolCallId) ? {
+  const allowMultimodal = entry.response.family === "gemini" || entry.response.family === "claude"
+  const toolReplayPolicy = (requireSigned || includeToolCallId || !allowMultimodal) ? {
     requireSignedToolCalls: requireSigned,
     isSameModel: sameModel,
     toolCallSignature: (part: Record<string, unknown>, message: Record<string, unknown>, callIndex: number, contentIndex: number) => {
@@ -215,15 +219,17 @@ export function serializeContext(input: SerializeTextContextInput, injectedSelec
       return restore.allowSentinelFallback ? SKIP_THOUGHT_SIGNATURE : undefined
     },
     includeToolCallId,
+    allowMultimodal,
   } : undefined
   const contents = replayToolHistory(
     normalized.messages,
-    (part, message) => messagePart(part, field(message, "role") === "assistant", sameModel(message), restore),
+    (part, message) => messagePart(part, field(message, "role") === "assistant", sameModel(message), restore, allowMultimodal),
     onDiagnostics,
     toolReplayPolicy,
     prepared?.declarations.length ?? 0,
   )
   const { systemInstruction, generationConfig } = text.request
+  const sonarGrounding = !prepared && shouldInjectSonarGoogleSearch(selection.route.wireModel, options)
   const envelope = buildAntigravityEnvelope({
     wireModelId: selection.route.wireModel,
     family: entry.response.family,
@@ -247,6 +253,8 @@ export function serializeContext(input: SerializeTextContextInput, injectedSelec
         : (entry.response.family === "claude" || entry.response.family === "gpt-oss"
           ? { toolConfig: { functionCallingConfig: { mode: "AUTO" } } }
           : {})),
+    } : sonarGrounding ? {
+      tools: [{ googleSearch: {} } as unknown as { functionDeclarations: readonly GeminiFunctionDeclaration[], googleSearch?: Record<string, never> }],
     } : {}),
     generationConfig,
     sessionId: envelope.sessionId,
@@ -283,6 +291,7 @@ export function serializeTextContext(input: SerializeTextContextInput): Generati
       family: entry.response.family,
     })
     let textBytes = byteLength(systemPrompt ?? "")
+    const allowMultimodal = entry.response.family === "gemini" || entry.response.family === "claude"
     const contents: Content[] = []
     for (const message of normalized.messages) {
       if (!isRecord(message)) fail("Invalid text context.")
@@ -290,7 +299,7 @@ export function serializeTextContext(input: SerializeTextContextInput): Generati
       if (role === "toolResult") fail("Tool history is not supported by this text-only provider.")
       if (role !== "user" && role !== "assistant") fail("Unsupported context role for this text-only provider.")
       const assistant = role === "assistant"
-      const parts = messageParts(field(message, "content", true), assistant, assistant && entry.replay.kind === "same-public-model" && isSameProviderAndModel(message, entry.publicId), restore)
+      const parts = messageParts(field(message, "content", true), assistant, assistant && entry.replay.kind === "same-public-model" && isSameProviderAndModel(message, entry.publicId), restore, allowMultimodal)
       textBytes += parts.reduce((total, part) => total + (part.text ? byteLength(part.text) : (part.inlineData ? byteLength(part.inlineData.data) : 0)), 0)
       if (textBytes > MAX_TEXT_BYTES) fail("Text context is too large.")
       contents.push({ role: role === "assistant" ? "model" : "user", parts })
@@ -299,6 +308,7 @@ export function serializeTextContext(input: SerializeTextContextInput): Generati
     const systemInstruction = systemPrompt === undefined ? undefined : { role: "user" as const, parts: [{ text: systemPrompt }] }
     const temperature = option(options, "temperature")
     const maxTokens = option(options, "maxTokens")
+    const sonarGrounding = shouldInjectSonarGoogleSearch(route.wireModel, options)
     const envelope = buildAntigravityEnvelope({
       wireModelId: route.wireModel,
       family: entry.response.family,
@@ -306,7 +316,7 @@ export function serializeTextContext(input: SerializeTextContextInput): Generati
       messages: normalized.messages,
       injectedRequestId: requestId,
     })
-    return { project, model: route.wireModel, request: { contents, ...(systemInstruction ? { systemInstruction } : {}), generationConfig: {
+    return { project, model: route.wireModel, request: { contents, ...(systemInstruction ? { systemInstruction } : {}), ...(sonarGrounding ? { tools: [{ googleSearch: {} } as unknown as { functionDeclarations: readonly GeminiFunctionDeclaration[], googleSearch?: Record<string, never> }] } : {}), generationConfig: {
       temperature: typeof temperature === "number" ? temperature : 1,
       maxOutputTokens: resolveOutputTokens(maxTokens, entry.descriptor.maxTokens, route.thinking),
       ...(() => {
@@ -421,14 +431,37 @@ function isToolBearingNormalizedContext(context: NormalizedContextRecord): boole
   return false
 }
 
-function messageParts(content: unknown, assistant: boolean, sameProviderAndModel: boolean, restore?: SignatureRestoreState): Part[] {
+function messageParts(content: unknown, assistant: boolean, sameProviderAndModel: boolean, restore?: SignatureRestoreState, allowMultimodal = true): Part[] {
   if (typeof content === "string") return content ? [{ text: content }] : fail("A text conversation is required.")
   const parts = isDenseArray(content)
   if (!parts.length) fail("A text conversation is required.")
-  return parts.map((part) => messagePart(isRecord(part) ? part : fail("Only text context is supported by this provider."), assistant, sameProviderAndModel, restore))
+  return parts.map((part) => messagePart(isRecord(part) ? part : fail("Only text context is supported by this provider."), assistant, sameProviderAndModel, restore, allowMultimodal))
 }
 
-function messagePart(part: Record<string, unknown>, assistant: boolean, sameProviderAndModel: boolean, restore?: SignatureRestoreState): Part {
+function isSupportedInlineMimeType(mimeType: string): boolean {
+  const lower = mimeType.trim().toLowerCase()
+  return lower === "application/pdf" || lower.startsWith("image/")
+}
+
+function extractInlineMediaPart(part: Record<string, unknown>, type: "image" | "document" | "file", allowMultimodal: boolean): Part {
+  if (!allowMultimodal) fail("Only text context is supported by this provider.")
+  const source = isRecord(field(part, "source")) ? (field(part, "source") as Record<string, unknown>) : undefined
+  const rawData = field(part, "data") ?? (source ? field(source, "data") : undefined)
+  if (typeof rawData !== "string" || !rawData) fail(type === "image" ? "Invalid image data." : "Invalid document data.")
+  const dataUriMatch = /^data:([^;,]+);base64,/is.exec(rawData)
+  const rawMime = field(part, "mimeType") ?? (source ? field(source, "media_type") ?? field(source, "mimeType") : undefined) ?? dataUriMatch?.[1]
+  const defaultMime = type === "image" ? "image/jpeg" : "application/pdf"
+  const mimeType = typeof rawMime === "string" && rawMime.trim() ? rawMime.trim() : defaultMime
+  if (!isSupportedInlineMimeType(mimeType)) fail("Unsupported media type.")
+  if ((type === "document" || type === "file") && mimeType.toLowerCase() !== "application/pdf") fail("Unsupported document media type.")
+  const cleanedData = rawData.replace(/^data:[^;]+;base64,/is, "").replace(/\s+/g, "")
+  if (!cleanedData || cleanedData.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(cleanedData)) {
+    fail(type === "image" ? "Invalid image data." : "Invalid document data.")
+  }
+  return { inlineData: { mimeType, data: cleanedData } }
+}
+
+function messagePart(part: Record<string, unknown>, assistant: boolean, sameProviderAndModel: boolean, restore?: SignatureRestoreState, allowMultimodal = true): Part {
   const type = field(part, "type", true)
   if (type === "text") {
     const text = field(part, "text", true)
@@ -443,8 +476,11 @@ function messagePart(part: Record<string, unknown>, assistant: boolean, sameProv
     const rawThinkingSig = field(part, "thinkingSignature")
     const explicitSig = validThoughtSignature(rawThinkingSig, restore?.allowSentinelFallback === true)
     let thoughtSignature: string | undefined
-    if (restore && restore.family === "claude" && text.length > 0) {
-      const cachedSig = restore.hasCache ? restoreCachedSignature(restore.getSignature(text)) : undefined
+    if (restore && restore.family === "claude") {
+      const cachedSig =
+        text.length > 0 && restore.hasCache
+          ? restoreCachedSignature(restore.getSignature(text))
+          : undefined
       if (explicitSig === SKIP_THOUGHT_SIGNATURE) {
         thoughtSignature = SKIP_THOUGHT_SIGNATURE
       } else if (rawThinkingSig !== undefined && !explicitSig) {
@@ -473,15 +509,17 @@ function messagePart(part: Record<string, unknown>, assistant: boolean, sameProv
     if (typeof text !== "string" || !text) fail("Only text context is supported by this provider.")
     return { text }
   }
-  if (type === "image") {
-    const rawData = field(part, "data") ?? (isRecord(field(part, "source")) ? field(field(part, "source") as Record<string, unknown>, "data") : undefined)
-    if (typeof rawData !== "string" || !rawData) fail("Invalid image data.")
-    const rawMime = field(part, "mimeType") ?? (isRecord(field(part, "source")) ? field(field(part, "source") as Record<string, unknown>, "media_type") : undefined)
-    const mimeType = typeof rawMime === "string" && rawMime ? rawMime : "image/jpeg"
-    const cleanedData = rawData.replace(/^data:[^;]+;base64,/s, "").trim()
-    return { inlineData: { mimeType, data: cleanedData } }
+  if (type === "image" || type === "document" || type === "file") {
+    if (assistant) fail("Only text context is supported by this provider.")
+    return extractInlineMediaPart(part, type, allowMultimodal)
   }
   fail("Only text context is supported by this provider.")
+}
+
+function shouldInjectSonarGoogleSearch(wireModel: string, options: unknown): boolean {
+  if (!wireModel.toLowerCase().endsWith("-sonar")) return false
+  if (isRecord(options) && option(options, "toolChoice") === "none") return false
+  return true
 }
 
 function isSameProviderAndModel(message: Record<string, unknown>, publicId: string): boolean {
