@@ -934,13 +934,17 @@ export class AccountManager {
 
     const waitTimes: number[] = []
     for (const a of this.accounts) {
+      if (a.enabled === false) continue
       if (family === "claude") {
         const t = a.rateLimitResetTimes.claude
         if (t !== undefined) waitTimes.push(Math.max(0, t - now))
       } else if (strict && headerStyle) {
-        const key = getQuotaKey(family, headerStyle, model)
-        const t = a.rateLimitResetTimes[key]
-        if (t !== undefined) waitTimes.push(Math.max(0, t - now))
+        const modelKey = model ? getQuotaKey(family, headerStyle, model) : undefined
+        const baseKey = getQuotaKey(family, headerStyle)
+        const tModel = modelKey ? a.rateLimitResetTimes[modelKey] : undefined
+        const tBase = a.rateLimitResetTimes[baseKey]
+        const effectiveReset = Math.max(tModel ?? 0, tBase ?? 0)
+        if (effectiveReset > 0) waitTimes.push(Math.max(0, effectiveReset - now))
       } else {
         const antigravityKey = getQuotaKey(family, "antigravity", model)
         const cliKey = getQuotaKey(family, "gemini-cli", model)

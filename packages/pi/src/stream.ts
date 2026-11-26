@@ -594,6 +594,7 @@ export type PoolUnavailableErrorDescriptor =
       family: "claude" | "gemini"
       waitMs: number
     }
+  | { reason: "pool-unavailable"; accountCount: number; waitMs?: number | null }
   | { reason: "no-enabled-accounts" }
   | { reason: "no-accounts" }
 
@@ -636,6 +637,18 @@ export function createPoolUnavailableError(
       "access",
       "No enabled Antigravity Guard accounts in the shared pool. Run /antigravity-accounts or /login antigravity-guard.",
       401,
+    )
+  }
+  if (descriptor.reason === "pool-unavailable") {
+    const safeCount = Math.max(0, Math.trunc(descriptor.accountCount))
+    const suffix =
+      typeof descriptor.waitMs === "number" && Number.isFinite(descriptor.waitMs) && descriptor.waitMs > 0
+        ? ` Retry in ${formatWaitTime(descriptor.waitMs)}.`
+        : ""
+    return streamError(
+      "transport",
+      `No available Antigravity Guard accounts across ${safeCount} enabled account(s) in the shared pool.${suffix} Run /antigravity-accounts for status.`,
+      503,
     )
   }
   return streamError(

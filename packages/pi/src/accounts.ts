@@ -24,10 +24,12 @@ import {
   formatRefreshParts,
   formatWaitTime,
   generateFingerprint,
+  getQuotaKey,
   headerStyleToQuotaKey,
   loadAccountsFromPath,
   parseRateLimitReason,
   parseRefreshParts,
+  resolveQuotaGroup,
   resolveSharedGuardPaths,
   retryAfterMsFromHeaders,
   saveAccountsReplaceToPath,
@@ -778,63 +780,94 @@ export function createPiAccountPool(options: PiAccountPoolOptions): PiAccountPoo
 
       const cfg = options.getConfig()
       const family = resolvePiModelFamily(input.modelId)
+      const threshold = cfg.soft_quota_threshold_percent
       const cacheTtlMs = computeSoftQuotaCacheTtlMs(
         cfg.soft_quota_cache_ttl_minutes,
         cfg.quota_refresh_interval_minutes,
       )
+      const maxWaitMs = (cfg.max_rate_limit_wait_seconds ?? 300) * 1_000
+      const now = nowFn()
+      const enabledAccounts = manager.getEnabledAccounts()
+      const quotaGroup = resolveQuotaGroup(family, input.modelId)
 
-      if (
-        manager.areAllAccountsOverSoftQuota(
-          family,
-          cfg.soft_quota_threshold_percent,
-          cacheTtlMs,
-          input.modelId,
-        )
-      ) {
-        const threshold = cfg.soft_quota_threshold_percent
-        const softQuotaWaitMs = manager.getMinWaitTimeForSoftQuota(
-          family,
-          threshold,
-          cacheTtlMs,
-          input.modelId,
-        )
-        const maxWaitMs = (cfg.max_rate_limit_wait_seconds ?? 300) * 1_000
+      let softBlockedCount = 0
+      let rateLimitedCount = 0
+      let bestCandidate: { waitMs: number; kind: "soft-quota" | "rate-limit" } | null = null
+      let minAnyWaitMs = Infinity
 
-        if (
-          !input.alreadyWaitedForSoftQuota &&
-          !isOffline() &&
-          softQuotaWaitMs !== null &&
-          softQuotaWaitMs > 0 &&
-          (maxWaitMs === 0 || softQuotaWaitMs <= maxWaitMs)
-        ) {
-          return { action: "wait-and-retry", waitMs: softQuotaWaitMs, kind: "soft-quota" }
+      for (const acc of enabledAccounts) {
+        const overSoft = manager.isAccountOverSoftQuota(acc, family, threshold, cacheTtlMs, input.modelId)
+        const rateLimited = manager.isRateLimitedForHeaderStyle(acc, family, "antigravity", input.modelId)
+        const coolingDown = manager.isAccountCoolingDown(acc)
+        if (overSoft) softBlockedCount += 1
+        if (rateLimited) rateLimitedCount += 1
+
+        let softWait = 0
+        if (overSoft) {
+          const resetIso = acc.cachedQuota?.[quotaGroup]?.resetTime
+          const parsed = resetIso ? Date.parse(resetIso) : NaN
+          softWait = Number.isFinite(parsed) && parsed > now ? parsed - now : Infinity
         }
 
+        let rlWait = 0
+        if (rateLimited) {
+          if (family === "claude") {
+            const t = acc.rateLimitResetTimes.claude
+            rlWait = t !== undefined && t > now ? t - now : 0
+          } else {
+            const mKey = getQuotaKey(family, "antigravity", input.modelId)
+            const bKey = getQuotaKey(family, "antigravity")
+            const t = Math.max(acc.rateLimitResetTimes[mKey] ?? 0, acc.rateLimitResetTimes[bKey] ?? 0)
+            rlWait = t > now ? t - now : 0
+          }
+        }
+
+        const cdWait =
+          coolingDown && acc.coolingDownUntil !== undefined && acc.coolingDownUntil > now
+            ? acc.coolingDownUntil - now
+            : 0
+        const accWait = Math.max(softWait, rlWait, cdWait)
+        if (accWait <= 0 || !Number.isFinite(accWait)) continue
+
+        if (accWait < minAnyWaitMs) minAnyWaitMs = accWait
+        const kind: "soft-quota" | "rate-limit" =
+          softWait > 0 && softWait >= rlWait && softWait >= cdWait ? "soft-quota" : "rate-limit"
+        const alreadyWaited =
+          kind === "soft-quota" ? input.alreadyWaitedForSoftQuota : input.alreadyWaitedForRateLimit
+        if (!alreadyWaited && (!bestCandidate || accWait < bestCandidate.waitMs)) {
+          bestCandidate = { waitMs: accWait, kind }
+        }
+      }
+
+      if (
+        bestCandidate &&
+        !isOffline() &&
+        (maxWaitMs === 0 || bestCandidate.waitMs <= maxWaitMs)
+      ) {
+        return { action: "wait-and-retry", waitMs: bestCandidate.waitMs, kind: bestCandidate.kind }
+      }
+
+      if (softBlockedCount === enabledCount) {
+        const softQuotaWaitMs = manager.getMinWaitTimeForSoftQuota(family, threshold, cacheTtlMs, input.modelId)
         if (
           !isOffline() &&
           !stopped &&
           manager.shouldRefreshAllQuotas(family, threshold, cacheTtlMs, input.modelId)
         ) {
-          const now = nowFn()
-          const hasUnattemptedRecently = manager
-            .getEnabledAccounts()
-            .some((acc) => {
-              const prev = lastQuotaAttemptAtByToken.get(acc.parts.refreshToken)
-              return prev === undefined || now - prev >= DEFAULT_POOL_QUOTA_REFRESH_COOLDOWN_MS
-            })
+          const hasUnattemptedRecently = enabledAccounts.some((acc) => {
+            const prev = lastQuotaAttemptAtByToken.get(acc.parts.refreshToken)
+            return prev === undefined || now - prev >= DEFAULT_POOL_QUOTA_REFRESH_COOLDOWN_MS
+          })
           if (hasUnattemptedRecently) {
             const activeRef = manager
             void poolQuotaCoordinator
               .triggerForAll(activeRef, (accs) => runQuotaCheck(accs, input.fetch))
               .then(async () => {
-                if (!stopped && manager === activeRef) {
-                  await activeRef.saveToDisk()
-                }
+                if (!stopped && manager === activeRef) await activeRef.saveToDisk()
               })
               .catch(() => undefined)
           }
         }
-
         return toUnavailableError({
           reason: "soft-quota",
           accountCount: enabledCount,
@@ -844,38 +877,20 @@ export function createPiAccountPool(options: PiAccountPoolOptions): PiAccountPoo
         })
       }
 
-      const rateLimitWaitMs = manager.getMinWaitTimeForFamily(
-        family,
-        input.modelId,
-        "antigravity",
-        true,
-      )
-      if (rateLimitWaitMs > 0) {
-        const maxWaitMs = (cfg.max_rate_limit_wait_seconds ?? 300) * 1_000
-        if (
-          !input.alreadyWaitedForRateLimit &&
-          !isOffline() &&
-          (maxWaitMs === 0 || rateLimitWaitMs <= maxWaitMs)
-        ) {
-          return {
-            action: "wait-and-retry",
-            waitMs: rateLimitWaitMs,
-            kind: "rate-limit",
-          }
-        }
+      const fallbackWaitMs = Number.isFinite(minAnyWaitMs) ? minAnyWaitMs : 0
+      if (rateLimitedCount > 0 || softBlockedCount > 0) {
         return toUnavailableError({
           reason: "rate-limited",
           accountCount: enabledCount,
           family,
-          waitMs: rateLimitWaitMs,
+          waitMs: fallbackWaitMs,
         })
       }
 
       return toUnavailableError({
-        reason: "rate-limited",
+        reason: "pool-unavailable",
         accountCount: enabledCount,
-        family,
-        waitMs: 0,
+        waitMs: fallbackWaitMs > 0 ? fallbackWaitMs : null,
       })
     },
     async acquireCredentials(input): Promise<SelectedPoolCredentials | null> {

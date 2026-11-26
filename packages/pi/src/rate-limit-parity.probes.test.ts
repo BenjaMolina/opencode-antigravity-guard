@@ -295,4 +295,53 @@ describe("Phase 3 Pi rate-limit backoff & transient capacity parity probes (S3, 
       rmSync(scratch, { recursive: true, force: true })
     }
   })
+
+  it("R3-1/R4-1: waits on shortest recovery window for mixed soft-quota/rate-limit/cooldown pools and avoids false 429 quota message on cooldown-only pools", async () => {
+    const scratch = mkdtempSync(join(os.tmpdir(), "pi-p3-mixed-pool-"))
+    try {
+      const home = join(scratch, "home")
+      const cwd = join(scratch, "cwd")
+      const piDir = join(home, ".pi", "agent")
+      mkdirSync(piDir, { recursive: true })
+      mkdirSync(cwd, { recursive: true })
+      const nowMs = 1_700_000_000_000
+      const longSoftIso = new Date(nowMs + 45 * 60_000).toISOString()
+      writeFileSync(
+        join(piDir, "antigravity-accounts.json"),
+        JSON.stringify({
+          version: 4,
+          accounts: [
+            { email: "soft@x.com", refreshToken: "rt-s", projectId: "p1", addedAt: 1, lastUsed: 1, cachedQuota: { "gemini-pro": { remainingFraction: 0.1, resetTime: longSoftIso, modelCount: 1 } }, cachedQuotaUpdatedAt: nowMs - 10_000 },
+            { email: "rl@x.com", refreshToken: "rt-r", projectId: "p2", addedAt: 2, lastUsed: 2, rateLimitResetTimes: { "gemini-antigravity": nowMs + 4_000 } },
+            { email: "dis@x.com", refreshToken: "rt-d", projectId: "p3", addedAt: 3, lastUsed: 3, enabled: false, rateLimitResetTimes: { "gemini-antigravity": nowMs + 1_000 } },
+          ],
+          activeIndex: 0,
+        }),
+        "utf8",
+      )
+      const pool = createPiAccountPool({
+        homeDir: home, cwd, env: {}, now: () => nowMs, getVersion: () => "2.38.0",
+        getConfig: () => ({ ...DEFAULT_SHARED_GUARD_CONFIG, proactive_token_refresh: false, soft_quota_threshold_percent: 70, max_rate_limit_wait_seconds: 10 }),
+      })
+      await pool.loadOrRefresh(cwd)
+      const ask = () => pool.resolvePoolUnavailableOutcome({ modelId: "antigravity-gemini-4-carbon", fetch: globalThis.fetch, signal: new AbortController().signal })
+
+      expect(await ask()).toEqual({ action: "wait-and-retry", waitMs: 4_000, kind: "rate-limit" })
+
+      const mgr = pool.getManager()!
+      mgr.updateQuotaCache("rt-s", { "gemini-pro": { remainingFraction: 0.1, resetTime: new Date(nowMs + 3_000).toISOString(), modelCount: 1 } })
+      mgr.markRateLimited(mgr.getAccounts()[1]!, 120_000, "gemini", "antigravity", "antigravity-gemini-4-carbon")
+      expect(await ask()).toEqual({ action: "wait-and-retry", waitMs: 3_000, kind: "soft-quota" })
+
+      mgr.setAccountEnabled(0, false)
+      delete mgr.getAccounts()[1]!.rateLimitResetTimes["gemini-antigravity"]
+      delete mgr.getAccounts()[1]!.rateLimitResetTimes["gemini-antigravity:antigravity-gemini-4-carbon"]
+      mgr.markAccountCoolingDown(mgr.getAccounts()[1]!, 60_000, "project-error")
+      const cooldownRes = await ask()
+      expect(cooldownRes).toMatchObject({ action: "error", error: { status: 503 } })
+      if (cooldownRes.action === "error") expect(cooldownRes.error.message).not.toContain("rate-limited")
+    } finally {
+      rmSync(scratch, { recursive: true, force: true })
+    }
+  })
 })
