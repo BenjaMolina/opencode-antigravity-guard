@@ -6,9 +6,9 @@ import {
   ANTIGRAVITY_OAUTH_CLIENT,
   ANTIGRAVITY_VERSION_FALLBACK as CORE_ANTIGRAVITY_VERSION_FALLBACK,
   buildAntigravityHeaders,
+  createAntigravityVersionState,
   formatAntigravityHubUserAgent,
   GEMINI_CLI_HEADERS as CORE_GEMINI_CLI_HEADERS,
-  isSupportedAntigravityVersion,
 } from "@benjamolina/antigravity-guard-core";
 
 /**
@@ -81,18 +81,18 @@ export const ANTIGRAVITY_MIN_VERSION = CORE_ANTIGRAVITY_MIN_VERSION;
 export const ANTIGRAVITY_HUB_MANIFEST_URL = CORE_ANTIGRAVITY_HUB_MANIFEST_URL;
 export const ANTIGRAVITY_HUB_PLATFORM = CORE_ANTIGRAVITY_HUB_PLATFORM;
 export const ANTIGRAVITY_VERSION_FALLBACK = CORE_ANTIGRAVITY_VERSION_FALLBACK;
-let antigravityVersion = ANTIGRAVITY_VERSION_FALLBACK;
+const antigravityVersionState = createAntigravityVersionState(ANTIGRAVITY_VERSION_FALLBACK);
 
-export function getAntigravityVersion(): string { return antigravityVersion; }
+export function getAntigravityVersion(): string {
+  return antigravityVersionState.getVersion();
+}
 
 /**
  * Set the runtime Antigravity version when it meets the supported Hub floor (>= 2.9.1).
  * Unsupported or malformed versions are ignored; later valid Hub updates overwrite the fallback.
  */
 export function setAntigravityVersion(version: string): void {
-  const trimmed = version.trim();
-  if (!isSupportedAntigravityVersion(trimmed)) return;
-  antigravityVersion = trimmed;
+  antigravityVersionState.setVersion(version);
 }
 
 /** @deprecated Use getAntigravityVersion() for runtime access. */

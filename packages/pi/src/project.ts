@@ -19,6 +19,7 @@ export interface LoginProjectOptions {
   platform: string
   signal?: AbortSignal
   deadlineMs?: number
+  userAgent?: string
 }
 
 export interface LoginProject {
@@ -56,7 +57,7 @@ async function discoveredProject(options: LoginProjectOptions): Promise<string |
     headers: {
       Authorization: `Bearer ${options.accessToken}`,
       "Content-Type": "application/json",
-      "User-Agent": ANTIGRAVITY_USER_AGENT,
+      "User-Agent": options.userAgent ?? ANTIGRAVITY_USER_AGENT,
     },
     body: JSON.stringify({ metadata: { ideType: "ANTIGRAVITY" } }),
   }
