@@ -8,6 +8,9 @@ import {
   ANTIGRAVITY_MIN_VERSION as CORE_ANTIGRAVITY_MIN_VERSION,
   ANTIGRAVITY_OAUTH_CLIENT,
   ANTIGRAVITY_VERSION_FALLBACK as CORE_ANTIGRAVITY_VERSION_FALLBACK,
+  EMPTY_SCHEMA_PLACEHOLDER_DESCRIPTION as CORE_EMPTY_SCHEMA_PLACEHOLDER_DESCRIPTION,
+  EMPTY_SCHEMA_PLACEHOLDER_NAME as CORE_EMPTY_SCHEMA_PLACEHOLDER_NAME,
+  SKIP_THOUGHT_SIGNATURE as CORE_SKIP_THOUGHT_SIGNATURE,
   buildAntigravityHeaders,
   createAntigravityVersionState,
   formatAntigravityHubUserAgent,
@@ -183,8 +186,8 @@ If you are unsure about a tool's parameters, YOU MUST read the schema definition
  */
 export const CLAUDE_DESCRIPTION_PROMPT = "\n\n⚠️ STRICT PARAMETERS: {params}.";
 
-export const EMPTY_SCHEMA_PLACEHOLDER_NAME = "_placeholder";
-export const EMPTY_SCHEMA_PLACEHOLDER_DESCRIPTION = "Placeholder. Always pass true.";
+export const EMPTY_SCHEMA_PLACEHOLDER_NAME = CORE_EMPTY_SCHEMA_PLACEHOLDER_NAME;
+export const EMPTY_SCHEMA_PLACEHOLDER_DESCRIPTION = CORE_EMPTY_SCHEMA_PLACEHOLDER_DESCRIPTION;
 
 /**
  * Sentinel value to bypass thought signature validation.
@@ -199,7 +202,7 @@ export const EMPTY_SCHEMA_PLACEHOLDER_DESCRIPTION = "Placeholder. Always pass tr
  * 
  * @see https://ai.google.dev/gemini-api/docs/thought-signatures
  */
-export const SKIP_THOUGHT_SIGNATURE = "skip_thought_signature_validator";
+export const SKIP_THOUGHT_SIGNATURE = CORE_SKIP_THOUGHT_SIGNATURE;
 
 // ============================================================================
 // ANTIGRAVITY SYSTEM INSTRUCTION (Ported from CLIProxyAPI v6.6.89)

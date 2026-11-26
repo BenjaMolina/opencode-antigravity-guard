@@ -93,3 +93,8 @@ export const GEMINI_CLI_HEADERS = Object.freeze({
   "X-Goog-Api-Client": "gl-node/22.17.0",
   "Client-Metadata": "ideType=IDE_UNSPECIFIED,platform=PLATFORM_UNSPECIFIED,pluginType=GEMINI",
 })
+
+export const EMPTY_SCHEMA_PLACEHOLDER_NAME = "_placeholder"
+export const EMPTY_SCHEMA_PLACEHOLDER_DESCRIPTION = "Placeholder. Always pass true."
+export const SKIP_THOUGHT_SIGNATURE = "skip_thought_signature_validator"
+export const MIN_THOUGHT_SIGNATURE_LENGTH = 50
