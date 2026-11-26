@@ -2,7 +2,10 @@ import type { Api, Context, Model, SimpleStreamOptions } from "@earendil-works/p
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
 import {
   ANTIGRAVITY_ENDPOINTS,
+  ANTIGRAVITY_ENDPOINT_FALLBACKS,
   DEFAULT_SHARED_GUARD_CONFIG,
+  MAX_CAPACITY_RETRIES_PER_ENDPOINT,
+  abortableSleep,
   createAntigravityVersionState,
   createSessionFingerprintStore,
   fetchAntigravityHubVersion,
@@ -11,12 +14,21 @@ import {
   type SharedGuardConfig,
 } from "@benjamolina/antigravity-guard-core"
 
-import { createPiAccountPool, type PiAccountPool } from "./accounts.ts"
+import {
+  SHARED_POOL_PLACEHOLDER_ACCESS,
+  createPiAccountPool,
+  type PiAccountPool,
+} from "./accounts.ts"
 import { listCatalogEntries, toPiModelDescriptor } from "./catalog.ts"
 import { registerPiGuardCommands } from "./commands.ts"
 import { createPiOAuthLifecycle } from "./oauth.ts"
 import { resolveLoginProject } from "./project.ts"
-import { StreamTransportError, createPiLifecycleStream, executeStreamTransport } from "./stream.ts"
+import {
+  StreamTransportError,
+  createPiLifecycleStream,
+  createPoolUnavailableError,
+  executeStreamTransport,
+} from "./stream.ts"
 
 const PROVIDER = "antigravity-guard"
 const API = "antigravity-guard-sse"
@@ -25,6 +37,7 @@ const INVALID_CREDENTIALS = "Antigravity credentials are invalid. Run /login ant
 export interface PiGuardRuntimeOptions extends ResolveSharedGuardPathsOptions {
   fetch?: typeof globalThis.fetch
   now?: () => number
+  sleep?: (ms: number, signal: AbortSignal) => Promise<void>
 }
 
 export interface PiGuardRuntime {
@@ -129,6 +142,7 @@ export function registerAntigravityProvider(
   registerPiGuardCommands(pi, {
     pool: runtime.getAccountPool(),
     getConfig: () => runtime.getConfig(),
+    now: options?.now,
   })
 
   pi.registerProvider(PROVIDER, {
@@ -212,9 +226,14 @@ function streamText(
       const pool = runtime.getAccountPool()
       const activeManager = pool.getManager()
 
-      if (activeManager && activeManager.getTotalAccountCount() > 0) {
+      if (activeManager && pool.hasManagedPoolHistory()) {
+        if (activeManager.getTotalAccountCount() === 0) {
+          throw createPoolUnavailableError({ reason: "no-accounts" })
+        }
         const excludedRefreshTokens = new Set<string>()
         let lastError: unknown
+        let waitedForSoftQuota = false
+        let waitedForRateLimit = false
         while (true) {
           const selected = await pool.acquireCredentials({
             modelId: model.id,
@@ -224,7 +243,26 @@ function streamText(
           })
           if (!selected) {
             if (lastError) throw lastError
-            throw new Error("No available Antigravity Guard accounts in the shared pool.")
+            const unavailable = await pool.resolvePoolUnavailableOutcome({
+              modelId: model.id,
+              fetch: fetchFn,
+              signal,
+              alreadyWaitedForSoftQuota: waitedForSoftQuota,
+              alreadyWaitedForRateLimit: waitedForRateLimit,
+            })
+            if (unavailable.action === "wait-and-retry") {
+              if (unavailable.kind === "soft-quota") {
+                waitedForSoftQuota = true
+                await (runtimeOptions?.sleep ?? abortableSleep)(unavailable.waitMs, signal)
+                await pool.refreshQuotasLive({ fetch: fetchFn, signal })
+              } else {
+                waitedForRateLimit = true
+                await (runtimeOptions?.sleep ?? abortableSleep)(unavailable.waitMs, signal)
+              }
+              excludedRefreshTokens.clear()
+              continue
+            }
+            throw unavailable.error
           }
           excludedRefreshTokens.add(selected.account.parts.refreshToken)
 
@@ -234,9 +272,11 @@ function streamText(
               accessToken: selected.accessToken,
               projectId: selected.projectId,
               context,
+              endpoints: ANTIGRAVITY_ENDPOINT_FALLBACKS,
               fetch: fetchFn,
               generationOptions: options,
               headers: normalizeProviderHeaders(options?.headers),
+              maxCapacityRetriesPerEndpoint: MAX_CAPACITY_RETRIES_PER_ENDPOINT,
               model,
               now: runtimeOptions?.now ?? Date.now,
               onSemantic: async (semantic) => {
@@ -249,10 +289,11 @@ function streamText(
               requestId: `agent-${crypto.randomUUID()}`,
               requestJitterMaxMs: guardConfig.request_jitter_max_ms,
               signal,
+              sleep: runtimeOptions?.sleep,
               timeoutMs: options?.timeoutMs,
               userAgent: selected.userAgent,
             })
-            await pool.recordSuccess(selected.account)
+            await pool.recordSuccess(selected.account, fetchFn)
             return
           } catch (error) {
             lastError = error
@@ -264,7 +305,9 @@ function streamText(
               modelId: model.id,
               status: error.status,
               body: error.responseBody,
+              headers: error.responseHeaders,
               message: error.message,
+              tokenConsumed: selected.tokenConsumed,
             })
             if (!outcome.rotated) {
               throw error
@@ -288,6 +331,7 @@ function streamText(
         requestId: `agent-${crypto.randomUUID()}`,
         requestJitterMaxMs: guardConfig.request_jitter_max_ms,
         signal,
+        sleep: runtimeOptions?.sleep,
         timeoutMs: options?.timeoutMs,
         userAgent: runtime.getUserAgent(),
       })
@@ -302,6 +346,7 @@ function isCredentialPayload(value: unknown): value is { token: string; projectI
     Object.keys(candidate).length === 2 &&
     typeof candidate.token === "string" &&
     candidate.token.trim().length > 0 &&
+    candidate.token.trim() !== SHARED_POOL_PLACEHOLDER_ACCESS &&
     typeof candidate.projectId === "string" &&
     candidate.projectId.trim().length > 0
   )

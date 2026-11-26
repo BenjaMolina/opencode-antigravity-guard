@@ -386,7 +386,7 @@ describe("Phase 2 Pi multi-account pool & commands regression probes (S3)", () =
           registerProvider: (_id: string, cfg: unknown) => { providerCfg = cfg },
           on: (ev: string, fn: (event: unknown, ctx?: { cwd?: string }) => Promise<void> | void) => { if (ev === "session_start") onSessionStart = fn },
         } as never,
-        { homeDir: home, cwd, env: { PI_OFFLINE: "1" }, fetch: fetchMock },
+        { homeDir: home, cwd, env: { PI_OFFLINE: "1" }, fetch: fetchMock, sleep: async () => undefined },
       )
       await onSessionStart?.({}, { cwd })
 
@@ -426,7 +426,7 @@ describe("Phase 2 Pi multi-account pool & commands regression probes (S3)", () =
     } finally {
       rmSync(scratch, { recursive: true, force: true })
     }
-  })
+  }, 60_000)
 
   it("B2 (mid-refresh reload + token rotation): /antigravity-accounts remove 2 during in-flight refresh syncs rotated token to auth.json and never resurrects old token on restart", async () => {
     const scratch = mkdtempSync(join(os.tmpdir(), "pi-p2-probe-b2-mid-rot-"))

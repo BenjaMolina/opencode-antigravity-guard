@@ -1,5 +1,18 @@
 import { exec } from "node:child_process";
-import { extractVerificationErrorDetails } from "@benjamolina/antigravity-guard-core";
+import {
+  FIRST_RETRY_DELAY_MS,
+  MAX_CAPACITY_RETRIES_PER_ENDPOINT,
+  SWITCH_ACCOUNT_DELAY_MS,
+  abortableSleep as sleep,
+  calculateCapacityBackoffMs,
+  createAccountFailureTracker,
+  createRateLimitBackoffTracker,
+  extractRetryInfoFromBody,
+  extractVerificationErrorDetails,
+  formatWaitTime,
+  headerStyleToQuotaKey,
+  retryAfterMsFromResponse,
+} from "@benjamolina/antigravity-guard-core";
 import { tool } from "@opencode-ai/plugin";
 import {
   ANTIGRAVITY_DEFAULT_PROJECT_ID,
@@ -446,7 +459,12 @@ async function triggerAsyncQuotaRefreshForAccount(
     
     const results = await checkAccountsQuota([singleAccount], client, providerId);
     
-    if (results[0]?.status === "ok" && results[0]?.quota?.groups && results[0]?.refreshToken) {
+    if (
+      results[0]?.status === "ok" &&
+      results[0]?.quota?.groups &&
+      !results[0]?.quota?.error &&
+      results[0]?.refreshToken
+    ) {
       accountManager.updateQuotaCache(results[0].refreshToken, results[0].quota.groups);
     }
   } catch (err) {
@@ -1007,176 +1025,6 @@ function buildAuthSuccessFromStoredAccount(account: {
   };
 }
 
-function retryAfterMsFromResponse(response: Response, defaultRetryMs: number = 60_000): number {
-  const retryAfterMsHeader = response.headers.get("retry-after-ms");
-  if (retryAfterMsHeader) {
-    const parsed = Number.parseInt(retryAfterMsHeader, 10);
-    if (!Number.isNaN(parsed) && parsed > 0) {
-      return parsed;
-    }
-  }
-
-  const retryAfterHeader = response.headers.get("retry-after");
-  if (retryAfterHeader) {
-    const parsed = Number.parseInt(retryAfterHeader, 10);
-    if (!Number.isNaN(parsed) && parsed > 0) {
-      return parsed * 1000;
-    }
-  }
-
-  return defaultRetryMs;
-}
-
-/**
- * Parse Go-style duration strings to milliseconds.
- * Supports compound durations: "1h16m0.667s", "1.5s", "200ms", "5m30s"
- * 
- * @param duration - Duration string in Go format
- * @returns Duration in milliseconds, or null if parsing fails
- */
-function parseDurationToMs(duration: string): number | null {
-  // Handle simple formats first for backwards compatibility
-  const simpleMatch = duration.match(/^(\d+(?:\.\d+)?)(ms|s|m|h)?$/i);
-  if (simpleMatch) {
-    const value = parseFloat(simpleMatch[1]!);
-    const unit = (simpleMatch[2] || "s").toLowerCase();
-    switch (unit) {
-      case "h": return value * 3600 * 1000;
-      case "m": return value * 60 * 1000;
-      case "s": return value * 1000;
-      case "ms": return value;
-      default: return value * 1000;
-    }
-  }
-  
-  // Parse compound Go-style durations: "1h16m0.667s", "5m30s", etc.
-  const compoundRegex = /(\d+(?:\.\d+)?)(h|m(?!s)|s|ms)/gi;
-  let totalMs = 0;
-  let matchFound = false;
-  let match = compoundRegex.exec(duration);
-  while (match !== null) {
-    matchFound = true;
-    const value = parseFloat(match[1]!);
-    const unit = match[2]!.toLowerCase();
-    switch (unit) {
-      case "h": totalMs += value * 3600 * 1000; break;
-      case "m": totalMs += value * 60 * 1000; break;
-      case "s": totalMs += value * 1000; break;
-      case "ms": totalMs += value; break;
-    }
-    match = compoundRegex.exec(duration);
-  }
-  
-  return matchFound ? totalMs : null;
-}
-
-interface RateLimitBodyInfo {
-  retryDelayMs: number | null;
-  message?: string;
-  quotaResetTime?: string;
-  reason?: string;
-}
-
-function extractRateLimitBodyInfo(body: unknown): RateLimitBodyInfo {
-  if (!body || typeof body !== "object") {
-    return { retryDelayMs: null };
-  }
-
-  const error = (body as { error?: unknown }).error;
-  const message = error && typeof error === "object" 
-    ? (error as { message?: string }).message 
-    : undefined;
-
-  const details = error && typeof error === "object" 
-    ? (error as { details?: unknown[] }).details 
-    : undefined;
-
-  let reason: string | undefined;
-  if (Array.isArray(details)) {
-    for (const detail of details) {
-      if (!detail || typeof detail !== "object") continue;
-      const type = (detail as { "@type"?: string })["@type"];
-      if (typeof type === "string" && type.includes("google.rpc.ErrorInfo")) {
-        const detailReason = (detail as { reason?: string }).reason;
-        if (typeof detailReason === "string") {
-          reason = detailReason;
-          break;
-        }
-      }
-    }
-
-    for (const detail of details) {
-      if (!detail || typeof detail !== "object") continue;
-      const type = (detail as { "@type"?: string })["@type"];
-      if (typeof type === "string" && type.includes("google.rpc.RetryInfo")) {
-        const retryDelay = (detail as { retryDelay?: string }).retryDelay;
-        if (typeof retryDelay === "string") {
-          const retryDelayMs = parseDurationToMs(retryDelay);
-          if (retryDelayMs !== null) {
-            return { retryDelayMs, message, reason };
-          }
-        }
-      }
-    }
-
-    for (const detail of details) {
-      if (!detail || typeof detail !== "object") continue;
-      const metadata = (detail as { metadata?: Record<string, string> }).metadata;
-      if (metadata && typeof metadata === "object") {
-        const quotaResetDelay = metadata.quotaResetDelay;
-        const quotaResetTime = metadata.quotaResetTimeStamp;
-        if (typeof quotaResetDelay === "string") {
-          const quotaResetDelayMs = parseDurationToMs(quotaResetDelay);
-          if (quotaResetDelayMs !== null) {
-            return { retryDelayMs: quotaResetDelayMs, message, quotaResetTime, reason };
-          }
-        }
-      }
-    }
-  }
-
-  if (message) {
-    const afterMatch = message.match(/reset after\s+([0-9hms.]+)/i);
-    const rawDuration = afterMatch?.[1];
-    if (rawDuration) {
-      const parsed = parseDurationToMs(rawDuration);
-      if (parsed !== null) {
-        return { retryDelayMs: parsed, message, reason };
-      }
-    }
-  }
-
-  return { retryDelayMs: null, message, reason };
-}
-
-async function extractRetryInfoFromBody(response: Response): Promise<RateLimitBodyInfo> {
-  try {
-    const text = await response.clone().text();
-    try {
-      const parsed = JSON.parse(text) as unknown;
-      return extractRateLimitBodyInfo(parsed);
-    } catch {
-      return { retryDelayMs: null };
-    }
-  } catch {
-    return { retryDelayMs: null };
-  }
-}
-
-function formatWaitTime(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  const seconds = Math.ceil(ms / 1000);
-  if (seconds < 60) return `${seconds}s`;
-  const minutes = Math.floor(seconds / 60);
-  const remainingSeconds = seconds % 60;
-  if (minutes < 60) {
-    return remainingSeconds > 0 ? `${minutes}m ${remainingSeconds}s` : `${minutes}m`;
-  }
-  const hours = Math.floor(minutes / 60);
-  const remainingMinutes = minutes % 60;
-  return remainingMinutes > 0 ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
-}
-
 function createSoftQuotaBlockedResponse(input: {
   accountCount: number;
   family: ModelFamily;
@@ -1195,162 +1043,35 @@ function createSoftQuotaBlockedResponse(input: {
   return createSyntheticErrorResponse(errorMessage, input.requestedModel, input.family);
 }
 
-// Progressive rate limit retry delays
-const FIRST_RETRY_DELAY_MS = 1000;      // 1s - first 429 quick retry on same account
-const SWITCH_ACCOUNT_DELAY_MS = 5000;   // 5s - delay before switching to another account
-
-/**
- * Rate limit state tracking with time-window deduplication.
- * 
- * Problem: When multiple subagents hit 429 simultaneously, each would increment
- * the consecutive counter, causing incorrect exponential backoff (5 concurrent
- * 429s = 2^5 backoff instead of 2^1).
- * 
- * Solution: Track per account+quota with deduplication window. Multiple 429s
- * within RATE_LIMIT_DEDUP_WINDOW_MS are treated as a single event.
- */
-const RATE_LIMIT_DEDUP_WINDOW_MS = 2000; // 2 seconds - concurrent requests within this window are deduplicated
-const RATE_LIMIT_STATE_RESET_MS = 120_000; // Reset consecutive counter after 2 minutes of no 429s
-
-interface RateLimitState {
-  consecutive429: number;
-  lastAt: number;
-  quotaKey: string; // Track which quota this state is for
-}
-
-// Key format: `${accountIndex}:${quotaKey}` for per-account-per-quota tracking
-const rateLimitStateByAccountQuota = new Map<string, RateLimitState>();
+const rateLimitTracker = createRateLimitBackoffTracker();
+const accountFailureTracker = createAccountFailureTracker();
 
 // Track empty response retry attempts (ported from LLM-API-Key-Proxy)
 const emptyResponseAttempts = new Map<string, number>();
 
-/**
- * Get rate limit backoff with time-window deduplication.
- * 
- * @param accountIndex - The account index
- * @param quotaKey - The quota key (e.g., "gemini-cli", "gemini-antigravity", "claude")
- * @param serverRetryAfterMs - Server-provided retry delay (if any)
- * @param maxBackoffMs - Maximum backoff delay in milliseconds (default 60000)
- * @returns { attempt, delayMs, isDuplicate } - isDuplicate=true if within dedup window
- */
 function getRateLimitBackoff(
-  accountIndex: number, 
+  accountIndex: number,
   quotaKey: string,
   serverRetryAfterMs: number | null,
-  maxBackoffMs: number = 60_000
+  maxBackoffMs: number = 60_000,
 ): { attempt: number; delayMs: number; isDuplicate: boolean } {
-  const now = Date.now();
-  const stateKey = `${accountIndex}:${quotaKey}`;
-  const previous = rateLimitStateByAccountQuota.get(stateKey);
-  
-  // Check if this is a duplicate 429 within the dedup window
-  if (previous && (now - previous.lastAt < RATE_LIMIT_DEDUP_WINDOW_MS)) {
-    // Same rate limit event from concurrent request - don't increment
-    const baseDelay = serverRetryAfterMs ?? 1000;
-    const backoffDelay = Math.min(baseDelay * Math.pow(2, previous.consecutive429 - 1), maxBackoffMs);
-    return { 
-      attempt: previous.consecutive429, 
-      delayMs: Math.max(baseDelay, backoffDelay),
-      isDuplicate: true 
-    };
-  }
-  
-  // Check if we should reset (no 429 for 2 minutes) or increment
-  const attempt = previous && (now - previous.lastAt < RATE_LIMIT_STATE_RESET_MS) 
-    ? previous.consecutive429 + 1 
-    : 1;
-  
-  rateLimitStateByAccountQuota.set(stateKey, { 
-    consecutive429: attempt, 
-    lastAt: now,
-    quotaKey 
-  });
-  
-  const baseDelay = serverRetryAfterMs ?? 1000;
-  const backoffDelay = Math.min(baseDelay * Math.pow(2, attempt - 1), maxBackoffMs);
-  return { attempt, delayMs: Math.max(baseDelay, backoffDelay), isDuplicate: false };
+  return rateLimitTracker.getBackoff(accountIndex, quotaKey, serverRetryAfterMs, maxBackoffMs);
 }
 
-/**
- * Reset rate limit state for an account+quota combination.
- * Only resets the specific quota, not all quotas for the account.
- */
 function resetRateLimitState(accountIndex: number, quotaKey: string): void {
-  const stateKey = `${accountIndex}:${quotaKey}`;
-  rateLimitStateByAccountQuota.delete(stateKey);
+  rateLimitTracker.reset(accountIndex, quotaKey);
 }
 
-/**
- * Reset all rate limit state for an account (all quotas).
- * Used when account is completely healthy.
- */
 function resetAllRateLimitStateForAccount(accountIndex: number): void {
-  for (const key of rateLimitStateByAccountQuota.keys()) {
-    if (key.startsWith(`${accountIndex}:`)) {
-      rateLimitStateByAccountQuota.delete(key);
-    }
-  }
+  rateLimitTracker.resetAllForAccount(accountIndex);
 }
-
-function headerStyleToQuotaKey(headerStyle: HeaderStyle, family: ModelFamily): string {
-  if (family === "claude") return "claude";
-  return headerStyle === "antigravity" ? "gemini-antigravity" : "gemini-cli";
-}
-
-// Track consecutive non-429 failures per account to prevent infinite loops
-const accountFailureState = new Map<number, { consecutiveFailures: number; lastFailureAt: number }>();
-const MAX_CONSECUTIVE_FAILURES = 5;
-const FAILURE_COOLDOWN_MS = 30_000; // 30 seconds cooldown after max failures
-const FAILURE_STATE_RESET_MS = 120_000; // Reset failure count after 2 minutes of no failures
 
 function trackAccountFailure(accountIndex: number): { failures: number; shouldCooldown: boolean; cooldownMs: number } {
-  const now = Date.now();
-  const previous = accountFailureState.get(accountIndex);
-  
-  // Reset if last failure was more than 2 minutes ago
-  const failures = previous && (now - previous.lastFailureAt < FAILURE_STATE_RESET_MS) 
-    ? previous.consecutiveFailures + 1 
-    : 1;
-  
-  accountFailureState.set(accountIndex, { consecutiveFailures: failures, lastFailureAt: now });
-  
-  const shouldCooldown = failures >= MAX_CONSECUTIVE_FAILURES;
-  const cooldownMs = shouldCooldown ? FAILURE_COOLDOWN_MS : 0;
-  
-  return { failures, shouldCooldown, cooldownMs };
+  return accountFailureTracker.trackFailure(accountIndex);
 }
 
 function resetAccountFailureState(accountIndex: number): void {
-  accountFailureState.delete(accountIndex);
-}
-
-/**
- * Sleep for a given number of milliseconds, respecting an abort signal.
- */
-function sleep(ms: number, signal?: AbortSignal | null): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (signal?.aborted) {
-      reject(signal.reason instanceof Error ? signal.reason : new Error("Aborted"));
-      return;
-    }
-
-    const timeout = setTimeout(() => {
-      cleanup();
-      resolve();
-    }, ms);
-
-    const onAbort = () => {
-      cleanup();
-      reject(signal?.reason instanceof Error ? signal.reason : new Error("Aborted"));
-    };
-
-    const cleanup = () => {
-      clearTimeout(timeout);
-      signal?.removeEventListener("abort", onAbort);
-    };
-
-    signal?.addEventListener("abort", onAbort, { once: true });
-  });
+  accountFailureTracker.reset(accountIndex);
 }
 
 /**
@@ -1777,9 +1498,9 @@ export const createAntigravityPlugin = (providerId: string) => async (
             reloadedProviderState = true;
             accountManager = await AccountManager.loadFromDisk(reloadedAuth);
             activeAccountManager = accountManager;
-            rateLimitStateByAccountQuota.clear();
+            rateLimitTracker.clear();
             emptyResponseAttempts.clear();
-            accountFailureState.clear();
+            accountFailureTracker.clear();
             rateLimitToastShown = false;
             softQuotaToastShown = false;
             pushDebug(`reload-provider-state reason=${reason} accounts=${accountManager.getAccountCount()}`);
@@ -2527,13 +2248,7 @@ export const createAntigravityPlugin = (providerId: string) => async (
                   // We handle this FIRST to avoid calling getRateLimitBackoff() and polluting the global rate limit state for transient errors.
                   if (rateLimitReason === "MODEL_CAPACITY_EXHAUSTED" || rateLimitReason === "SERVER_ERROR") {
                      // Exponential backoff with jitter for capacity errors: 1s → 2s → 4s → 8s (max)
-                     // Matches Antigravity-Manager's ExponentialBackoff(1s, 8s)
-                     const baseDelayMs = 1000;
-                     const maxDelayMs = 8000;
-                     const exponentialDelay = Math.min(baseDelayMs * Math.pow(2, capacityRetryCount), maxDelayMs);
-                     // Add ±10% jitter to prevent thundering herd
-                     const jitter = exponentialDelay * (0.9 + Math.random() * 0.2);
-                     const waitMs = Math.round(jitter);
+                     const waitMs = calculateCapacityBackoffMs(capacityRetryCount);
                      const waitSec = Math.round(waitMs / 1000);
                      
                      pushDebug(`Server busy (${rateLimitReason}) on account ${account.index}, exponential backoff ${waitMs}ms (attempt ${capacityRetryCount + 1})`);
@@ -2548,7 +2263,7 @@ export const createAntigravityPlugin = (providerId: string) => async (
                      // CRITICAL FIX: Decrement i so that the loop 'continue' retries the SAME endpoint index
                      // (i++ in the loop will bring it back to the current index)
                      // But limit retries to prevent infinite loops (Greptile feedback)
-                     if (capacityRetryCount < 3) {
+                     if (capacityRetryCount < MAX_CAPACITY_RETRIES_PER_ENDPOINT) {
                        capacityRetryCount++;
                        i -= 1;
                        continue; 

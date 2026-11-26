@@ -208,4 +208,134 @@ describe("Phase 2 Pi shared multi-account pool, hybrid rotation, and commands", 
       rmSync(scratch, { recursive: true, force: true })
     }
   })
+
+  it("parses Google RPC RetryInfo / Retry-After on 429, refunds hybrid token bucket, rotates accounts, fails over daily -> autopush -> prod, and blocks sentinel fallback when pool empties mid-session", async () => {
+    const scratch = mkdtempSync(join(os.tmpdir(), "pi-phase3-failover-"))
+    try {
+      const homeDir = join(scratch, "home")
+      const cwd = join(scratch, "project")
+      const piDir = join(homeDir, ".pi", "agent")
+      mkdirSync(piDir, { recursive: true })
+      mkdirSync(cwd, { recursive: true })
+
+      writeFileSync(
+        join(piDir, "antigravity-accounts.json"),
+        JSON.stringify({
+          version: 4,
+          accounts: [
+            { email: "acc1@example.com", refreshToken: "rt-1", projectId: "proj-1", addedAt: 1, lastUsed: 10 },
+            { email: "acc2@example.com", refreshToken: "rt-2", projectId: "proj-2", addedAt: 2, lastUsed: 5 },
+          ],
+          activeIndex: 0,
+        }),
+        "utf8",
+      )
+      writeFileSync(
+        join(piDir, "antigravity.json"),
+        JSON.stringify({ proactive_token_refresh: false, account_selection_strategy: "sticky" }),
+        "utf8",
+      )
+
+      const nowMs = Date.now()
+      const streamUrls: string[] = []
+      const fetchMock = vi.fn<typeof globalThis.fetch>(async (url, init) => {
+        const urlStr = String(url)
+        if (urlStr.includes("oauth2.googleapis.com/token")) {
+          const bodyStr = String(init?.body ?? "")
+          const rt = bodyStr.includes("rt-1") ? "acc-1" : "acc-2"
+          return new Response(JSON.stringify({ access_token: rt, expires_in: 3_600 }), { status: 200 })
+        }
+        streamUrls.push(urlStr)
+        const authHeader = (init?.headers as Record<string, string>)?.Authorization
+        if (authHeader === "Bearer acc-1") {
+          return new Response(
+            JSON.stringify({
+              error: {
+                message: "Quota exhausted on account 1",
+                details: [
+                  { "@type": "type.googleapis.com/google.rpc.ErrorInfo", reason: "QUOTA_EXHAUSTED" },
+                  { "@type": "type.googleapis.com/google.rpc.RetryInfo", retryDelay: "4m30s" },
+                ],
+              },
+            }),
+            { status: 429, headers: { "Retry-After": "10" } },
+          )
+        }
+        if (urlStr.startsWith("https://daily-cloudcode-pa.sandbox.googleapis.com")) {
+          return new Response("daily unavailable", { status: 404 })
+        }
+        return new Response(
+          'data: {"response":{"candidates":[{"content":{"parts":[{"text":"AUTOPUSH_ACC2_OK"}]}}]}}\n\ndata: {"response":{"candidates":[{"finishReason":"STOP"}]}}\n\n',
+          { headers: { "Content-Type": "text/event-stream" } },
+        )
+      })
+
+      let providerCfg: any
+      const commands = new Map<string, any>()
+      let onSessionStart: ((event: unknown, ctx?: { cwd?: string }) => Promise<void> | void) | undefined
+      extension(
+        {
+          registerProvider: (_id: string, cfg: unknown) => {
+            providerCfg = cfg
+          },
+          registerCommand: (name: string, def: unknown) => {
+            commands.set(name, def)
+          },
+          on: (ev: string, fn: (event: unknown, ctx?: { cwd?: string }) => Promise<void> | void) => {
+            if (ev === "session_start") onSessionStart = fn
+          },
+        } as never,
+        { homeDir, cwd, env: { PI_OFFLINE: "1" }, fetch: fetchMock, now: () => nowMs },
+      )
+
+      await onSessionStart?.({}, { cwd })
+
+      const model = {
+        ...providerCfg.models.find((m: { id: string }) => m.id === "antigravity-gemini-4-carbon"),
+        api: providerCfg.api,
+        provider: "antigravity-guard",
+      }
+      const events: any[] = []
+      for await (const ev of providerCfg.streamSimple(
+        model,
+        { messages: [{ role: "user", content: "Test RetryInfo + failover" }] },
+        { apiKey: '{"token":"shared-pool-pending-refresh","projectId":"proj-1"}', fetch: fetchMock },
+      )) {
+        events.push(ev)
+      }
+
+      expect(events.map((e) => e.type)).toEqual(["start", "text_start", "text_delta", "text_end", "done"])
+      expect(streamUrls).toEqual([
+        "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:streamGenerateContent?alt=sse",
+        "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:streamGenerateContent?alt=sse",
+        "https://autopush-cloudcode-pa.sandbox.googleapis.com/v1internal:streamGenerateContent?alt=sse",
+      ])
+
+      // Verify RetryInfo 4m30s (270_000ms) was applied to account 1 instead of generic 60s
+      const persistedAfter = JSON.parse(readFileSync(join(piDir, "antigravity-accounts.json"), "utf8"))
+      const acc1Limits = persistedAfter.accounts[0].rateLimitResetTimes
+      const resetVal = Object.values(acc1Limits)[0] as number
+      expect(resetVal - nowMs).toBeGreaterThanOrEqual(265_000)
+      expect(resetVal - nowMs).toBeLessThanOrEqual(275_000)
+
+      // Remove both accounts mid-session -> streamSimple must fail locally without leaking shared-pool-pending-refresh upstream
+      const accountsCmd = commands.get("antigravity-accounts")
+      await accountsCmd.handler("remove 2", { cwd, hasUI: false, ui: {} })
+      await accountsCmd.handler("remove 1", { cwd, hasUI: false, ui: {} })
+
+      fetchMock.mockClear()
+      const emptyPoolEvents: any[] = []
+      for await (const ev of providerCfg.streamSimple(
+        model,
+        { messages: [{ role: "user", content: "Pool is now empty" }] },
+        { apiKey: '{"token":"shared-pool-pending-refresh","projectId":"proj-1"}', fetch: fetchMock },
+      )) {
+        emptyPoolEvents.push(ev)
+      }
+      expect(emptyPoolEvents.map((e) => e.type)).toEqual(["start", "error"])
+      expect(fetchMock).not.toHaveBeenCalled()
+    } finally {
+      rmSync(scratch, { recursive: true, force: true })
+    }
+  })
 })

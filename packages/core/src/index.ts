@@ -49,9 +49,12 @@ export type {
   SharedSignatureCacheConfig,
 } from "./config.ts"
 export {
+  ANTIGRAVITY_DEFAULT_PROJECT_ID,
   ANTIGRAVITY_ENDPOINTS,
+  ANTIGRAVITY_ENDPOINT_FALLBACKS,
   ANTIGRAVITY_HUB_MANIFEST_URL,
   ANTIGRAVITY_HUB_PLATFORM,
+  ANTIGRAVITY_LOAD_ENDPOINTS,
   ANTIGRAVITY_MIN_VERSION,
   ANTIGRAVITY_OAUTH_CLIENT,
   ANTIGRAVITY_VERSION_FALLBACK,
@@ -106,6 +109,39 @@ export type {
   RefreshableAccountStore,
 } from "./refresh-queue.ts"
 export {
+  CAPACITY_BACKOFF_BASE_DELAY_MS,
+  CAPACITY_BACKOFF_MAX_DELAY_MS,
+  FAILURE_COOLDOWN_MS,
+  FAILURE_STATE_RESET_MS,
+  FIRST_RETRY_DELAY_MS,
+  MAX_CAPACITY_RETRIES_PER_ENDPOINT,
+  MAX_CONSECUTIVE_FAILURES,
+  RATE_LIMIT_DEDUP_WINDOW_MS,
+  RATE_LIMIT_STATE_RESET_MS,
+  SWITCH_ACCOUNT_DELAY_MS,
+  abortableSleep,
+  calculateCapacityBackoffMs,
+  createAccountFailureTracker,
+  createRateLimitBackoffTracker,
+  extractRateLimitBodyInfo,
+  extractRateLimitTextInfo,
+  extractRetryInfoFromBody,
+  formatWaitTime,
+  headerStyleToQuotaKey,
+  parseDurationToMs,
+  retryAfterMsFromHeaders,
+  retryAfterMsFromResponse,
+} from "./retry.ts"
+export type {
+  AccountFailureResult,
+  AccountFailureTracker,
+  AccountFailureTrackerOptions,
+  DedupedRateLimitBackoff,
+  RateLimitBackoffTracker,
+  RateLimitBackoffTrackerOptions,
+  RateLimitBodyInfo,
+} from "./retry.ts"
+export {
   DEFAULT_HEALTH_SCORE_CONFIG,
   DEFAULT_TOKEN_BUCKET_CONFIG,
   HealthScoreTracker,
@@ -156,6 +192,35 @@ export type {
   RateLimitStateV3,
   StorageLogger,
 } from "./storage.ts"
+export {
+  DEFAULT_POOL_QUOTA_REFRESH_COOLDOWN_MS,
+  DEFAULT_QUOTA_FETCH_TIMEOUT_MS,
+  aggregateGeminiCliQuota,
+  aggregateQuota,
+  checkAccountsQuotaWithDeps,
+  classifyQuotaGroup,
+  createPoolQuotaRefreshCoordinator,
+  fetchAvailableModels,
+  fetchGeminiCliQuota,
+  normalizeRemainingFraction,
+  parseQuotaResetTime,
+} from "./quota.ts"
+export type {
+  AccountQuotaResult,
+  AccountQuotaStatus,
+  CheckAccountsQuotaDependencies,
+  FetchAvailableModelEntry,
+  FetchAvailableModelsOptions,
+  FetchAvailableModelsResponse,
+  FetchGeminiCliQuotaOptions,
+  GeminiCliQuotaBucket,
+  GeminiCliQuotaModel,
+  GeminiCliQuotaSummary,
+  PoolQuotaRefreshCoordinator,
+  PoolQuotaRefreshCoordinatorOptions,
+  QuotaSummary,
+  RetrieveUserQuotaResponse,
+} from "./quota.ts"
 export {
   createAntigravityVersionState,
   fetchAntigravityHubVersion,

@@ -1,6 +1,15 @@
 import { calculateCost, createAssistantMessageEventStream } from "@earendil-works/pi-ai"
 import type { AssistantMessage, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai"
-import { ANTIGRAVITY_ENDPOINTS, formatAntigravityHubUserAgent } from "@benjamolina/antigravity-guard-core"
+import {
+  ANTIGRAVITY_ENDPOINTS,
+  MAX_CAPACITY_RETRIES_PER_ENDPOINT,
+  abortableSleep,
+  calculateCapacityBackoffMs,
+  extractRateLimitTextInfo,
+  formatAntigravityHubUserAgent,
+  formatWaitTime,
+  parseRateLimitReason,
+} from "@benjamolina/antigravity-guard-core"
 
 import { getCatalogEntry, resolveGenerationSelection, type GenerationSelection } from "./catalog.ts"
 import { ContextSerializationError, serializeContext, type GenerationRequest } from "./context.ts"
@@ -51,6 +60,7 @@ export class StreamTransportError extends Error {
     readonly status?: number,
     readonly details?: ToolStreamDiagnostics,
     readonly responseBody?: string,
+    readonly responseHeaders?: Record<string, string>,
   ) {
     super(message)
   }
@@ -59,10 +69,12 @@ export class StreamTransportError extends Error {
 export interface StreamTransportInput {
   accessToken: string
   context: Context
+  endpoints?: readonly string[]
   fetch: typeof globalThis.fetch
   generationOptions?: SimpleStreamOptions
   headers?: Record<string, string>
   inactivityTimeoutMs?: number
+  maxCapacityRetriesPerEndpoint?: number
   model: Model<string>
   projectId: string
   now: () => number
@@ -72,6 +84,7 @@ export interface StreamTransportInput {
   requestJitterMaxMs?: number
   selection?: GenerationSelection
   signal?: AbortSignal
+  sleep?: (ms: number, signal: AbortSignal) => Promise<void>
   timeoutMs?: number
   userAgent?: string
 }
@@ -224,6 +237,15 @@ export async function executeStreamTransport(input: StreamTransportInput): Promi
   validateInput(input)
   const signal = totalSignal(input)
   const headers = requestHeaders(input)
+  const endpointRoots =
+    input.endpoints && input.endpoints.length > 0
+      ? input.endpoints
+      : [ANTIGRAVITY_ENDPOINTS.daily]
+  const maxCapacityRetries = Math.max(
+    0,
+    input.maxCapacityRetriesPerEndpoint ?? 0,
+  )
+  const sleepFn = input.sleep ?? ((ms: number, sig: AbortSignal) => abortableSleep(ms, sig))
   let responseBody: ReadableStream<Uint8Array> | null = null
   let selection: GenerationSelection | undefined
   let replayDiagnostics: ToolReplayDiagnostics = emptyReplayDiagnostics()
@@ -238,15 +260,107 @@ export async function executeStreamTransport(input: StreamTransportInput): Promi
     if (hasToolContext(input.context)) await deliver(input.onSemantic, { type: "toolDiagnostics", details: toolDiagnostics(entry.publicId, selection, replayDiagnostics, "accepted") })
     const payload = await payloadHook(input, original, signal)
     await applyRequestJitter(input.requestJitterMaxMs, signal)
-    const response = await abortable(input.fetch(ENDPOINT, { method: "POST", redirect: "error", headers, body: JSON.stringify(payload), signal }), signal)
-    await responseHook(input, response, signal)
-    responseBody = response.body
-    if (!response.ok) throw await httpError(response, signal)
-    if (!response.body || !isSse(response.headers.get("content-type"))) {
-      await boundedBody(response.body, signal)
-      throw streamError("response", "Antigravity did not return an SSE response.")
+    const requestBody = JSON.stringify(payload)
+
+    let lastPreStreamError: StreamTransportError | undefined
+    for (let epIndex = 0; epIndex < endpointRoots.length; epIndex += 1) {
+      const endpointRoot = endpointRoots[epIndex]!.replace(/\/+$/, "")
+      const targetUrl =
+        endpointRoot === ANTIGRAVITY_ENDPOINTS.daily
+          ? ENDPOINT
+          : `${endpointRoot}/v1internal:streamGenerateContent?alt=sse`
+      const hasMoreEndpoints = epIndex + 1 < endpointRoots.length
+      let capacityRetries = 0
+
+      while (true) {
+        let response: Response
+        try {
+          response = await abortable(
+            input.fetch(targetUrl, {
+              method: "POST",
+              redirect: "error",
+              headers,
+              body: requestBody,
+              signal,
+            }),
+            signal,
+          )
+        } catch (fetchErr) {
+          if (isLocalStreamError(fetchErr)) {
+            if (fetchErr.kind === "aborted" || !hasMoreEndpoints) throw fetchErr
+            lastPreStreamError = fetchErr
+            break
+          }
+          if (signal.aborted) throw streamError("aborted", "Generation was cancelled.")
+          const transportErr = streamError("transport", "Antigravity generation request failed.")
+          if (!hasMoreEndpoints) throw transportErr
+          lastPreStreamError = transportErr
+          break
+        }
+
+        await responseHook(input, response, signal)
+        responseBody = response.body
+
+        if (!response.ok) {
+          const err = await httpError(response, signal)
+          responseBody = null
+
+          if (err.status === 429 || err.status === 503 || err.status === 529) {
+            const parsedInfo = extractRateLimitTextInfo(err.responseBody ?? "")
+            const reason = parseRateLimitReason(
+              parsedInfo.reason,
+              parsedInfo.message ?? err.responseBody,
+              err.status,
+            )
+            const isTransientCapacity =
+              reason === "MODEL_CAPACITY_EXHAUSTED" || reason === "SERVER_ERROR"
+            if (isTransientCapacity) {
+              if (capacityRetries < maxCapacityRetries) {
+                capacityRetries += 1
+                const waitMs = calculateCapacityBackoffMs(capacityRetries - 1)
+                await abortable(sleepFn(waitMs, signal), signal)
+                continue
+              }
+              if (hasMoreEndpoints) {
+                lastPreStreamError = err
+                break
+              }
+            }
+            throw err
+          }
+
+          const isValidation403 =
+            err.status === 403 &&
+            Boolean(err.responseBody?.includes("VALIDATION_REQUIRED") || err.responseBody?.includes("validation_required"))
+          const canAdvanceEndpoint =
+            hasMoreEndpoints &&
+            !isValidation403 &&
+            (err.status === 403 || err.status === 404 || (typeof err.status === "number" && err.status >= 500))
+          if (canAdvanceEndpoint) {
+            lastPreStreamError = err
+            break
+          }
+          throw err
+        }
+
+        if (!response.body || !isSse(response.headers.get("content-type"))) {
+          await boundedBody(response, signal)
+          responseBody = null
+          throw streamError("response", "Antigravity did not return an SSE response.")
+        }
+
+        await consume(
+          response.body,
+          signal,
+          input.onSemantic,
+          inactivityTimeout(input),
+          responsePolicy(original, selection),
+        )
+        return
+      }
     }
-    await consume(response.body, signal, input.onSemantic, inactivityTimeout(input), responsePolicy(original, selection))
+
+    throw lastPreStreamError ?? streamError("transport", "Antigravity generation request failed.")
   } catch (error) {
     void responseBody?.cancel().catch(() => undefined)
     if (isLocalStreamError(error)) throw error
@@ -391,16 +505,19 @@ async function deliver(callback: StreamTransportInput["onSemantic"], semantic: S
 }
 
 async function httpError(response: Response, signal: AbortSignal): Promise<StreamTransportError> {
-  const body = await boundedBody(response.body, signal)
-  if (response.status === 401) return streamError("access", "Authentication expired. Run /login antigravity-guard.", 401, undefined, body)
-  if (response.status === 403) return streamError("access", "Antigravity access was denied. Check your entitlement.", 403, undefined, body)
-  if (response.status === 404) return streamError("model", "The requested Antigravity model is unavailable.", 404, undefined, body)
-  if (response.status === 429 || body.includes("RESOURCE_EXHAUSTED")) return streamError("quota", "Antigravity quota or rate limit was reached.", response.status, undefined, body)
-  return streamError("response", "Antigravity generation request was rejected.", response.status, undefined, body)
+  const body = await boundedBody(response, signal)
+  const headers: Record<string, string> = {}
+  response.headers.forEach((value, key) => { headers[key] = value })
+  if (response.status === 401) return streamError("access", "Authentication expired. Run /login antigravity-guard.", 401, undefined, body, headers)
+  if (response.status === 403) return streamError("access", "Antigravity access was denied. Check your entitlement.", 403, undefined, body, headers)
+  if (response.status === 404) return streamError("model", "The requested Antigravity model is unavailable.", 404, undefined, body, headers)
+  if (response.status === 429 || body.includes("RESOURCE_EXHAUSTED")) return streamError("quota", "Antigravity quota or rate limit was reached.", response.status, undefined, body, headers)
+  return streamError("response", "Antigravity generation request was rejected.", response.status, undefined, body, headers)
 }
 
-async function boundedBody(body: ReadableStream<Uint8Array> | null, signal: AbortSignal): Promise<string> {
-  if (!body) return ""
+async function boundedBody(response: Response, signal: AbortSignal): Promise<string> {
+  const body = response.body
+  if (!body || response.bodyUsed || body.locked) return ""
   const reader = body.getReader()
   const chunks: Uint8Array[] = []
   let size = 0
@@ -456,11 +573,92 @@ function streamError(
   status?: number,
   details?: ToolStreamDiagnostics,
   responseBody?: string,
+  responseHeaders?: Record<string, string>,
 ): StreamTransportError {
-  const error = new StreamTransportError(kind, message, status, details, responseBody)
+  const error = new StreamTransportError(kind, message, status, details, responseBody, responseHeaders)
   LOCAL_ERRORS.add(error)
   return error
 }
+
+export type PoolUnavailableErrorDescriptor =
+  | {
+      reason: "soft-quota"
+      accountCount: number
+      thresholdPercent: number
+      family: "claude" | "gemini"
+      waitMs: number | null
+    }
+  | {
+      reason: "rate-limited"
+      accountCount: number
+      family: "claude" | "gemini"
+      waitMs: number
+    }
+  | { reason: "pool-unavailable"; accountCount: number; waitMs?: number | null }
+  | { reason: "no-enabled-accounts" }
+  | { reason: "no-accounts" }
+
+export function createPoolUnavailableError(
+  descriptor: PoolUnavailableErrorDescriptor,
+): StreamTransportError {
+  if (descriptor.reason === "soft-quota") {
+    const safeCount = Math.max(0, Math.trunc(descriptor.accountCount))
+    const safeThreshold = Math.max(0, Math.min(100, Math.trunc(descriptor.thresholdPercent)))
+    const safeFamily = descriptor.family === "claude" ? "claude" : "gemini"
+    const waitText =
+      typeof descriptor.waitMs === "number" &&
+      Number.isFinite(descriptor.waitMs) &&
+      descriptor.waitMs > 0
+        ? formatWaitTime(descriptor.waitMs)
+        : "unknown"
+    return streamError(
+      "quota",
+      `[Antigravity Error] Quota protection: All ${safeCount} account(s) are over ${safeThreshold}% usage for ${safeFamily}. Quota resets in ${waitText}. Add more accounts with /login antigravity-guard, wait for quota reset, or set soft_quota_threshold_percent: 100 in antigravity.json.`,
+      429,
+    )
+  }
+  if (descriptor.reason === "rate-limited") {
+    const safeCount = Math.max(0, Math.trunc(descriptor.accountCount))
+    const safeFamily = descriptor.family === "claude" ? "claude" : "gemini"
+    const waitText =
+      typeof descriptor.waitMs === "number" &&
+      Number.isFinite(descriptor.waitMs) &&
+      descriptor.waitMs > 0
+        ? formatWaitTime(descriptor.waitMs)
+        : "unknown"
+    return streamError(
+      "quota",
+      `All ${safeCount} Antigravity Guard account(s) are rate-limited for ${safeFamily}. Quota resets in ${waitText}.`,
+      429,
+    )
+  }
+  if (descriptor.reason === "no-enabled-accounts") {
+    return streamError(
+      "access",
+      "No enabled Antigravity Guard accounts in the shared pool. Run /antigravity-accounts or /login antigravity-guard.",
+      401,
+    )
+  }
+  if (descriptor.reason === "pool-unavailable") {
+    const safeCount = Math.max(0, Math.trunc(descriptor.accountCount))
+    const suffix =
+      typeof descriptor.waitMs === "number" && Number.isFinite(descriptor.waitMs) && descriptor.waitMs > 0
+        ? ` Retry in ${formatWaitTime(descriptor.waitMs)}.`
+        : ""
+    return streamError(
+      "transport",
+      `No available Antigravity Guard accounts across ${safeCount} enabled account(s) in the shared pool.${suffix} Run /antigravity-accounts for status.`,
+      503,
+    )
+  }
+  return streamError(
+    "access",
+    "Antigravity credentials are invalid. Run /login antigravity-guard.",
+    401,
+  )
+}
+
+export { MAX_CAPACITY_RETRIES_PER_ENDPOINT }
 
 function isLocalStreamError(error: unknown): error is StreamTransportError { return error instanceof StreamTransportError && LOCAL_ERRORS.has(error) }
 
