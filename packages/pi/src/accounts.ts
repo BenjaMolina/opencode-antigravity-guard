@@ -802,48 +802,32 @@ export function createPiAccountPool(options: PiAccountPoolOptions): PiAccountPoo
         if (overSoft) softBlockedCount += 1
         if (rateLimited) rateLimitedCount += 1
 
-        let softWait = 0
-        if (overSoft) {
-          const resetIso = acc.cachedQuota?.[quotaGroup]?.resetTime
-          const parsed = resetIso ? Date.parse(resetIso) : NaN
-          softWait = Number.isFinite(parsed) && parsed > now ? parsed - now : Infinity
-        }
-
-        let rlWait = 0
-        if (rateLimited) {
-          if (family === "claude") {
-            const t = acc.rateLimitResetTimes.claude
-            rlWait = t !== undefined && t > now ? t - now : 0
-          } else {
-            const mKey = getQuotaKey(family, "antigravity", input.modelId)
-            const bKey = getQuotaKey(family, "antigravity")
-            const t = Math.max(acc.rateLimitResetTimes[mKey] ?? 0, acc.rateLimitResetTimes[bKey] ?? 0)
-            rlWait = t > now ? t - now : 0
-          }
-        }
-
-        const cdWait =
-          coolingDown && acc.coolingDownUntil !== undefined && acc.coolingDownUntil > now
-            ? acc.coolingDownUntil - now
-            : 0
+        const parsedSoft = overSoft && acc.cachedQuota?.[quotaGroup]?.resetTime
+          ? Date.parse(acc.cachedQuota[quotaGroup]!.resetTime!)
+          : NaN
+        const softWait = overSoft
+          ? Number.isFinite(parsedSoft) && parsedSoft > now ? parsedSoft - now : Infinity
+          : 0
+        const rlReset = !rateLimited
+          ? 0
+          : family === "claude"
+            ? acc.rateLimitResetTimes.claude ?? 0
+            : Math.max(
+                acc.rateLimitResetTimes[getQuotaKey(family, "antigravity", input.modelId)] ?? 0,
+                acc.rateLimitResetTimes[getQuotaKey(family, "antigravity")] ?? 0,
+              )
+        const rlWait = rlReset > now ? rlReset - now : 0
+        const cdWait = coolingDown && (acc.coolingDownUntil ?? 0) > now ? acc.coolingDownUntil! - now : 0
         const accWait = Math.max(softWait, rlWait, cdWait)
         if (accWait <= 0 || !Number.isFinite(accWait)) continue
 
         if (accWait < minAnyWaitMs) minAnyWaitMs = accWait
-        const kind: "soft-quota" | "rate-limit" =
-          softWait > 0 && softWait >= rlWait && softWait >= cdWait ? "soft-quota" : "rate-limit"
-        const alreadyWaited =
-          kind === "soft-quota" ? input.alreadyWaitedForSoftQuota : input.alreadyWaitedForRateLimit
-        if (!alreadyWaited && (!bestCandidate || accWait < bestCandidate.waitMs)) {
-          bestCandidate = { waitMs: accWait, kind }
-        }
+        const kind: "soft-quota" | "rate-limit" = softWait > 0 && softWait >= rlWait && softWait >= cdWait ? "soft-quota" : "rate-limit"
+        const skipped = kind === "soft-quota" ? input.alreadyWaitedForSoftQuota : input.alreadyWaitedForRateLimit
+        if (!skipped && (!bestCandidate || accWait < bestCandidate.waitMs)) bestCandidate = { waitMs: accWait, kind }
       }
 
-      if (
-        bestCandidate &&
-        !isOffline() &&
-        (maxWaitMs === 0 || bestCandidate.waitMs <= maxWaitMs)
-      ) {
+      if (bestCandidate && !isOffline() && (maxWaitMs === 0 || bestCandidate.waitMs <= maxWaitMs)) {
         return { action: "wait-and-retry", waitMs: bestCandidate.waitMs, kind: bestCandidate.kind }
       }
 
