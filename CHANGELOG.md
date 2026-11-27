@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.3.0 (2026-11-26)
+
+- Extract shared Antigravity Guard runtime engines into `@benjamolina/antigravity-guard-core@0.3.0` with backward-compatible Move-and-Reexport facades in `@benjamolina/opencode-antigravity-guard@1.3.0`: live Antigravity Hub version updater, device fingerprints, shared `antigravity.json` config loader, `AccountStorageV4` + cross-process lockfile + `AccountManager` (`sticky` / `round-robin` / `hybrid`) + proactive `TokenRefreshQueue`, `fetchAccountQuota` + Strict Quota Guard + `retry` / `daily -> autopush -> prod` failover primitives, permissive tool schema sanitization + `SignatureCache`, and `executeAntigravitySearchDetailed` grounding.
+- Upgrade `@benjamolina/pi-antigravity-guard@0.6.0` to full 1:1 Guard parity via `PiGuardRuntime`: shared `antigravity-accounts.json` multi-account pool with automatic single-account import, `/antigravity-accounts` and `/antigravity-quota` commands, Strict Quota Guard (`quota_safety_margin_percent`, `quota_cache_ttl_seconds`, `quota_fallback`) with header-style fallback (`antigravity` / `gemini-cli`) and `daily -> autopush -> prod` endpoint cascade, permissive JSON Schema tool loops (`$defs`, `$ref`, `anyOf`, `oneOf`, `const`, `nullable`) + cross-turn `SignatureCache` recovery, native PDF multimodal inputs (`application/pdf` base64 `inlineData`), `-sonar` and `-tiered` routes expanding the static catalog to 17 models with SSE `groundingMetadata` citations, Guard-backed `google_search` tool registration, and `model_discovery` dynamic catalog refresh.
+
 ## 1.2.1 (2026-11-23)
 
 - Add Pi `1.4.0+` `TranscriptContext` compatibility in `@benjamolina/pi-antigravity-guard@0.5.1` (`role: "system"` messages with `content`, `sections`, `toolsAdded`, and `toolsRemoved`), keeping session trajectory IDs anchored on the first conversation turn.
