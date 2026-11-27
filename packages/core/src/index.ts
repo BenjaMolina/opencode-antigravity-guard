@@ -184,6 +184,7 @@ export {
   migrateV3ToV4,
   saveAccountsReplaceToPath,
   saveAccountsToPath,
+  updateExistingAccountCooldown,
 } from "./storage.ts"
 export type {
   AccountMetadata,

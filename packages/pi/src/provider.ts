@@ -45,6 +45,8 @@ import {
   createPiLifecycleStream,
   createPoolUnavailableError,
   executeStreamTransport,
+  isGenerationTimeout,
+  resolveStreamTimeoutMs,
 } from "./stream.ts"
 
 const PROVIDER = "antigravity-guard"
@@ -277,6 +279,7 @@ function streamText(
           runtimeOptions?.fetch ??
           globalThis.fetch)
       const guardConfig = runtime.getConfig()
+      const timeoutMs = options?.timeoutMs ?? resolveStreamTimeoutMs(guardConfig.request_timeout_seconds)
       const pool = runtime.getAccountPool()
       const activeManager = pool.getManager()
 
@@ -345,7 +348,7 @@ function streamText(
               signal,
               signatureCache: runtime.getSignatureCache(),
               sleep: runtimeOptions?.sleep,
-              timeoutMs: options?.timeoutMs,
+              timeoutMs,
               userAgent: selected.userAgent,
             })
             await pool.recordSuccess(selected.account, fetchFn)
@@ -363,6 +366,7 @@ function streamText(
               headers: error.responseHeaders,
               message: error.message,
               tokenConsumed: selected.tokenConsumed,
+              generationTimeout: isGenerationTimeout(error),
             })
             if (!outcome.rotated) {
               throw error
@@ -388,7 +392,7 @@ function streamText(
         signal,
         signatureCache: runtime.getSignatureCache(),
         sleep: runtimeOptions?.sleep,
-        timeoutMs: options?.timeoutMs,
+        timeoutMs,
         userAgent: runtime.getUserAgent(),
       })
     },

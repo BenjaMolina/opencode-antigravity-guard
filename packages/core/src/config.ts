@@ -28,6 +28,7 @@ export interface SharedGuardConfig {
   default_retry_after_seconds: number
   max_backoff_seconds: number
   max_rate_limit_wait_seconds: number
+  request_timeout_seconds?: number
   request_jitter_max_ms: number
   soft_quota_threshold_percent: number
   soft_quota_allow_sdk_fallback: boolean
@@ -49,6 +50,7 @@ export const DEFAULT_SHARED_GUARD_CONFIG: SharedGuardConfig = Object.freeze({
   default_retry_after_seconds: 60,
   max_backoff_seconds: 60,
   max_rate_limit_wait_seconds: 300,
+  request_timeout_seconds: 600,
   request_jitter_max_ms: 0,
   soft_quota_threshold_percent: 70,
   soft_quota_allow_sdk_fallback: false,
@@ -254,6 +256,9 @@ function sanitizePartialSharedGuardConfig(raw: Record<string, unknown>): Partial
 
   const maxRateLimitWait = boundedNumber(raw.max_rate_limit_wait_seconds, 0, 3_600)
   if (maxRateLimitWait !== undefined) out.max_rate_limit_wait_seconds = maxRateLimitWait
+
+  const requestTimeout = boundedNumber(raw.request_timeout_seconds, 30, 3_600)
+  if (requestTimeout !== undefined) out.request_timeout_seconds = requestTimeout
 
   const jitter = boundedNumber(raw.request_jitter_max_ms, 0, 5_000)
   if (jitter !== undefined) out.request_jitter_max_ms = jitter

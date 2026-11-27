@@ -16,6 +16,28 @@ import {
 } from "./index.ts"
 
 describe("Phase 1 S1/S2 floor, cascade, and hostile-config regression probes", () => {
+  it("loads the OpenCode request timeout and ignores invalid project overrides", () => {
+    const scratch = mkdtempSync(join(os.tmpdir(), "ag-core-timeout-"))
+    try {
+      const projectDir = join(scratch, ".opencode")
+      const userDir = join(scratch, "user")
+      mkdirSync(projectDir)
+      mkdirSync(userDir)
+      const options = { homeDir: scratch, cwd: scratch, env: { OPENCODE_CONFIG_DIR: userDir } }
+      expect(loadSharedGuardConfig(options)).toHaveProperty("request_timeout_seconds", 600)
+      writeFileSync(join(userDir, "antigravity.json"), '{"request_timeout_seconds":30,"request_jitter_max_ms":50}')
+      const projectFile = join(projectDir, "antigravity.json")
+      for (const invalid of ['29', '3601', '"60"', '1e309']) {
+        writeFileSync(projectFile, `{"request_timeout_seconds":${invalid}}`)
+        expect(loadSharedGuardConfig(options)).toMatchObject({ request_timeout_seconds: 30, request_jitter_max_ms: 50 })
+      }
+      writeFileSync(projectFile, '{"request_timeout_seconds":3600}')
+      expect(loadSharedGuardConfig(options)).toHaveProperty("request_timeout_seconds", 3600)
+    } finally {
+      rmSync(scratch, { recursive: true, force: true })
+    }
+  })
+
   it("enforces >= 2.9.1 floor and whitespace trimming in generateFingerprint, collectCurrentFingerprint, and uninitialized SessionFingerprintStore.syncVersion", () => {
     expect(generateFingerprint({ version: "2.0.6" }).userAgent).toMatch(
       new RegExp(`^antigravity/hub/${ANTIGRAVITY_VERSION_FALLBACK.replace(/\./g, "\\.")} (darwin|win32)/(x64|arm64)$`),

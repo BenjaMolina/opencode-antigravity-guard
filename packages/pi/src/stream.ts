@@ -2,6 +2,7 @@ import { calculateCost, createAssistantMessageEventStream } from "@earendil-work
 import type { AssistantMessage, Context, Model, SimpleStreamOptions } from "@earendil-works/pi-ai"
 import {
   ANTIGRAVITY_ENDPOINTS,
+  DEFAULT_SHARED_GUARD_CONFIG,
   MAX_CAPACITY_RETRIES_PER_ENDPOINT,
   abortableSleep,
   calculateCapacityBackoffMs,
@@ -26,14 +27,15 @@ import type { ResponseSemantic, ToolResponsePolicy } from "./response.ts"
 import { ResponseSemanticError, ResponseSemantics } from "./response.ts"
 import { SseFrameError, SseFramer } from "./sse.ts"
 
-const TOTAL_TIMEOUT_MS = 120_000
-const INACTIVITY_TIMEOUT_MS = 30_000
+const MAX_STREAM_TIMEOUT_MS = 1_800_000
+const MAX_TIMER_MS = 2_147_483_647
 const MAX_ERROR_BYTES = 64 * 1024
 const ANTIGRAVITY_USER_AGENT = formatAntigravityHubUserAgent()
 const ENDPOINT = `${ANTIGRAVITY_ENDPOINTS.daily}/v1internal:streamGenerateContent?alt=sse`
 const API = "antigravity-guard-sse"
 const PROTECTED_HEADERS = new Set(["authorization", "host", "content-type", "content-length"])
 const LOCAL_ERRORS = new WeakSet<StreamTransportError>()
+const TOTAL_TIMEOUT_ERRORS = new WeakSet<StreamTransportError>()
 
 type StreamErrorKind = "aborted" | "access" | "capability" | "model" | "quota" | "preflight" | "response" | "transport" | "callback"
 
@@ -71,6 +73,15 @@ export class StreamTransportError extends Error {
   ) {
     super(message)
   }
+}
+
+interface StreamAbort {
+  signal: AbortSignal
+  error: () => StreamTransportError
+}
+
+export function resolveStreamTimeoutMs(seconds = DEFAULT_SHARED_GUARD_CONFIG.request_timeout_seconds ?? 600): number {
+  return Math.floor(Math.min(seconds * 3_000, MAX_STREAM_TIMEOUT_MS))
 }
 
 export interface StreamTransportInput {
@@ -221,7 +232,10 @@ export function createPiLifecycleStream(input: PiStreamLifecycleInput) {
 
   stream.push({ type: "start", partial: output })
   if (input.signal) {
-    const abort = () => finalize("aborted", undefined, undefined, streamError("aborted", "Generation was cancelled."))
+    const abort = () => {
+      const error = streamError("aborted", "Generation was cancelled.")
+      finalize("aborted", error.message, undefined, error)
+    }
     input.signal.addEventListener("abort", abort, { once: true })
     removeAbort = () => input.signal?.removeEventListener("abort", abort)
     if (input.signal.aborted) abort()
@@ -244,7 +258,8 @@ function isContentSemantic(semantic: ResponseSemantic): boolean {
 
 export async function executeStreamTransport(input: StreamTransportInput): Promise<void> {
   validateInput(input)
-  const signal = totalSignal(input)
+  const abort = totalAbort(input)
+  const { signal } = abort
   const headers = requestHeaders(input)
   const endpointRoots =
     input.endpoints && input.endpoints.length > 0
@@ -275,8 +290,8 @@ export async function executeStreamTransport(input: StreamTransportInput): Promi
       (diagnostics) => { replayDiagnostics = diagnostics },
     )
     if (hasToolContext(input.context)) await deliver(input.onSemantic, { type: "toolDiagnostics", details: toolDiagnostics(entry.publicId, selection, replayDiagnostics, "accepted") })
-    const payload = await payloadHook(input, original, signal)
-    await applyRequestJitter(input.requestJitterMaxMs, signal)
+    const payload = await payloadHook(input, original, abort)
+    await applyRequestJitter(input.requestJitterMaxMs, abort)
     const requestBody = JSON.stringify(payload)
 
     let lastPreStreamError: StreamTransportError | undefined
@@ -300,26 +315,26 @@ export async function executeStreamTransport(input: StreamTransportInput): Promi
               body: requestBody,
               signal,
             }),
-            signal,
+            abort,
           )
         } catch (fetchErr) {
+          if (signal.aborted) throw abort.error()
           if (isLocalStreamError(fetchErr)) {
             if (fetchErr.kind === "aborted" || !hasMoreEndpoints) throw fetchErr
             lastPreStreamError = fetchErr
             break
           }
-          if (signal.aborted) throw streamError("aborted", "Generation was cancelled.")
           const transportErr = streamError("transport", "Antigravity generation request failed.")
           if (!hasMoreEndpoints) throw transportErr
           lastPreStreamError = transportErr
           break
         }
 
-        await responseHook(input, response, signal)
         responseBody = response.body
+        await responseHook(input, response, abort)
 
         if (!response.ok) {
-          const err = await httpError(response, signal)
+          const err = await httpError(response, abort)
           responseBody = null
 
           if (err.status === 429 || err.status === 503 || err.status === 529) {
@@ -335,7 +350,7 @@ export async function executeStreamTransport(input: StreamTransportInput): Promi
               if (capacityRetries < maxCapacityRetries) {
                 capacityRetries += 1
                 const waitMs = calculateCapacityBackoffMs(capacityRetries - 1)
-                await abortable(sleepFn(waitMs, signal), signal)
+                await abortable(sleepFn(waitMs, signal), abort)
                 continue
               }
               if (hasMoreEndpoints) {
@@ -361,7 +376,7 @@ export async function executeStreamTransport(input: StreamTransportInput): Promi
         }
 
         if (!response.body || !isSse(response.headers.get("content-type"))) {
-          await boundedBody(response, signal)
+          await boundedBody(response, abort)
           responseBody = null
           throw streamError("response", "Antigravity did not return an SSE response.")
         }
@@ -384,9 +399,9 @@ export async function executeStreamTransport(input: StreamTransportInput): Promi
 
         await consume(
           response.body,
-          signal,
+          abort,
           wrappedOnSemantic,
-          inactivityTimeout(input),
+          input.inactivityTimeoutMs,
           responsePolicy(original, selection),
         )
         return
@@ -397,7 +412,7 @@ export async function executeStreamTransport(input: StreamTransportInput): Promi
   } catch (error) {
     void responseBody?.cancel().catch(() => undefined)
     if (isLocalStreamError(error)) throw error
-    if (signal.aborted) throw streamError("aborted", "Generation was cancelled.")
+    if (signal.aborted) throw abort.error()
     if (error instanceof ToolPreflightError && selection) {
       const details = toolDiagnostics(getCatalogEntry(input.model.id)!.publicId, selection, replayDiagnostics, error.code, error.path)
       throw streamError("preflight", error.message, undefined, details)
@@ -507,18 +522,18 @@ function responsePolicy(payload: GenerationRequest, selection: GenerationSelecti
   return names.every((name): name is string => typeof name === "string") ? { kind: "accept", declaredNames: new Set(names) } : { kind: "reject" }
 }
 
-async function payloadHook(input: StreamTransportInput, payload: unknown, signal: AbortSignal): Promise<unknown> {
+async function payloadHook(input: StreamTransportInput, payload: unknown, abort: StreamAbort): Promise<unknown> {
   try {
-    const replacement = await abortable(Promise.resolve().then(() => input.generationOptions?.onPayload?.(payload, input.model)), signal)
+    const replacement = await abortable(Promise.resolve().then(() => input.generationOptions?.onPayload?.(payload, input.model)), abort)
     if (replacement !== undefined && JSON.stringify(replacement) !== JSON.stringify(payload)) throw streamError("callback", "Payload replacement cannot alter the fixed request.")
     return replacement ?? payload
   } catch (error) { if (isLocalStreamError(error)) throw error; throw streamError("callback", "Payload handling failed.") }
 }
 
-async function responseHook(input: StreamTransportInput, response: Response, signal: AbortSignal): Promise<void> {
+async function responseHook(input: StreamTransportInput, response: Response, abort: StreamAbort): Promise<void> {
   const headers: Record<string, string> = {}
   response.headers.forEach((value, key) => { headers[key] = value })
-  try { await abortable(Promise.resolve().then(() => input.generationOptions?.onResponse?.({ status: response.status, headers }, input.model)), signal) }
+  try { await abortable(Promise.resolve().then(() => input.generationOptions?.onResponse?.({ status: response.status, headers }, input.model)), abort) }
   catch (error) {
     if (isLocalStreamError(error)) throw error
     throw streamError("callback", "Response handling failed.")
@@ -544,15 +559,16 @@ function requestHeaders(input: StreamTransportInput): Record<string, string> {
   }
 }
 
-async function applyRequestJitter(maxMs: number | undefined, signal: AbortSignal): Promise<void> {
+async function applyRequestJitter(maxMs: number | undefined, abort: StreamAbort): Promise<void> {
   if (!maxMs || maxMs <= 0) return
-  if (signal.aborted) throw streamError("aborted", "Generation was cancelled.")
+  const { signal } = abort
+  if (signal.aborted) throw abort.error()
   const delayMs = Math.floor(Math.random() * maxMs)
   if (delayMs <= 0) return
   await new Promise<void>((resolve, reject) => {
     const onAbort = () => {
       clearTimeout(timer)
-      reject(streamError("aborted", "Generation was cancelled."))
+      reject(abort.error())
     }
     const timer = setTimeout(() => {
       signal.removeEventListener("abort", onAbort)
@@ -562,13 +578,14 @@ async function applyRequestJitter(maxMs: number | undefined, signal: AbortSignal
   })
 }
 
-async function consume(body: ReadableStream<Uint8Array>, signal: AbortSignal, onSemantic: StreamTransportInput["onSemantic"], inactivityMs: number, policy: ToolResponsePolicy): Promise<void> {
+async function consume(body: ReadableStream<Uint8Array>, abort: StreamAbort, onSemantic: StreamTransportInput["onSemantic"], inactivityMs: number | undefined, policy: ToolResponsePolicy): Promise<void> {
   const reader = body.getReader()
   const framer = new SseFramer()
   const semantics = new ResponseSemantics(policy)
   try {
     while (true) {
-      const next = await abortable(reader.read(), AbortSignal.any([signal, AbortSignal.timeout(inactivityMs)]))
+      const readAbort = inactivityMs === undefined ? abort : inactivityAbort(abort, timerMs(inactivityMs))
+      const next = await abortable(reader.read(), readAbort)
       if (next.done) break
       for (const record of framer.push(next.value)) for (const semantic of semantics.push(record)) await deliver(onSemantic, semantic)
     }
@@ -586,8 +603,8 @@ async function deliver(callback: StreamTransportInput["onSemantic"], semantic: S
   try { await callback(semantic) } catch { throw streamError("callback", "Semantic delivery failed.") }
 }
 
-async function httpError(response: Response, signal: AbortSignal): Promise<StreamTransportError> {
-  const body = await boundedBody(response, signal)
+async function httpError(response: Response, abort: StreamAbort): Promise<StreamTransportError> {
+  const body = await boundedBody(response, abort)
   const headers: Record<string, string> = {}
   response.headers.forEach((value, key) => { headers[key] = value })
   if (response.status === 401) return streamError("access", "Authentication expired. Run /login antigravity-guard.", 401, undefined, body, headers)
@@ -597,7 +614,7 @@ async function httpError(response: Response, signal: AbortSignal): Promise<Strea
   return streamError("response", "Antigravity generation request was rejected.", response.status, undefined, body, headers)
 }
 
-async function boundedBody(response: Response, signal: AbortSignal): Promise<string> {
+async function boundedBody(response: Response, abort: StreamAbort): Promise<string> {
   const body = response.body
   if (!body || response.bodyUsed || body.locked) return ""
   const reader = body.getReader()
@@ -605,7 +622,7 @@ async function boundedBody(response: Response, signal: AbortSignal): Promise<str
   let size = 0
   try {
     while (true) {
-      const next = await abortable(reader.read(), signal)
+      const next = await abortable(reader.read(), abort)
       if (next.done || size + next.value.byteLength > MAX_ERROR_BYTES) break
       chunks.push(next.value)
       size += next.value.byteLength
@@ -620,20 +637,38 @@ async function boundedBody(response: Response, signal: AbortSignal): Promise<str
   }
 }
 
-function totalSignal(input: StreamTransportInput): AbortSignal {
-  const timeout = remaining(input, TOTAL_TIMEOUT_MS)
-  if (timeout <= 0 || input.signal?.aborted) throw streamError("aborted", "Generation was cancelled.")
-  return input.signal ? AbortSignal.any([input.signal, AbortSignal.timeout(timeout)]) : AbortSignal.timeout(timeout)
-}
-
-function remaining(input: StreamTransportInput, fallback: number): number {
-  return input.timeoutMs === undefined ? fallback : input.timeoutMs > 0 && Number.isFinite(input.timeoutMs) ? Math.min(input.timeoutMs, fallback) : 0
+function totalAbort(input: StreamTransportInput): StreamAbort {
+  const caller = input.signal
+  const ms = timerMs(input.timeoutMs ?? resolveStreamTimeoutMs())
+  const error = () => caller?.aborted
+    ? streamError("aborted", "Generation was cancelled.")
+    : generationTimeoutError(ms)
+  if (caller?.aborted || ms === 0) throw error()
+  const deadline = AbortSignal.timeout(ms)
+  return { signal: caller ? AbortSignal.any([caller, deadline]) : deadline, error }
 }
 
 function isSse(value: string | null): boolean { return value?.split(";", 1)[0]?.trim().toLowerCase() === "text/event-stream" }
 
-function inactivityTimeout(input: StreamTransportInput): number {
-  return input.inactivityTimeoutMs === undefined ? INACTIVITY_TIMEOUT_MS : input.inactivityTimeoutMs > 0 && Number.isFinite(input.inactivityTimeoutMs) ? Math.min(input.inactivityTimeoutMs, INACTIVITY_TIMEOUT_MS) : 0
+function inactivityAbort(parent: StreamAbort, ms: number): StreamAbort {
+  return {
+    signal: AbortSignal.any([parent.signal, AbortSignal.timeout(ms)]),
+    error: () => parent.signal.aborted ? parent.error() : streamError("transport", `Antigravity stream received no data for ${ms} ms.`),
+  }
+}
+
+function timerMs(value: number): number {
+  return Number.isFinite(value) && value > 0 ? Math.min(Math.ceil(value), MAX_TIMER_MS) : 0
+}
+
+function generationTimeoutError(ms: number): StreamTransportError {
+  const error = streamError("transport", `Antigravity generation timed out after ${ms} ms.`)
+  TOTAL_TIMEOUT_ERRORS.add(error)
+  return error
+}
+
+export function isGenerationTimeout(error: StreamTransportError): boolean {
+  return TOTAL_TIMEOUT_ERRORS.has(error)
 }
 
 function diagnosticFailure(error: StreamTransportError): NonNullable<ToolStreamDiagnostics["failure"]> | undefined {
@@ -744,11 +779,11 @@ export { MAX_CAPACITY_RETRIES_PER_ENDPOINT }
 
 function isLocalStreamError(error: unknown): error is StreamTransportError { return error instanceof StreamTransportError && LOCAL_ERRORS.has(error) }
 
-function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
-  if (signal.aborted) return Promise.reject(streamError("aborted", "Generation was cancelled."))
+function abortable<T>(promise: Promise<T>, { signal, error }: StreamAbort): Promise<T> {
   return new Promise((resolve, reject) => {
-    const abort = () => reject(streamError("aborted", "Generation was cancelled."))
-    signal.addEventListener("abort", abort, { once: true })
+    const abort = () => reject(error())
+    if (signal.aborted) abort()
+    else signal.addEventListener("abort", abort, { once: true })
     promise.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort))
   })
 }

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs"
 import * as os from "node:os"
 import { join } from "node:path"
 import { describe, expect, it, vi } from "vitest"
@@ -7,12 +7,121 @@ import { describe, expect, it, vi } from "vitest"
 import { generateFingerprint, loadSharedGuardConfig } from "@benjamolina/antigravity-guard-core"
 import { createPiAccountPool } from "./accounts.ts"
 import extension from "./extension.ts"
+import { registerAntigravityProvider } from "./provider.ts"
 
 function sha256(path: string): string {
   return createHash("sha256").update(readFileSync(path)).digest("hex")
 }
 
 describe("Phase 2 Pi multi-account pool & commands regression probes (S3)", () => {
+  it.each(["before-output", "after-output", "caller-abort", "external-removal", "unwritable-pool"] as const)("handles an interrupted generation in the shared pool (%s)", async (scenario) => {
+    const scratch = mkdtempSync(join(os.tmpdir(), "pi-pool-timeout-"))
+    const poolPath = join(scratch, "antigravity-accounts.json")
+    type ProviderConfig = Parameters<Parameters<typeof registerAntigravityProvider>[0]["registerProvider"]>[1]
+    const registerProvider = vi.fn<(name: string, config: ProviderConfig) => void>()
+    const timeout = new AbortController()
+    const caller = new AbortController()
+    let markFetchStarted!: () => void
+    const fetchStarted = new Promise<void>((resolve) => { markFetchStarted = resolve })
+    const createTimeout = AbortSignal.timeout.bind(AbortSignal)
+    const accountsUsed: string[] = []
+    const deadlines = vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) =>
+      ms === 90_000 && accountsUsed.length === 0 ? timeout.signal : createTimeout(ms),
+    )
+    const textSse = 'data: {"response":{"candidates":[{"content":{"parts":[{"text":"OK"}]}}]}}\n\n'
+    const finishSse = 'data: {"response":{"candidates":[{"finishReason":"STOP"}]}}\n\n'
+    const sseHeaders = { "Content-Type": "text/event-stream" }
+    const fetch = vi.fn<typeof globalThis.fetch>(async (url, init) => {
+      if (String(url).includes("oauth2.googleapis.com/token")) {
+        const refresh = new URLSearchParams(String(init?.body)).get("refresh_token")
+        return Response.json({ access_token: `access-${refresh}`, expires_in: 3_600 })
+      }
+      const auth = new Headers(init?.headers).get("Authorization") ?? ""
+      accountsUsed.push(auth)
+      if (accountsUsed.length > 1) return new Response(textSse + finishSse, { headers: sseHeaders })
+      markFetchStarted()
+      if (scenario === "before-output") timeout.abort(new DOMException("expired", "TimeoutError"))
+      if (scenario === "caller-abort") caller.abort()
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          if (scenario === "after-output") controller.enqueue(new TextEncoder().encode(textSse))
+        },
+      })
+      return new Response(body, { headers: sseHeaders })
+    })
+    let runtime: ReturnType<typeof registerAntigravityProvider> | undefined
+    try {
+      writeFileSync(join(scratch, "antigravity.json"), JSON.stringify({ account_selection_strategy: "sticky", proactive_token_refresh: false, request_timeout_seconds: 30 }))
+      const accounts = [
+        { refreshToken: "first", projectId: "a", addedAt: 1, lastUsed: 1 },
+        { refreshToken: "second", projectId: "b", addedAt: 2, lastUsed: 2 },
+      ]
+      writeFileSync(poolPath, JSON.stringify({ version: 4, activeIndex: 0, accounts: scenario === "external-removal" ? accounts.slice(0, 1) : accounts }))
+      runtime = registerAntigravityProvider({
+        registerProvider(name, config?: ProviderConfig) {
+          if (typeof name !== "string" || !config) throw new Error("Expected a named provider configuration")
+          registerProvider(name, config)
+        },
+      }, { homeDir: scratch, cwd: scratch, env: { OPENCODE_CONFIG_DIR: scratch, PI_OFFLINE: "1" }, fetch, now: () => 1_000 })
+      await runtime.refreshSession(scratch)
+      for (const account of runtime.getAccountPool().getManager()!.getAccounts()) {
+        account.access = `access-${account.parts.refreshToken}`
+        account.expires = 1_000_000
+      }
+      const config = registerProvider.mock.calls[0]![1]
+      const model = { ...config.models![0]!, api: config.api!, provider: "antigravity-guard", baseUrl: config.baseUrl! }
+      const stream = config.streamSimple!(model, { messages: [{ role: "user", content: "Ping", timestamp: 1 }] }, { signal: caller.signal })
+      let beforeFailure: string | undefined
+      const backup = `${poolPath}.backup`
+      if (scenario === "external-removal" || scenario === "unwritable-pool") {
+        await fetchStarted
+        if (scenario === "external-removal") {
+          const other = createPiAccountPool({ homeDir: scratch, cwd: scratch, env: { OPENCODE_CONFIG_DIR: scratch, PI_OFFLINE: "1" }, getVersion: runtime.getVersion, getConfig: runtime.getConfig })
+          expect((await other.removeAccountByIndex(0)).removed).toBe(true)
+          other.stopBackgroundRefresh()
+          beforeFailure = sha256(poolPath)
+        } else {
+          renameSync(poolPath, backup)
+          mkdirSync(poolPath)
+          beforeFailure = sha256(backup)
+        }
+        timeout.abort()
+      }
+      for await (const event of stream) {
+        if (scenario === "after-output" && event.type === "text_delta") timeout.abort(new DOMException("expired", "TimeoutError"))
+      }
+      const result = await stream.result()
+      expect(deadlines).toHaveBeenCalledWith(90_000)
+      if (scenario === "unwritable-pool") {
+        expect(result).toMatchObject({ stopReason: "stop", content: [{ type: "text", text: "OK" }] })
+        expect(accountsUsed).toEqual(["Bearer access-first", "Bearer access-second"])
+        expect(sha256(backup)).toBe(beforeFailure)
+        return
+      }
+      const persisted = JSON.parse(readFileSync(poolPath, "utf8"))
+      if (scenario === "external-removal") {
+        expect(result).toMatchObject({ stopReason: "error", errorMessage: "Antigravity generation timed out after 90000 ms." })
+        expect(accountsUsed).toEqual(["Bearer access-first"])
+        expect(persisted.accounts).toEqual([])
+        expect(sha256(poolPath)).toBe(beforeFailure)
+      } else if (scenario === "before-output") {
+        expect(accountsUsed).toEqual(["Bearer access-first", "Bearer access-second"])
+        expect(result).toMatchObject({ stopReason: "stop", content: [{ type: "text", text: "OK" }] })
+        expect(persisted.accounts[0]).toMatchObject({ cooldownReason: "network-error", coolingDownUntil: 61_000 })
+      } else {
+        expect(accountsUsed).toEqual(["Bearer access-first"])
+        expect(result).toMatchObject(scenario === "after-output"
+          ? { stopReason: "error", errorMessage: "Antigravity generation timed out after 90000 ms.", content: [{ type: "text", text: "OK" }] }
+          : { stopReason: "aborted", errorMessage: "Generation was cancelled." })
+        expect(persisted.accounts[0]).not.toHaveProperty("cooldownReason")
+      }
+    } finally {
+      runtime?.shutdown()
+      deadlines.mockRestore()
+      rmSync(scratch, { recursive: true, force: true })
+    }
+  })
+
   it("B1: seeded auth.json placeholder never skips OAuth refresh after subsequent loadOrRefresh calls", async () => {
     const scratch = mkdtempSync(join(os.tmpdir(), "pi-p2-probe-b1-"))
     try {

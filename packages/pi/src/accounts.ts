@@ -34,6 +34,7 @@ import {
   retryAfterMsFromHeaders,
   saveAccountsReplaceToPath,
   saveAccountsToPath,
+  updateExistingAccountCooldown,
   updateFingerprintVersion,
   type AccountMetadataV3,
   type AccountQuotaResult,
@@ -285,6 +286,7 @@ export interface PiAccountPool {
     headers?: Record<string, string>
     message?: string
     tokenConsumed?: boolean
+    generationTimeout?: boolean
   }): Promise<{ rotated: boolean; quarantined: boolean }>
   stopBackgroundRefresh(): void
 }
@@ -1085,14 +1087,36 @@ export function createPiAccountPool(options: PiAccountPoolOptions): PiAccountPoo
       }
       const cfg = options.getConfig()
       const family = resolvePiModelFamily(input.modelId)
-      const liveAccount =
+      const matchingAccount =
         manager
           .getAccounts()
-          .find((acc) => acc.parts.refreshToken === input.account.parts.refreshToken) ??
-        input.account
+          .find((acc) => acc.parts.refreshToken === input.account.parts.refreshToken)
+      if (input.generationTimeout && !matchingAccount) {
+        return { rotated: false, quarantined: false }
+      }
+      const liveAccount = matchingAccount ?? input.account
 
       if (input.tokenConsumed) {
         tokenTracker.refund(liveAccount.index)
+      }
+
+      if (input.generationTimeout) {
+        healthTracker.recordFailure(liveAccount.index)
+        if ((liveAccount.coolingDownUntil ?? 0) < nowFn() + 60_000) {
+          manager.markAccountCoolingDown(liveAccount, 60_000, "network-error")
+          try {
+            const kept = await updateExistingAccountCooldown(
+              currentPaths().accountsPath,
+              liveAccount.parts.refreshToken,
+              liveAccount.coolingDownUntil!,
+              "network-error",
+            )
+            if (!kept) return { rotated: false, quarantined: false }
+          } catch {
+            console.warn("[Antigravity Guard] Could not persist the generation timeout cooldown.")
+          }
+        }
+        return { rotated: manager.getAccountCount() > 1, quarantined: false }
       }
 
       if (input.status === 403 && input.body) {

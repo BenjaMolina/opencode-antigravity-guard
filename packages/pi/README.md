@@ -19,6 +19,12 @@ Install the package in Pi, then authenticate or inspect your pool:
 
 Choose browser login, or choose manual login and paste the complete callback URL. The loopback callback uses fixed port `51121`; browser callback failures, remote shells, and port conflicts can use the manual callback-URL flow.
 
+### Generation timeouts
+
+Pi reads `request_timeout_seconds` from `antigravity.json`, like OpenCode. The setting accepts 30–3,600 seconds (default: 600). Each streaming attempt gets three times that value, up to 30 minutes. Pi does not time out solely because of a pause between SSE chunks.
+
+A generation timeout is reported separately from cancellation. In a managed account pool, Pi can try another account after a timeout only if no output has been received yet; it never replays partial output.
+
 ## Catalog and tool admission
 
 All seventeen static catalog rows below are registered with verified routes and tool schemas:

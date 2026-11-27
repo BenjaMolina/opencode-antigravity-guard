@@ -426,8 +426,8 @@ describe("fixed Antigravity SSE transport", () => {
     const pending = executeStreamTransport(input)
     while (!input.fetch.mock.calls.length) await Promise.resolve()
     await readerStarted
-    controller.abort()
-    await expect(pending).rejects.toMatchObject({ kind: "aborted" })
+    controller.abort(new DOMException("caller reason", "TimeoutError"))
+    await expect(pending).rejects.toMatchObject({ kind: "aborted", message: "Generation was cancelled." })
     expect(cancel).toHaveBeenCalledOnce()
 
     const lateFailure = new ReadableStream<Uint8Array>({ start(controller) { controller.error(new Error("CANARY-read")) } })
@@ -443,9 +443,12 @@ describe("fixed Antigravity SSE transport", () => {
       new Promise((_, reject) => setTimeout(() => reject(new Error("deadline was not enforced")), 100)),
     ])
 
-    await expect(settle({ ...input, generationOptions: { onPayload: () => never } })).rejects.toMatchObject({ kind: "aborted" })
-    await expect(settle({ ...input, generationOptions: { onResponse: () => never } })).rejects.toMatchObject({ kind: "aborted" })
-    await expect(settle({ ...input, fetch: () => never })).rejects.toMatchObject({ kind: "aborted" })
+    const expected = { kind: "transport", message: "Antigravity generation timed out after 10 ms." }
+    await expect(settle({ ...input, generationOptions: { onPayload: () => never } })).rejects.toMatchObject(expected)
+    await expect(settle({ ...input, generationOptions: { onResponse: () => never } })).rejects.toMatchObject(expected)
+    const fetch = vi.fn<typeof globalThis.fetch>(() => never)
+    await expect(settle({ ...input, fetch, endpoints: ["https://first.invalid", "https://second.invalid"] })).rejects.toMatchObject(expected)
+    expect(fetch).toHaveBeenCalledOnce()
   })
 
   it("normalizes forged transport errors from every remaining dependency boundary", async () => {
@@ -476,9 +479,24 @@ describe("fixed Antigravity SSE transport", () => {
       accessToken: "access-token", projectId: "stored-project", context: context(), fetch: vi.fn<typeof globalThis.fetch>().mockResolvedValue(new Response(stalled, { headers: { "Content-Type": "text/event-stream" } })), inactivityTimeoutMs: 10, model: model(), now: () => 1_000, onSemantic: vi.fn(), platform: "win32", requestId: "request-id",
     })
 
-    await expect(pending).rejects.toMatchObject({ kind: "aborted" })
+    await expect(pending).rejects.toMatchObject({ kind: "transport", message: "Antigravity stream received no data for 10 ms." })
     expect(cancel).toHaveBeenCalledOnce()
     expect(stalled.locked).toBe(false)
+  })
+
+  it.each([undefined, 2_000_000])("uses only the total deadline when inactivity is unspecified (override: %s)", async (timeoutMs) => {
+    const deadline = vi.spyOn(AbortSignal, "timeout")
+    const onSemantic = vi.fn()
+    try {
+      await executeStreamTransport({
+        accessToken: "access-token", projectId: "stored-project", context: context(), model: model(), now: () => 1_000, onSemantic, platform: "win32", requestId: "request-id", timeoutMs,
+        fetch: async () => new Response('data: {"response":{"candidates":[{"content":{"parts":[{"text":"OK"}]}}]}}\n\ndata: {"response":{"candidates":[{"finishReason":"STOP"}]}}\n\n', { headers: { "Content-Type": "text/event-stream" } }),
+      })
+      expect(deadline.mock.calls).toEqual([[timeoutMs ?? 1_800_000]])
+      expect(onSemantic.mock.calls.map(([event]) => event.type)).toEqual(["text", "finish"])
+    } finally {
+      deadline.mockRestore()
+    }
   })
 
   it("returns only neutral callback delivery, never a Pi event or result lifecycle", async () => {

@@ -421,8 +421,9 @@ async function withFileLock<T>(
   path: string,
   options: AccountStorageIoOptions,
   fn: () => Promise<T>,
+  initialize = true,
 ): Promise<T> {
-  await ensureFileExists(path)
+  if (initialize) await ensureFileExists(path)
   const lockFn = options.lock ?? acquireDefaultDirLock
   let release: (() => Promise<void>) | null = null
   try {
@@ -928,22 +929,49 @@ export async function saveAccountsToPath(
   await withFileLock(path, options, async () => {
     const existing = await loadAccountsUnsafeAtPath(path)
     const merged = existing ? mergeAccountStorage(existing, storage) : storage
+    await writeAccountsAtomically(path, merged)
+  })
+}
 
-    const tempPath = `${path}.${randomBytes(6).toString("hex")}.tmp`
-    const content = JSON.stringify(merged, null, 2)
-
+/** Updates cooldown fields without restoring deleted accounts or overwriting other metadata. */
+export async function updateExistingAccountCooldown(
+  path: string,
+  refreshToken: string,
+  until: number,
+  reason: CooldownReason,
+  options: AccountStorageIoOptions = {},
+): Promise<boolean> {
+  return withFileLock(path, options, async () => {
+    let content: string
     try {
-      await fs.writeFile(tempPath, content, { encoding: "utf-8", mode: 0o600 })
-      await fs.rename(tempPath, path)
+      content = await fs.readFile(path, "utf-8")
     } catch (error) {
-      try {
-        await fs.unlink(tempPath)
-      } catch {
-        // Ignore cleanup errors
-      }
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return false
       throw error
     }
-  })
+    const storage = JSON.parse(content) as AccountStorageV4 | null
+    if (storage?.version !== 4 || !Array.isArray(storage.accounts)) return false
+    const account = storage.accounts.find((entry) => entry?.refreshToken === refreshToken)
+    if (!account || account.enabled === false) return false
+    if ((account.coolingDownUntil ?? 0) < until) {
+      account.coolingDownUntil = until
+      account.cooldownReason = reason
+      await writeAccountsAtomically(path, storage)
+    }
+    return true
+  }, false)
+}
+
+async function writeAccountsAtomically(path: string, storage: AccountStorageV4): Promise<void> {
+  const tempPath = `${path}.${randomBytes(6).toString("hex")}.tmp`
+  const content = JSON.stringify(storage, null, 2)
+  try {
+    await fs.writeFile(tempPath, content, { encoding: "utf-8", mode: 0o600 })
+    await fs.rename(tempPath, path)
+  } catch (error) {
+    await fs.unlink(tempPath).catch(() => undefined)
+    throw error
+  }
 }
 
 export async function saveAccountsReplaceToPath(
