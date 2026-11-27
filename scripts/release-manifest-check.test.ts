@@ -8,9 +8,9 @@ const coreName = "@benjamolina/antigravity-guard-core"
 const piName = "@benjamolina/pi-antigravity-guard"
 const rootName = "@benjamolina/opencode-antigravity-guard"
 const repositoryUrl = "git+https://github.com/BenjaMolina/opencode-antigravity-guard.git"
-const coreVersion = "0.2.0"
-const piVersion = "0.5.1"
-const rootVersion = "1.2.1"
+const coreVersion = "0.3.0"
+const piVersion = "0.6.0"
+const rootVersion = "1.3.0"
 
 function readFileSync(path: URL, encoding: "utf8"): string {
   return readFileSyncRaw(path, encoding).replaceAll("\r\n", "\n")
@@ -114,6 +114,9 @@ function expectRepositoryLocalTagIdentity(workflow: string): void {
 
 function expectPlannedStaticVersions(workflow: string): void {
   expect(workflow).toContain(
+    `packageInfo.dependencies?.["@benjamolina/antigravity-guard-core"] !== "${coreVersion}"`,
+  )
+  expect(workflow).toContain(
     `publish_if_missing "@benjamolina/antigravity-guard-core" "${coreVersion}" "@benjamolina/antigravity-guard-core" false`,
   )
   expect(workflow).toContain(
@@ -135,9 +138,17 @@ describe("release workflow", () => {
     expectPlannedStaticVersions(workflow)
   })
 
-  it("rejects stale Pi and root workflow versions", () => {
+  it("rejects stale core, Pi, and root workflow versions", () => {
     const workflow = readFileSync(new URL("../.github/workflows/release.yml", import.meta.url), "utf8")
 
+    expect(() =>
+      expectPlannedStaticVersions(
+        workflow.replace(
+          `packageInfo.dependencies?.["@benjamolina/antigravity-guard-core"] !== "${coreVersion}"`,
+          'packageInfo.dependencies?.["@benjamolina/antigravity-guard-core"] !== "0.1.0"',
+        ),
+      ),
+    ).toThrow()
     expect(() => expectPlannedStaticVersions(workflow.replace(`"${piVersion}"`, '"0.1.0"'))).toThrow()
     expect(() => expectPlannedStaticVersions(workflow.replace(`"${rootVersion}"`, '"1.1.11"'))).toThrow()
   })
