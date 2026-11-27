@@ -70,7 +70,24 @@ function isAdmittedConstrainedSampling(value: unknown, declaration: string, path
   if (value === undefined || value === false) return true
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false
   const config = plainObject(value, declaration, path)
-  return ownData(config, "type", declaration, path) === "json_schema" && ownData(config, "strict", declaration, path) === "prefer"
+  const keys = Object.keys(config)
+  const type = ownData(config, "type", declaration, path)
+  if (type === "json_schema") {
+    return keys.length === 2 && keys.every((key) => key === "type" || key === "strict") && ownData(config, "strict", declaration, path) === "prefer"
+  }
+  if (type === "grammar") {
+    if (keys.length !== 2 || !keys.every((key) => key === "type" || key === "variants")) return false
+    const variantsPath = `${path}.variants`
+    const rawVariants = ownData(config, "variants", declaration, path)
+    if (typeof rawVariants !== "object" || rawVariants === null || Array.isArray(rawVariants)) return false
+    const variants = plainObject(rawVariants, declaration, variantsPath)
+    for (const key of Object.keys(variants)) {
+      const entry = ownData(variants, key, declaration, variantsPath)
+      if (entry !== undefined && typeof entry !== "string") fail("PI_TOOL_SCHEMA_INVALID", declaration, pathSegment(variantsPath, key))
+    }
+    return true
+  }
+  return false
 }
 
 function snapshotJson(value: unknown, declaration: string, path: string, state: SchemaState, depth = 0): JsonValue {

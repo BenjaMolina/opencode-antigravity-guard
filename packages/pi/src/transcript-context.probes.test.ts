@@ -9,6 +9,8 @@ import { normalizeToolDeclarations } from "./tool-schema.ts"
 
 const argonModel = { id: "antigravity-gemini-4-argon" } as Model<string>
 const argonSelection = resolveGenerationSelection(getCatalogEntry("antigravity-gemini-4-argon")!, "low")
+const claudeModel = { id: "antigravity-claude-sonnet-4.6" } as Model<string>
+const claudeSelection = resolveGenerationSelection(getCatalogEntry("antigravity-claude-sonnet-4.6")!, "high")
 
 describe("S4 Pi 1.4.0+ TranscriptContext and constrainedSampling regression probes", () => {
   it("applies same-message toolsRemoved before toolsAdded during tool redefinition without mutating frozen input", () => {
@@ -120,6 +122,18 @@ describe("S4 Pi 1.4.0+ TranscriptContext and constrainedSampling regression prob
     })
     expect(() => normalizeToolDeclarations([{ ...baseTool, constrainedSampling: protoCs }])).toThrow(/PI_TOOL_SCHEMA_INVALID/)
 
+    const getterGrammarVariants: Record<string, unknown> = {}
+    Object.defineProperty(getterGrammarVariants, "openai_lark", {
+      enumerable: true,
+      get() {
+        getterExecuted = true
+        return "start: /.+/s"
+      },
+    })
+    expect(() =>
+      normalizeToolDeclarations([{ ...baseTool, constrainedSampling: { type: "grammar", variants: getterGrammarVariants } }]),
+    ).toThrow(/PI_TOOL_SCHEMA_INVALID/)
+
     const hostileSystemMsg: Record<string, unknown> = { role: "system", content: "" }
     Object.defineProperty(hostileSystemMsg, "sections", {
       enumerable: true,
@@ -139,5 +153,85 @@ describe("S4 Pi 1.4.0+ TranscriptContext and constrainedSampling regression prob
       }),
     ).toThrow(ContextSerializationError)
     expect(getterExecuted).toBe(false)
+  })
+
+  it("serializes Pi 1.4.0+ codemode grammar constrainedSampling tools via standard JSON-schema fallback on Gemini and Claude", () => {
+    const codemodeTool = Object.freeze({
+      name: "codemode",
+      description: "Run JavaScript that calls other tools.",
+      parameters: Object.freeze({
+        type: "object",
+        properties: Object.freeze({
+          code: Object.freeze({ type: "string", description: "Raw JavaScript source." }),
+        }),
+        required: Object.freeze(["code"]),
+      }),
+      constrainedSampling: Object.freeze({
+        type: "grammar" as const,
+        variants: Object.freeze({ openai_lark: "start: /.+/s" }),
+      }),
+    })
+    const readTool = Object.freeze({
+      name: "read",
+      description: "Read file contents",
+      parameters: Object.freeze({
+        type: "object",
+        properties: Object.freeze({ path: Object.freeze({ type: "string" }) }),
+        required: Object.freeze(["path"]),
+      }),
+      constrainedSampling: Object.freeze({ type: "json_schema" as const, strict: "prefer" as const }),
+    })
+    const transcript = Object.freeze({
+      messages: Object.freeze([
+        Object.freeze({
+          role: "system",
+          content: "System prompt",
+          toolsAdded: Object.freeze([codemodeTool, readTool]),
+          timestamp: 0,
+        }),
+        Object.freeze({ role: "user", content: "Inspect package.json", timestamp: 1795435000000 }),
+      ]),
+    }) as unknown as Context
+
+    clearSessionTrajectoryMap()
+    const geminiSerialized = serializeContext(
+      { context: transcript, model: argonModel, options: { reasoning: "low" }, project: "proj", requestId: "req-codemode-gemini" },
+      argonSelection,
+    )
+    expect(geminiSerialized.request.tools?.[0]?.functionDeclarations).toEqual([
+      {
+        name: "codemode",
+        description: "Run JavaScript that calls other tools.",
+        parametersJsonSchema: {
+          type: "object",
+          properties: { code: { type: "string", description: "Raw JavaScript source." } },
+          required: ["code"],
+        },
+      },
+      {
+        name: "read",
+        description: "Read file contents",
+        parametersJsonSchema: {
+          type: "object",
+          properties: { path: { type: "string" } },
+          required: ["path"],
+        },
+      },
+    ])
+
+    clearSessionTrajectoryMap()
+    const claudeSerialized = serializeContext(
+      { context: transcript, model: claudeModel, options: { reasoning: "high" }, project: "proj", requestId: "req-codemode-claude" },
+      claudeSelection,
+    )
+    expect(claudeSerialized.request.tools?.[0]?.functionDeclarations?.[0]).toEqual({
+      name: "codemode",
+      description: "Run JavaScript that calls other tools.",
+      parameters: {
+        type: "object",
+        properties: { code: { type: "string", description: "Raw JavaScript source." } },
+        required: ["code"],
+      },
+    })
   })
 })

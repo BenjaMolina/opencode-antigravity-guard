@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.1 (2026-11-27)
+
+- Admit Pi `1.4.0+` `constrainedSampling: { type: "grammar", variants }` tool declarations (including `codemode` in Pi and `gentle-shell`) in `@benjamolina/pi-antigravity-guard@0.6.1`, validating `variants` safely without invoking getters and falling back to standard JSON-schema `parameters` while continuing to reject `{ type: "json_schema", strict: "require" }` and malformed configs.
+
 ## 1.3.0 (2026-11-26)
 
 - Extract shared Antigravity Guard runtime engines into `@benjamolina/antigravity-guard-core@0.3.0` with backward-compatible Move-and-Reexport facades in `@benjamolina/opencode-antigravity-guard@1.3.0`: live Antigravity Hub version updater, device fingerprints, shared `antigravity.json` config loader, `AccountStorageV4` + cross-process lockfile + `AccountManager` (`sticky` / `round-robin` / `hybrid`) + proactive `TokenRefreshQueue`, `fetchAccountQuota` + Strict Quota Guard + `retry` / `daily -> autopush -> prod` failover primitives, permissive tool schema sanitization + `SignatureCache`, and `executeAntigravitySearchDetailed` grounding.

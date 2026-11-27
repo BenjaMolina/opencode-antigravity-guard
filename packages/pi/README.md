@@ -51,7 +51,7 @@ Maintainers can run `npm run build:pi` followed by `npx tsx scripts/pi-tool-loop
 
 ## Tool preflight, multimodal, and grounding boundaries
 
-Tool-bearing requests are never silently downgraded to text. Declarations are retained in order and omitted or `auto` choice serializes as `AUTO`; explicit `none` serializes as `NONE`. Forced, required, named, unknown, and constrained-sampling choices are rejected before transport.
+Tool-bearing requests are never silently downgraded to text. Declarations are retained in order and omitted or `auto` choice serializes as `AUTO`; explicit `none` serializes as `NONE`. Optional `constrainedSampling` hints (`false`, `{ type: "json_schema", strict: "prefer" }`, and `{ type: "grammar", variants }` such as Pi's `codemode`) fall back cleanly to standard JSON-schema `parameters`, while `strict: "require"`, forced, required, named, and unknown choices are rejected before transport.
 
 Gemini routes use the `parametersJsonSchema` profile while Claude and GPT-OSS routes use `claude-custom-parameters`, backed by the shared permissive Antigravity JSON Schema cleaner (resolving local RFC 6901 `#` / `#/...` `$ref` pointers while failing closed on external, cyclic, or unresolved references). Tool results must match the exact call ID and name and are replayed in assistant source-call order; Gemini and Claude routes accept `text`, `image/*`, and `application/pdf` parts (`image`, `document`, or `file` blocks with base64/data-URI payloads), whereas `antigravity-gpt-oss-120b` remains text-only.
 
