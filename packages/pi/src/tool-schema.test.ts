@@ -141,12 +141,26 @@ describe("Pi tool schema normalization", () => {
     }])).toHaveLength(1)
   })
 
-  it("rejects unsupported constrained sampling while accepting false and optional json_schema prefer", () => {
-    const tool = { name: "tool", description: "A tool", parameters: { type: "object", properties: { value: { type: "string" } } } }
+  it("admits false, optional json_schema prefer, and grammar fallback while rejecting strict require and malformed configs", () => {
+    const tool = { name: "tool", description: "A tool", parameters: { type: "object", properties: { code: { type: "string" } }, required: ["code"] } }
     expect(normalizeToolDeclarations([{ ...tool, constrainedSampling: false }])).toHaveLength(1)
     expect(normalizeToolDeclarations([{ ...tool, constrainedSampling: { type: "json_schema", strict: "prefer" } }])).toHaveLength(1)
+    expect(normalizeToolDeclarations([{ ...tool, constrainedSampling: { type: "grammar", variants: { openai_lark: "start: /.+/s" } } }])).toEqual([
+      {
+        name: "tool",
+        description: "A tool",
+        parameters: { properties: { code: { type: "string" } }, required: ["code"], type: "object" },
+      },
+    ])
+    expect(normalizeToolDeclarations([{ ...tool, constrainedSampling: { type: "grammar", variants: { openai_regex: ".+", openai_lark: undefined } } }])).toHaveLength(1)
+    expect(normalizeToolDeclarations([{ ...tool, constrainedSampling: { type: "grammar", variants: {} } }])).toHaveLength(1)
     expect(() => normalizeToolDeclarations([{ ...tool, constrainedSampling: { type: "json_schema", strict: "require" } }])).toThrow(/PI_TOOL_CONSTRAINED_SAMPLING_UNSUPPORTED/)
-    expect(() => normalizeToolDeclarations([{ ...tool, constrainedSampling: { type: "grammar", variants: {} } }])).toThrow(/PI_TOOL_CONSTRAINED_SAMPLING_UNSUPPORTED/)
+    expect(() => normalizeToolDeclarations([{ ...tool, constrainedSampling: { type: "json_schema", strict: "prefer", extra: true } }])).toThrow(/PI_TOOL_CONSTRAINED_SAMPLING_UNSUPPORTED/)
+    expect(() => normalizeToolDeclarations([{ ...tool, constrainedSampling: { type: "grammar" } }])).toThrow(/PI_TOOL_CONSTRAINED_SAMPLING_UNSUPPORTED/)
+    expect(() => normalizeToolDeclarations([{ ...tool, constrainedSampling: { type: "grammar", variants: null } }])).toThrow(/PI_TOOL_CONSTRAINED_SAMPLING_UNSUPPORTED/)
+    expect(() => normalizeToolDeclarations([{ ...tool, constrainedSampling: { type: "grammar", variants: [] } }])).toThrow(/PI_TOOL_CONSTRAINED_SAMPLING_UNSUPPORTED/)
+    expect(() => normalizeToolDeclarations([{ ...tool, constrainedSampling: { type: "grammar", strict: "require", variants: { openai_lark: "start: /.+/s" } } }])).toThrow(/PI_TOOL_CONSTRAINED_SAMPLING_UNSUPPORTED/)
+    expect(() => normalizeToolDeclarations([{ ...tool, constrainedSampling: { type: "grammar", variants: { openai_lark: 123 } } }])).toThrow(/PI_TOOL_SCHEMA_INVALID.*constrainedSampling\.variants\.openai_lark/)
     expect(() => normalizeToolDeclarations([{ ...tool, constrainedSampling: { type: "object" } }])).toThrow(/PI_TOOL_CONSTRAINED_SAMPLING_UNSUPPORTED/)
   })
 
