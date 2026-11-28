@@ -1,6 +1,6 @@
 {
   "name": "@benjamolina/antigravity-guard-core",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Neutral Antigravity domain primitives",
   "type": "module",
   "license": "MIT",

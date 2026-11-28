@@ -72,7 +72,7 @@ jobs:
               if (packageInfo.name !== name || packageInfo.version !== version) {
                 throw new Error(`Registry metadata did not match ${name}@${version}`)
               }
-              if (requiresCore === "true" && packageInfo.dependencies?.["@benjamolina/antigravity-guard-core"] !== "0.3.0") {
+              if (requiresCore === "true" && packageInfo.dependencies?.["@benjamolina/antigravity-guard-core"] !== "0.3.1") {
                 throw new Error(`${name}@${version} does not retain the exact core dependency`)
               }
             ' "$name" "$version" "$requires_core"
@@ -162,9 +162,9 @@ jobs:
             fi
           }
 
-          publish_if_missing "@benjamolina/antigravity-guard-core" "0.3.0" "@benjamolina/antigravity-guard-core" false
-          publish_if_missing "@benjamolina/pi-antigravity-guard" "0.6.1" "@benjamolina/pi-antigravity-guard" true
-          publish_if_missing "@benjamolina/opencode-antigravity-guard" "1.3.1" "" true
+          publish_if_missing "@benjamolina/antigravity-guard-core" "0.3.1" "@benjamolina/antigravity-guard-core" false
+          publish_if_missing "@benjamolina/pi-antigravity-guard" "0.6.2" "@benjamolina/pi-antigravity-guard" true
+          publish_if_missing "@benjamolina/opencode-antigravity-guard" "1.3.2" "" true
 
       - name: Create matching tag and release
         env:
@@ -172,7 +172,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          TAG="v1.3.1"
+          TAG="v1.3.2"
           git fetch --tags --force
           if git rev-parse "refs/tags/${TAG}^{commit}" >/dev/null 2>&1; then
             TAG_SHA=$(git rev-parse "refs/tags/${TAG}^{commit}")
@@ -208,18 +208,18 @@ jobs:
           cat >"$NOTES" <<'EOF'
           ## Published packages
 
-          - Core: `@benjamolina/antigravity-guard-core@0.3.0`
-          - Pi: `@benjamolina/pi-antigravity-guard@0.6.1`
-          - OpenCode root: `@benjamolina/opencode-antigravity-guard@1.3.1`
+          - Core: `@benjamolina/antigravity-guard-core@0.3.1`
+          - Pi: `@benjamolina/pi-antigravity-guard@0.6.2`
+          - OpenCode root: `@benjamolina/opencode-antigravity-guard@1.3.2`
 
           ### Activation scope
 
-          - Admit Pi `1.4.0+` `constrainedSampling: { type: "grammar", variants }` declarations (such as `codemode` in Pi and `gentle-shell`) in `@benjamolina/pi-antigravity-guard@0.6.1`, validating `variants` without invoking getters and falling back cleanly to standard JSON-schema `parameters` while continuing to reject `strict: "require"` and malformed configs.
+          - Align Pi streaming generation timeouts and timeout cooldown persistence with OpenCode across `@benjamolina/antigravity-guard-core@0.3.1` and `@benjamolina/pi-antigravity-guard@0.6.2`: read `request_timeout_seconds` (`30..3600`, default `600`, effective streaming deadline `min(seconds * 3000, 1800000)` ms), remove the default 30s SSE inactivity watchdog (opt-in via `inactivityTimeoutMs`), separate internal timeout errors from user cancellation (`Generation was cancelled.`), and rotate managed pool accounts with a non-resurrecting `network-error` cooldown only before output has been emitted.
 
           ### Upgrade the root plugin
 
           ```bash
-          npm install @benjamolina/opencode-antigravity-guard@1.3.1
+          npm install @benjamolina/opencode-antigravity-guard@1.3.2
           ```
           EOF
           sed -i 's/^          //' "$NOTES"

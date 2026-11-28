@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.3.2 (2026-11-27)
+
+- Align `@benjamolina/pi-antigravity-guard@0.6.2` and `@benjamolina/antigravity-guard-core@0.3.1` streaming generation timeouts and timeout cooldown handling with OpenCode: load `request_timeout_seconds` (`30..3600`, default `600`) from `antigravity.json` with a `min(seconds * 3000, 1800000)` ms per-attempt streaming deadline, remove the default 30s SSE inactivity watchdog (opt-in via `inactivityTimeoutMs`), separate internal timeouts from caller cancellation (`Generation was cancelled.`), and persist `network-error` cooldowns via `updateExistingAccountCooldown` without resurrecting deleted/disabled accounts while rotating only before output is emitted.
+
 ## 1.3.1 (2026-11-27)
 
 - Admit Pi `1.4.0+` `constrainedSampling: { type: "grammar", variants }` tool declarations (including `codemode` in Pi and `gentle-shell`) in `@benjamolina/pi-antigravity-guard@0.6.1`, validating `variants` safely without invoking getters and falling back to standard JSON-schema `parameters` while continuing to reject `{ type: "json_schema", strict: "require" }` and malformed configs.

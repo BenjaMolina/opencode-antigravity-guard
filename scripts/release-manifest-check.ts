@@ -4,17 +4,17 @@ import { resolve } from "node:path"
 
 const CORE = {
   name: "@benjamolina/antigravity-guard-core",
-  version: "0.3.0",
+  version: "0.3.1",
   workspace: "packages/core",
 } as const
 const PI = {
   name: "@benjamolina/pi-antigravity-guard",
-  version: "0.6.1",
+  version: "0.6.2",
   workspace: "packages/pi",
 } as const
 const ROOT = {
   name: "@benjamolina/opencode-antigravity-guard",
-  version: "1.3.1",
+  version: "1.3.2",
   workspace: undefined,
 } as const
 
